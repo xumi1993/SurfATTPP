@@ -40,6 +40,13 @@ add_executable(test_h5io
 )
 target_link_libraries(test_h5io PRIVATE input_params Eigen3::Eigen ${MY_HDF5_LIBS})
 
+# --- eikonal_test -----------------------------------------------------------
+add_executable(test_eikonal
+    eikonal_test/test_eikonal.cpp
+)
+target_link_libraries(test_eikonal PRIVATE input_params Eigen3::Eigen)
+target_compile_options(test_eikonal PRIVATE -O2)
+
 # ---------------------------------------------------------------------------
 # CTest registration
 # ---------------------------------------------------------------------------
@@ -75,5 +82,10 @@ add_test(
     NAME test_h5io
     COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
             test_h5io
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME test_eikonal
+    COMMAND test_eikonal
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
