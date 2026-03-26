@@ -1,0 +1,52 @@
+# Build directories
+build/
+bin/
+out/
+cmake-build-*/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+
+# Compiled output
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# IDE and editor
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docview
+*.ncb
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+*.DS_Store
+Thumbs.db
+
+# clangd / LSP
+compile_commands.json
+.cache/
+
+# Python (scripts / utilities)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+
+# Output files produced by the program
+OUTPUT_FILES/

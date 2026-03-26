@@ -1,0 +1,6 @@
+[submodule "external_libs/yaml-cpp"]
+	path = external_libs/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git
+[submodule "external_libs/spdlog"]
+	path = external_libs/spdlog
+	url = https://github.com/gabime/spdlog.git
