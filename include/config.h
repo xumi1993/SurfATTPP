@@ -25,4 +25,4 @@ inline constexpr real_t REAL_MIN = std::numeric_limits<real_t>::lowest();
 // ---------------------------------------------------------------------------
 // File paths
 // ---------------------------------------------------------------------------
-inline constexpr const char *LOG_FNAME = "surfatt_runtime.log";
+const std::string LOG_FNAME = "surfatt_runtime.log";

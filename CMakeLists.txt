@@ -7,6 +7,10 @@ if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
 
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -34,8 +38,6 @@ message(STATUS "MPI_CXX_INCLUDE_DIRS: ${MPI_CXX_INCLUDE_DIRS}")
 
 # find HDF5 parallel
 message(STATUS "Running CMAKE FindHDF5.cmake...")
-# Hint to the custom install location
-set(HDF5_ROOT "/Users/xumijian/opt/hdf5-2.0.0-gcc15-mpi" CACHE PATH "HDF5 install prefix")
 # set parallel HDF5 default
 find_package(HDF5 REQUIRED COMPONENTS C CXX CONFIG QUIET)
 if (NOT HDF5_FOUND)
@@ -125,7 +127,7 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Library: input_params
+# Library
 # ---------------------------------------------------------------------------
 
 file(GLOB SOURCES "src/*.cpp")
@@ -133,75 +135,10 @@ add_library(input_params OBJECT ${SOURCES})
 target_include_directories(input_params PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
-target_link_libraries(input_params PUBLIC yaml-cpp MPI::MPI_CXX)
+target_link_libraries(input_params PUBLIC yaml-cpp MPI::MPI_CXX ${MY_HDF5_LIBS})
 
 # ---------------------------------------------------------------------------
-# Test executables
+# Tests
 # ---------------------------------------------------------------------------
-add_executable(test_input_params
-    tests/yaml_test/test_input_params.cpp
-)
-target_link_libraries(test_input_params PRIVATE input_params)
-
-add_executable(test_input_params_mpi
-    tests/yaml_test/test_input_params_mpi.cpp
-)
-target_link_libraries(test_input_params_mpi PRIVATE input_params)
-
-add_executable(test_logger
-    tests/logger_test/test_logger.cpp
-)
-target_link_libraries(test_logger PRIVATE input_params)
-
-add_executable(test_csv
-    tests/csv_test/test_csv.cpp
-)
-target_include_directories(test_csv PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_compile_features(test_csv PRIVATE cxx_std_20)
-
-add_executable(test_eigen_mpi
-    tests/eigen_test/test_eigen_mpi.cpp
-)
-target_link_libraries(test_eigen_mpi PRIVATE input_params Eigen3::Eigen)
-
-add_executable(test_h5io
-    tests/hdf5_test/test_h5io.cpp
-)
-target_link_libraries(test_h5io PRIVATE input_params Eigen3::Eigen ${MY_HDF5_LIBS})
-
-# CTest integration
 enable_testing()
-add_test(
-    NAME test_input_params
-    COMMAND test_input_params ${CMAKE_SOURCE_DIR}/tests/yaml_test/input_params.yml
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-add_test(
-    NAME test_input_params_mpi
-    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
-            test_input_params_mpi ${CMAKE_SOURCE_DIR}/tests/yaml_test/input_params.yml
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-add_test(
-    NAME test_logger
-    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
-            test_logger
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-add_test(
-    NAME test_csv
-    COMMAND test_csv
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-add_test(
-    NAME test_eigen_mpi
-    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
-            test_eigen_mpi
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-add_test(
-    NAME test_h5io
-    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
-            test_h5io
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
+add_subdirectory(tests)
