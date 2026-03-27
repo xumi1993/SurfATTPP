@@ -167,6 +167,35 @@ target_link_libraries(objs PUBLIC
 )
 
 # ---------------------------------------------------------------------------
+# Executable
+# ---------------------------------------------------------------------------
+set(APP_SOURCES
+  src/SURFATT_tomo.cxx
+)
+foreach( execsourcefile ${APP_SOURCES} )
+    get_filename_component(execname ${execsourcefile} NAME_WE)
+
+    add_executable(${execname} ${execsourcefile})
+    
+    target_link_libraries(${execname} PRIVATE objs surfker_obj)
+
+    # eigen
+    target_link_libraries(${execname} PRIVATE Eigen3::Eigen)
+
+    # yaml-cpp
+    target_link_libraries(${execname} PRIVATE yaml-cpp::yaml-cpp)
+
+    # spdlog
+    target_link_libraries(${execname} PRIVATE ${SPDLOG_TARGET})
+
+    # MPI
+    target_link_libraries(${execname} PRIVATE MPI::MPI_CXX)
+
+    # HDF5
+    target_link_libraries(${execname} PRIVATE ${MY_HDF5_LIBS})
+endforeach()
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 enable_testing()

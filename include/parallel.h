@@ -35,6 +35,7 @@ public:
     static void init();
     static Parallel &mpi();
     bool is_main()       const { return rank_ == 0; }
+    bool is_node_main()  const { return local_rank_ == 0; }
 
     // ---- Basic query -------------------------------------------------------
     int      rank()       const { return rank_; }
@@ -70,6 +71,13 @@ public:
     void bcast(bool *buf, int count);
     // string
     void bcast(std::string &s);
+    // vector of strings
+    void bcast(std::vector<std::string> &v) {
+        int sz = static_cast<int>(v.size());
+        bcast(sz);
+        if (!is_main()) v.resize(sz);
+        for (auto& s : v) bcast(s);
+    }
 
     // ---- Reduce to rank 0  (min / max / sum) --------------------------------
     template<typename T>
@@ -202,6 +210,68 @@ public:
                      0, TAG, comm_, MPI_STATUS_IGNORE);
         }
         barrier();
+    }
+
+    // ---- Shared-memory window allocation -----------------------------------
+    // Mirrors prepare_shm_array_cr_1d / prepare_shm_array_cr_2d.
+    // node_rank 0 allocates the full array; others allocate 0 bytes and
+    // retrieve the node-rank-0 base pointer via MPI_Win_shared_query.
+    // MPI_Win_fence(0) is called at the end to open the first RMA epoch.
+    //
+    // 1-D overload — alloc_shared(n_elem, buf, win)
+    template<typename T>
+    void alloc_shared(int n_elem, T*& buf, MPI_Win& win) {
+        int count = (local_rank_ == 0) ? n_elem : 0;
+        T* base_ptr = nullptr;
+        MPI_Win_allocate_shared(
+            static_cast<MPI_Aint>(count) * static_cast<MPI_Aint>(sizeof(T)),
+            static_cast<int>(sizeof(T)), MPI_INFO_NULL, node_comm_,
+            &base_ptr, &win);
+        int *model = nullptr, flag = 0;
+        MPI_Win_get_attr(win, MPI_WIN_MODEL, &model, &flag);
+        if (local_rank_ != 0) {
+            MPI_Aint sz_dummy = 0;  int disp_dummy = 0;
+            MPI_Win_shared_query(win, 0, &sz_dummy, &disp_dummy, &base_ptr);
+        }
+        buf = base_ptr;
+        MPI_Win_fence(0, win);
+    }
+
+    // 2-D overload — alloc_shared(nx, ny, buf, win)
+    // buf[i][j] == base_ptr[i * ny + j].  Row-pointer array allocated with new[].
+    template<typename T>
+    void alloc_shared(int nx, int ny, T**& buf, MPI_Win& win) {
+        int count = (local_rank_ == 0) ? nx * ny : 0;
+        T* base_ptr = nullptr;
+        MPI_Win_allocate_shared(
+            static_cast<MPI_Aint>(count) * static_cast<MPI_Aint>(sizeof(T)),
+            static_cast<int>(sizeof(T)), MPI_INFO_NULL, node_comm_,
+            &base_ptr, &win);
+        int *model = nullptr, flag = 0;
+        MPI_Win_get_attr(win, MPI_WIN_MODEL, &model, &flag);
+        if (local_rank_ != 0) {
+            MPI_Aint sz_dummy = 0;  int disp_dummy = 0;
+            MPI_Win_shared_query(win, 0, &sz_dummy, &disp_dummy, &base_ptr);
+        }
+        buf = new T*[static_cast<std::size_t>(nx)];
+        for (int i = 0; i < nx; ++i)
+            buf[i] = base_ptr + i * ny;
+        MPI_Win_fence(0, win);
+    }
+
+    // Free a 1-D shared window.  Resets win to MPI_WIN_NULL and buf to nullptr.
+    template<typename T>
+    void free_shared(T*& ptr, MPI_Win& win) {
+        if (win != MPI_WIN_NULL) { MPI_Win_free(&win); win = MPI_WIN_NULL; }
+        ptr = nullptr;
+    }
+
+    // Free a 2-D shared window.  Also deletes the row-pointer array.
+    template<typename T>
+    void free_shared(T**& buf, MPI_Win& win) {
+        if (win != MPI_WIN_NULL) { MPI_Win_free(&win); win = MPI_WIN_NULL; }
+        delete[] buf;
+        buf = nullptr;
     }
 
 private:

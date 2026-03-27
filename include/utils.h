@@ -4,6 +4,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <cmath>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,4 +32,19 @@ inline Eigen::Matrix<T, Eigen::Dynamic, 1> vp2rho(const Eigen::Matrix<T, Eigen::
     return (1.6612*vp.array() - 0.4721*vp.array().square() + 
             0.0671*vp.array().cube() - 0.0043*vp.array().pow(4) + 
             0.000106*vp.array().pow(5)).matrix();
+}
+
+template<typename T>
+inline T gps2dist(T lat0, T lon0, T lat1, T lon1)
+{
+    using std::sin; using std::cos; using std::atan2; using std::sqrt;
+
+    T dlat = (lat0 - lat1) * DEG2RAD;
+    T dlon = (lon1 - lon0) * DEG2RAD;
+    T a = sin(dlat * T(0.5)) * sin(dlat * T(0.5))
+        + sin(dlon * T(0.5)) * sin(dlon * T(0.5))
+        * cos(lat0 * DEG2RAD) * cos(lat1 * DEG2RAD);
+    T rad = T(2.0) * atan2(sqrt(a), sqrt(T(1.0) - a));
+
+    return R_EARTH * rad;
 }
