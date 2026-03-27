@@ -1,21 +1,27 @@
 #include "src_rec.h"
 #include "parallel.h"
 #include "utils.h"
+#include "config.h"
 
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <vector>
+#include <string>
 
 
 // ---------------------------------------------------------------------------
 void SrcRec::load(const std::string& filepath)
 {
     auto& mpi = Parallel::mpi();
+    // auto& IP = InputParams::IP();
+    auto& logger = ATTLogger::logger();
 
     std::vector<real_t> v_stla, v_stlo, v_evla, v_evlo, v_dist,
                         v_period, v_tt, v_vel, v_weight;
     std::vector<std::string> v_evtname, v_staname;
+
+    logger.Info("Loading source-receiver table from " + filepath, MODULE_SRCREC);
 
     // 1. Rank 0 reads the CSV
     if (mpi.is_main()) {
@@ -63,8 +69,6 @@ void SrcRec::load(const std::string& filepath)
 
     // 2. Broadcast row count
     mpi.bcast(n_obs);
-    mpi.bcast(evtname);
-    mpi.bcast(staname);
 
     // 3. One shared window per numeric field
     mpi.alloc_shared(n_obs, stla, win_stla_);
@@ -98,20 +102,87 @@ void SrcRec::load(const std::string& filepath)
     mpi.sync_from_main_rank(tt, n_obs);
     mpi.sync_from_main_rank(vel, n_obs);
     mpi.sync_from_main_rank(weight, n_obs);
+
+    get_events();
 }
+
+void SrcRec::get_events(){
+    auto& mpi = Parallel::mpi();
+    auto& logger = ATTLogger::logger();
+
+    if (mpi.is_main()){
+        src_name_list.resize(evtname.size());
+        std::copy(evtname.begin(), evtname.end(), src_name_list.begin());
+        // Extract unique event names
+        std::sort(src_name_list.begin(), src_name_list.end());
+        src_name_list.erase(std::unique(src_name_list.begin(), src_name_list.end()), src_name_list.end());
+
+        for (const auto& src : src_name_list) {
+            event_info info;
+            for (int i = 0; i < n_obs; ++i) {
+                if (evtname[i] == src) {
+                    info.rec_indices.push_back(i);
+                    info.evla = evla[i];
+                    info.evlo = evlo[i];
+                }
+            }
+            if (info.rec_indices.size() > 0) {
+                events[src] = info;
+            }
+        }
+        nsrc_total = static_cast<int>(events.size());
+    }
+    mpi.barrier();
+    mpi.bcast(nsrc_total);
+
+    // distribute events map to all ranks
+    logger.Info("Distributing event information to all ranks", MODULE_SRCREC);    
+    for (int i_src = 0; i_src < nsrc_total; i_src++) {
+        int dst_rank = mpi.select_rank_for_src(i_src);
+        
+        std::string src_name;
+        if (mpi.is_main()) src_name = src_name_list[i_src];
+        mpi.bcast(src_name);
+
+        if (mpi.is_main()) {
+            if (dst_rank == 0) {
+                src_name_list_local.push_back(src_name);
+                events_local[src_name] = events[src_name];
+            } else {
+                event_info info = events[src_name];
+                int n_rec = static_cast<int>(info.rec_indices.size());
+                mpi.send(&info.evla, 1, dst_rank);
+                mpi.send(&info.evlo, 1, dst_rank);
+                mpi.send(&n_rec, 1, dst_rank);
+                mpi.send(info.rec_indices.data(), n_rec, dst_rank);
+            }
+        } else if (mpi.rank() == dst_rank) {
+            src_name_list_local.push_back(src_name);
+            event_info info;
+            int n_rec = 0;
+            mpi.recv(&info.evla, 1, 0);
+            mpi.recv(&info.evlo, 1, 0);
+            mpi.recv(&n_rec, 1, 0);
+            info.rec_indices.resize(n_rec);
+            mpi.recv(info.rec_indices.data(), n_rec, 0);
+            events_local[src_name] = info;
+        }
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 void SrcRec::release_shm()
 {
-    auto& par = Parallel::mpi();
-    par.free_shared(stla,       win_stla_);
-    par.free_shared(stlo,       win_stlo_);
-    par.free_shared(evla,       win_evla_);
-    par.free_shared(evlo,       win_evlo_);
-    par.free_shared(dist,       win_dist_);
-    par.free_shared(period_all, win_period_);
-    par.free_shared(tt,         win_tt_);
-    par.free_shared(vel,        win_vel_);
-    par.free_shared(weight,     win_weight_);
+    auto& mpi = Parallel::mpi();
+    mpi.free_shared(stla,       win_stla_);
+    mpi.free_shared(stlo,       win_stlo_);
+    mpi.free_shared(evla,       win_evla_);
+    mpi.free_shared(evlo,       win_evlo_);
+    mpi.free_shared(dist,       win_dist_);
+    mpi.free_shared(period_all, win_period_);
+    mpi.free_shared(tt,         win_tt_);
+    mpi.free_shared(vel,        win_vel_);
+    mpi.free_shared(weight,     win_weight_);
 }
 

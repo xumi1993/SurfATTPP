@@ -5,6 +5,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <cmath>
+#include <filesystem>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,4 +48,23 @@ inline T gps2dist(T lat0, T lon0, T lat1, T lon1)
     T rad = T(2.0) * atan2(sqrt(a), sqrt(T(1.0) - a));
 
     return R_EARTH * rad;
+}
+
+// check command line options
+inline void parse_options(int argc, char* argv[]){
+    bool input_file_found = false;
+
+    for (int i = 1; i < argc; i++){
+       if (strcmp(argv[i],"-i") == 0){    // have input file
+            input_file = argv[i+1];
+            input_file_found = std::filesystem::exists(input_file);  // check if file exists
+        }
+    }
+
+    // error if input_file is not found
+    if(!input_file_found){
+        throw std::runtime_error(
+            "input file not found\nusage: mpirun -np 4 ./REFATT -i input_params.yaml"
+        );
+    }
 }

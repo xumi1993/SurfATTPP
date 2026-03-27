@@ -11,10 +11,22 @@
 #include <string>
 #include <vector>
 
+struct event_info {
+    real_t evla;
+    real_t evlo;
+    std::vector<int> rec_indices;
+};
+
 class SrcRec {
 public:
-    // Meyers singleton — thread-safe (C++11 and later)
-    static SrcRec& SR() {
+    // Phase-velocity observation table
+    static SrcRec& SR_ph() {
+        static SrcRec inst;
+        return inst;
+    }
+
+    // Group-velocity observation table
+    static SrcRec& SR_gr() {
         static SrcRec inst;
         return inst;
     }
@@ -51,7 +63,11 @@ public:
     real_t* tt_fwd    = nullptr;  // forward-modeled travel time (computed in surfdisp.cpp)
 
     std::vector<std::string> evtname;  
-    std::vector<std::string> staname;  
+    std::vector<std::string> staname;
+    std::map<std::string, event_info> events;  // map from event name to list of row indices for that event
+    std::map<std::string, event_info> events_local; 
+    std::vector<std::string> src_name_list_local;
+    std::vector<std::string> src_name_list;
 
 private:
     SrcRec() = default;
@@ -73,4 +89,8 @@ private:
         "evtname", "evla", "evlo", "period",
         "weight", "dist", "vel"
     };
+
+    void get_events();
+    int nsrc_total = 0;
+
 };

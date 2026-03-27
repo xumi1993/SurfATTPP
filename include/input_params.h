@@ -80,7 +80,7 @@ public:
         } else {
             get_IP_ptr() = std::make_unique<InputParams>();
         }
-        get_IP_ptr()->bcast();
+        get_IP_ptr()->bcast_all_params();
     }
     static InputParams &IP() {
         auto *ptr = get_IP_ptr().get();
@@ -94,8 +94,7 @@ public:
     InputParams() = default;
 
     // Broadcast all parameters from rank 0 to all other ranks.
-    void bcast();
-
+    void bcast_all_params();
     // Typed accessors for each section
     const DataParams      &data()      const { return data_; }
     const OutputParams    &output()    const { return output_; }

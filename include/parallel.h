@@ -36,6 +36,9 @@ public:
     static Parallel &mpi();
     bool is_main()       const { return rank_ == 0; }
     bool is_node_main()  const { return local_rank_ == 0; }
+    inline int select_rank_for_src(const int& id_src){
+        return id_src % size_;
+    }
 
     // ---- Basic query -------------------------------------------------------
     int      rank()       const { return rank_; }
@@ -46,6 +49,7 @@ public:
     MPI_Comm node_comm()  const { return node_comm_; }
 
     // ---- Lifecycle ---------------------------------------------------------
+    ~Parallel() { finalize(); }
     void finalize();
     [[noreturn]] void abort();
 
@@ -71,13 +75,28 @@ public:
     void bcast(bool *buf, int count);
     // string
     void bcast(std::string &s);
-    // vector of strings
-    void bcast(std::vector<std::string> &v) {
+
+    template<typename T>
+    inline void bcast_vec(std::vector<T> &v) {
         int sz = static_cast<int>(v.size());
         bcast(sz);
-        if (!is_main()) v.resize(sz);
-        for (auto& s : v) bcast(s);
+        v.resize(sz);
+        bcast(v.data(), sz);
     }
+
+    // std::vector<bool> is special — proxy elements, not real bools.
+    inline void bcast_bool_vec(std::vector<bool> &v) {
+        int sz = static_cast<int>(v.size());
+        bcast(sz);
+        v.resize(sz);
+        std::vector<int> tmp(sz);
+        if (is_main())
+            for (int i = 0; i < sz; ++i) tmp[i] = v[i] ? 1 : 0;
+        bcast(tmp.data(), sz);
+        if (!is_main())
+            for (int i = 0; i < sz; ++i) v[i] = (tmp[i] != 0);
+    }
+
 
     // ---- Reduce to rank 0  (min / max / sum) --------------------------------
     template<typename T>
@@ -96,6 +115,11 @@ public:
     template<typename T>
     void sum_all(const T *send, T *recv, int count) {
         MPI_Reduce(send, recv, count, mpi_type_of<T>(), MPI_SUM, 0, comm_);
+    }
+
+    template<typename T>
+    void sum_all_vect_inplace(std::vector<T> &buf, int count) {
+        MPI_Reduce(MPI_IN_PLACE, buf.data(), buf.size(), mpi_type_of<T>(), MPI_SUM, 0, comm_);
     }
 
     // ---- Allreduce  (min / max / sum) ---------------------------------------
@@ -122,6 +146,11 @@ public:
         std::vector<T> tmp(buf, buf + count);
         MPI_Allreduce(tmp.data(), buf, count, mpi_type_of<T>(), MPI_MAX, comm_);
     }
+
+    template<typename T>
+    void sum_all_all_vect_inplace(std::vector<T> &buf) {
+        MPI_Allreduce(MPI_IN_PLACE, buf.data(), buf.size(), mpi_type_of<T>(), MPI_SUM, comm_);
+    }
     // maxloc (returns {value, rank} pair)
     template<typename T>
     void maxloc_all(T send_val, int send_rank, T &recv_val, int &recv_rank) {
@@ -145,13 +174,26 @@ public:
 
     // ---- Blocking send / recv ----------------------------------------------
     template<typename T>
-    void send(const T *buf, int count, int dest, int tag) {
-        MPI_Send(buf, count, mpi_type_of<T>(), dest, tag, comm_);
+    void send(const T *buf, int count, int dest) {
+        MPI_Send(buf, count, mpi_type_of<T>(), dest, MPI_TAG_BASE, comm_);
     }
     template<typename T>
-    void recv(T *buf, int count, int src, int tag) {
-        MPI_Recv(buf, count, mpi_type_of<T>(), src, tag, comm_,
+    void recv(T *buf, int count, int src) {
+        MPI_Recv(buf, count, mpi_type_of<T>(), src, MPI_TAG_BASE, comm_,
                  MPI_STATUS_IGNORE);
+    }
+
+    void send(std::string &s, int dest) {
+        int len = static_cast<int>(s.size());
+        MPI_Send(&len, 1, MPI_INT, dest, MPI_TAG_BASE, comm_);
+        MPI_Send(s.data(), len, MPI_CHAR, dest, MPI_TAG_BASE, comm_);
+    }
+
+    void recv(std::string &s, int src) {
+        int len;
+        MPI_Recv(&len, 1, MPI_INT, src, MPI_TAG_BASE, comm_, MPI_STATUS_IGNORE);
+        s.resize(len);
+        MPI_Recv(s.data(), len, MPI_CHAR, src, MPI_TAG_BASE, comm_, MPI_STATUS_IGNORE);
     }
 
     // ---- Gather  (to rank 0) ------------------------------------------------
@@ -198,16 +240,13 @@ public:
     // left to the caller (or use bcast within the node communicator).
     template<typename T>
     void sync_from_main_rank(T *buf, int count) {
-        constexpr int TAG = 1000;
         if (rank_ == 0) {
             for (int i = 1; i < size_; ++i) {
-                if (rank_map_[i][1] == 0)          // head of another node
-                    MPI_Send(buf, count, mpi_type_of<T>(),
-                             rank_map_[i][0], TAG, comm_);
+                if (rank_map_[i] == 0)          // head of another node
+                    send(buf, count, i);
             }
         } else if (local_rank_ == 0) {
-            MPI_Recv(buf, count, mpi_type_of<T>(),
-                     0, TAG, comm_, MPI_STATUS_IGNORE);
+            recv(buf, count, 0);
         }
         barrier();
     }
@@ -288,7 +327,6 @@ private:
     MPI_Comm node_comm_{MPI_COMM_NULL};
 
     // rank_map_[i] = {global_rank, local_rank_within_node}
-    std::vector<std::array<int, 2>> rank_map_;
+    std::vector<int> rank_map_;
 
-    void build_rank_map();
 };

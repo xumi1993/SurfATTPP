@@ -104,7 +104,6 @@ InputParams::InputParams(const std::string &filepath)
     load_domain(require_section("domain"));
     load_topo(require_section("topo"));
     load_inversion(require_section("inversion"));
-    bcast();
 }
 
 YAML::Node InputParams::resolve(const std::string &key) const {
@@ -130,34 +129,13 @@ bool InputParams::has(const std::string &key) const {
 // ---------------------------------------------------------------------------
 
 // Convenience: resize a vector on non-main ranks then broadcast its data.
-template<typename T>
-static void bcast_vec(std::vector<T> &v, Parallel &mpi) {
-    int sz = static_cast<int>(v.size());
-    mpi.bcast(sz);
-    v.resize(sz);
-    mpi.bcast(v.data(), sz);
-}
-
-// std::vector<bool> is special — proxy elements, not real bools.
-static void bcast_bool_vec(std::vector<bool> &v, Parallel &mpi) {
-    int sz = static_cast<int>(v.size());
-    mpi.bcast(sz);
-    v.resize(sz);
-    std::vector<int> tmp(sz);
-    if (mpi.is_main())
-        for (int i = 0; i < sz; ++i) tmp[i] = v[i] ? 1 : 0;
-    mpi.bcast(tmp.data(), sz);
-    if (!mpi.is_main())
-        for (int i = 0; i < sz; ++i) v[i] = (tmp[i] != 0);
-}
-
 void InputParams::bcast_data() {
     auto &mpi = Parallel::mpi();
     mpi.bcast(data_.src_rec_file_ph);
     mpi.bcast(data_.src_rec_file_gr);
     mpi.bcast(data_.iwave);
-    bcast_bool_vec(data_.vel_type, mpi);
-    bcast_vec(data_.weights, mpi);
+    mpi.bcast_bool_vec(data_.vel_type);
+    mpi.bcast_vec(data_.weights);
 }
 
 void InputParams::bcast_output() {
@@ -169,8 +147,8 @@ void InputParams::bcast_output() {
 
 void InputParams::bcast_domain() {
     auto &mpi = Parallel::mpi();
-    bcast_vec(domain_.depth,    mpi);
-    bcast_vec(domain_.interval, mpi);
+    mpi.bcast_vec(domain_.depth);
+    mpi.bcast_vec(domain_.interval);
     mpi.bcast(domain_.num_grid_margin);
 }
 
@@ -186,11 +164,11 @@ void InputParams::bcast_inversion() {
     mpi.bcast(inversion_.use_alpha_beta_rho);
     mpi.bcast(inversion_.rho_scaling);
     mpi.bcast(inversion_.init_model_type);
-    bcast_vec(inversion_.vel_range, mpi);
+    mpi.bcast_vec(inversion_.vel_range);
     mpi.bcast(inversion_.init_model_path);
     mpi.bcast(inversion_.kdensity_coe);
     mpi.bcast(inversion_.ncomponents);
-    bcast_vec(inversion_.n_inv_grid, mpi);
+    mpi.bcast_vec(inversion_.n_inv_grid);
     mpi.bcast(inversion_.niter);
     mpi.bcast(inversion_.min_derr);
     mpi.bcast(inversion_.optim_method);
@@ -199,7 +177,7 @@ void InputParams::bcast_inversion() {
     mpi.bcast(inversion_.max_sub_niter);
 }
 
-void InputParams::bcast() {
+void InputParams::bcast_all_params() {
     bcast_data();
     bcast_output();
     bcast_domain();

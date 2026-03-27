@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <numeric>
+#include <iostream>
 
 // ---------------------------------------------------------------------------
 // Singleton
@@ -26,41 +27,24 @@ Parallel::Parallel() {
     if (ier != MPI_SUCCESS)
         throw std::runtime_error("Parallel: MPI_Init failed");
 
+    comm_ = MPI_COMM_WORLD;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
     MPI_Comm_size(MPI_COMM_WORLD, &size_);
-    comm_ = MPI_COMM_WORLD;
 
     // Create a shared-memory communicator to identify processes on the same node
-    MPI_Comm_split_type(comm_, MPI_COMM_TYPE_SHARED, rank_,
+    int split_status = MPI_Comm_split_type(comm_, MPI_COMM_TYPE_SHARED, rank_,
                         MPI_INFO_NULL, &node_comm_);
+    if (split_status != MPI_SUCCESS)
+        throw std::runtime_error("Parallel: MPI_Comm_split_type failed");
     MPI_Comm_rank(node_comm_, &local_rank_);
     MPI_Comm_size(node_comm_, &local_size_);
 
-    build_rank_map();
+    rank_map_.resize(size_);
+    rank_map_[rank_] = local_rank_;
+    sum_all_all_vect_inplace(rank_map_);
+
 }
 
-// ---------------------------------------------------------------------------
-// Build the global ↔ local rank map (mirrors init_mpi rank_map construction)
-// Each entry: {global_rank, local_rank_on_node}
-// ---------------------------------------------------------------------------
-
-void Parallel::build_rank_map() {
-    rank_map_.resize(size_, {0, 0});
-
-    // Each process contributes its own entry
-    std::vector<int> local_data(size_ * 2, 0);
-    local_data[rank_ * 2]     = rank_;
-    local_data[rank_ * 2 + 1] = local_rank_;
-
-    std::vector<int> global_data(size_ * 2, 0);
-    MPI_Allreduce(local_data.data(), global_data.data(),
-                  size_ * 2, MPI_INT, MPI_SUM, comm_);
-
-    for (int i = 0; i < size_; ++i) {
-        rank_map_[i][0] = global_data[i * 2];
-        rank_map_[i][1] = global_data[i * 2 + 1];
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Lifecycle

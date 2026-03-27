@@ -26,7 +26,7 @@ inline constexpr real_t REAL_MIN = std::numeric_limits<real_t>::lowest();
 // File paths
 // ---------------------------------------------------------------------------
 const std::string LOG_FNAME = "surfatt_runtime.log";
-
+inline std::string input_file;  // set by parse_options()
 
 // Constants
 constexpr real_t PI      = 3.14159265358979323846264338327950288;
@@ -45,3 +45,13 @@ constexpr real_t _9999_CR   = 9999.0;
 constexpr real_t _M_1_CR    = -1.0;
 constexpr real_t DEG2RAD   = PI/180.0;
 constexpr real_t RAD2DEG   = 180.0/PI;
+
+constexpr int MPI_TAG_BASE = 1000;  // base tag for all MPI messages; add to avoid conflicts with internal MPI tags
+
+// ---------------------------------------------------------------------------
+// module names
+// ---------------------------------------------------------------------------
+inline const std::string MODULE_SRCREC    = "SRCREC";
+inline const std::string MODULE_GRID      = "GRID";
+inline const std::string MODULE_OPTIM     = "OPTIM";
+inline const std::string MODULE_MAIN      = "MAIN";
