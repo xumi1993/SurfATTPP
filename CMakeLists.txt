@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 
 set(CMAKE_PROJECT_NAME "SurfATT")
-project( ${CMAKE_PROJECT_NAME} VERSION 2.0.0 LANGUAGES CXX)
+project( ${CMAKE_PROJECT_NAME} VERSION 2.0.0 LANGUAGES CXX Fortran)
 
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
@@ -15,6 +15,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
+
+set(CMAKE_CXX_FLAGS  "-g -Wall -DEIGEN_DONT_PARALLELIZE")
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU") 
+  set(CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE} -march=native -O3")
+  set(CMAKE_Fortran_FLAGS  "${CMAKE_Fortran_FLAGS} -march=native -ffixed-line-length-none")
+  #set(CMAKE_CXX_FLAGS_RELEASE  "-O0 -D_GLIBCXX_DEBUG")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+  set(CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE} -xHost -DEIGEN_STRONG_INLINE=inline -O3")
+  set(CMAKE_Fortran_FLAGS  "${CMAKE_Fortran_FLAGS} -xHost -extend-source")
+else ()
+  set(CMAKE_Fortran_FLAGS  "${CMAKE_Fortran_FLAGS} -march=native -ffixed-line-length-none")
+  set(CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE} -march=native -O3")
+  #set(CMAKE_CXX_FLAGS_RELEASE  "-O0 -D_GLIBCXX_DEBUG")
+endif()
 
 # ---------------------------------------------------------------------------
 # Precision option  (-DUSE_SINGLE_PRECISION=ON to use float)
@@ -30,6 +44,7 @@ endif()
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
+option(USE_EXTERNAL_LIBS OFF "Use system-installed libraries instead of bundled submodules")
 
 # MPI (required)
 find_package(MPI REQUIRED)
@@ -72,70 +87,84 @@ add_subdirectory(external_libs)
 
 # yaml-cpp: prefer a system installation, fall back to the bundled submodule.
 find_package(yaml-cpp QUIET)
-if (yaml-cpp_FOUND)
+if (yaml-cpp_FOUND AND NOT ${USE_EXTERNAL_LIBS})
     message(STATUS "Found yaml-cpp: ${YAML_CPP_INCLUDE_DIR}")
-    # Some older cmake configs export the include path only as a variable, not
-    # as a target property.  Create an INTERFACE target so downstream code can
-    # always use target_link_libraries(... yaml-cpp).
-    if (NOT TARGET yaml-cpp)
-        add_library(yaml-cpp INTERFACE IMPORTED)
+    # Normalize to yaml-cpp::yaml-cpp to avoid deprecated target warnings.
+    if (NOT TARGET yaml-cpp::yaml-cpp)
+        if (TARGET yaml-cpp)
+            add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
+        else()
+            add_library(yaml-cpp::yaml-cpp INTERFACE IMPORTED)
+            if (YAML_CPP_INCLUDE_DIR)
+                set_property(TARGET yaml-cpp::yaml-cpp APPEND PROPERTY
+                    INTERFACE_INCLUDE_DIRECTORIES "${YAML_CPP_INCLUDE_DIR}")
+            endif()
+            if (YAML_CPP_LIBRARIES)
+                set_property(TARGET yaml-cpp::yaml-cpp APPEND PROPERTY
+                    INTERFACE_LINK_LIBRARIES "${YAML_CPP_LIBRARIES}")
+            endif()
+        endif()
     endif()
-    set_property(TARGET yaml-cpp APPEND PROPERTY
-        INTERFACE_INCLUDE_DIRECTORIES "${YAML_CPP_INCLUDE_DIR}")
-    set_property(TARGET yaml-cpp APPEND PROPERTY
-        INTERFACE_LINK_LIBRARIES "${YAML_CPP_LIBRARIES}")
 else()
     message(STATUS "yaml-cpp not found via find_package, using submodule")
     set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
     add_subdirectory(external_libs/yaml-cpp)
+    if (TARGET yaml-cpp AND NOT TARGET yaml-cpp::yaml-cpp)
+        add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
+    endif()
 endif()
 
 # ------------------------------------------------------
 # find spdlog
 find_package(spdlog QUIET)
 if (spdlog_FOUND AND NOT ${USE_EXTERNAL_LIBS})
-  message(STATUS "spdlog found")
-  message(STATUS "SPDLOG_INCLUDE_DIRS: ${SPDLOG_INCLUDE_DIRS}")
-  message(STATUS "SPDLOG_LIBRARIES: ${SPDLOG_LIBRARIES}")
+    message(STATUS "spdlog found")
 else()
   message(STATUS "spdlog not found. use source code external_libs/spdlog...")
   initialize_submodule(external_libs/spdlog)
   add_subdirectory(external_libs/spdlog EXCLUDE_FROM_ALL)
-  set(SPDLOG_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/spdlog/include)
 endif()
-include_directories(${SPDLOG_INCLUDE_DIRS})
+
+if (TARGET spdlog::spdlog_header_only)
+    set(SPDLOG_TARGET spdlog::spdlog_header_only)
+elseif(TARGET spdlog::spdlog)
+    set(SPDLOG_TARGET spdlog::spdlog)
+elseif(TARGET spdlog)
+    add_library(spdlog::spdlog ALIAS spdlog)
+    set(SPDLOG_TARGET spdlog::spdlog)
+else()
+    message(FATAL_ERROR "spdlog target not found after discovery")
+endif()
+message(STATUS "Using spdlog target: ${SPDLOG_TARGET}")
 
 # ---------------------------------------------------------------------------
 # Eigen3
 # ---------------------------------------------------------------------------
-set(EIGEN3_HINT "/Users/xumijian/opt/eigen-5.0.0")
-find_package(Eigen3 QUIET HINTS "${EIGEN3_HINT}/share/eigen3/cmake"
-                                "${EIGEN3_HINT}/lib/cmake/eigen3"
-                                "${EIGEN3_HINT}/share/cmake/Modules")
-if (Eigen3_FOUND OR EIGEN3_FOUND)
-    message(STATUS "Eigen3 found via find_package")
+find_package(Eigen3 REQUIRED)
+if (Eigen3_FOUND)
+    message(STATUS "Eigen3 found: ${EIGEN3_INCLUDE_DIR}")
 else()
-    # Fall back to manual header-only include
-    if (EXISTS "${EIGEN3_HINT}/include/eigen3/Eigen/Core")
-        add_library(Eigen3::Eigen INTERFACE IMPORTED)
-        set_target_properties(Eigen3::Eigen PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_HINT}/include/eigen3")
-        message(STATUS "Eigen3 set up manually from ${EIGEN3_HINT}/include/eigen3")
-    else()
-        message(WARNING "Eigen3 not found — eigen tests will not build correctly")
-    endif()
+    message(FATAL_ERROR "Eigen3 not found")
 endif()
-
 # ---------------------------------------------------------------------------
 # Library
 # ---------------------------------------------------------------------------
 
+add_subdirectory("src/surfker")
+
 file(GLOB SOURCES "src/*.cpp")
-add_library(input_params OBJECT ${SOURCES})
-target_include_directories(input_params PUBLIC
+add_library(objs OBJECT ${SOURCES} ${SURFKER_SOURCES})
+target_include_directories(objs PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
-target_link_libraries(input_params PUBLIC yaml-cpp MPI::MPI_CXX ${MY_HDF5_LIBS})
+target_link_libraries(objs PUBLIC
+    Eigen3::Eigen
+    yaml-cpp::yaml-cpp
+    ${SPDLOG_TARGET}
+    MPI::MPI_CXX
+    ${MY_HDF5_LIBS}
+    surfker_obj
+)
 
 # ---------------------------------------------------------------------------
 # Tests

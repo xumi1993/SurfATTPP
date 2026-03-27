@@ -4,22 +4,25 @@
 # parent CMakeLists.txt, which already propagates MPI, HDF5, and yaml-cpp.
 # ---------------------------------------------------------------------------
 
+set(LIBS_TO_LINK objs surfker_obj Eigen3::Eigen ${MY_HDF5_LIBS} ${SPDLOG_TARGET}
+    yaml-cpp::yaml-cpp MPI::MPI_CXX)
+
 # --- yaml_test --------------------------------------------------------------
 add_executable(test_input_params
     yaml_test/test_input_params.cpp
 )
-target_link_libraries(test_input_params PRIVATE input_params)
+target_link_libraries(test_input_params PRIVATE ${LIBS_TO_LINK})
 
 add_executable(test_input_params_mpi
     yaml_test/test_input_params_mpi.cpp
 )
-target_link_libraries(test_input_params_mpi PRIVATE input_params)
+target_link_libraries(test_input_params_mpi PRIVATE ${LIBS_TO_LINK})
 
 # --- logger_test ------------------------------------------------------------
 add_executable(test_logger
     logger_test/test_logger.cpp
 )
-target_link_libraries(test_logger PRIVATE input_params)
+target_link_libraries(test_logger PRIVATE ${LIBS_TO_LINK})
 
 # --- csv_test ---------------------------------------------------------------
 add_executable(test_csv
@@ -32,19 +35,19 @@ target_compile_features(test_csv PRIVATE cxx_std_20)
 add_executable(test_eigen_mpi
     eigen_test/test_eigen_mpi.cpp
 )
-target_link_libraries(test_eigen_mpi PRIVATE input_params Eigen3::Eigen)
+target_link_libraries(test_eigen_mpi PRIVATE ${LIBS_TO_LINK})
 
 # --- hdf5_test --------------------------------------------------------------
 add_executable(test_h5io
     hdf5_test/test_h5io.cpp
 )
-target_link_libraries(test_h5io PRIVATE input_params Eigen3::Eigen ${MY_HDF5_LIBS})
+target_link_libraries(test_h5io PRIVATE ${LIBS_TO_LINK})
 
 # --- eikonal_test -----------------------------------------------------------
 add_executable(test_eikonal
     eikonal_test/test_eikonal.cpp
 )
-target_link_libraries(test_eikonal PRIVATE input_params Eigen3::Eigen)
+target_link_libraries(test_eikonal PRIVATE ${LIBS_TO_LINK})
 target_compile_options(test_eikonal PRIVATE -O2)
 
 # ---------------------------------------------------------------------------
