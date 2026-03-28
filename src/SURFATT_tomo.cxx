@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "config.h"
 #include "utils.h"
+#include "model_grid.h"
 
 #include <algorithm>
 
@@ -15,7 +16,6 @@ int main(int argc, char* argv[])
 
     // initialise MPI
     Parallel::init();
-    auto& mpi = Parallel::mpi();
 
     // read input parameters
     InputParams::read(input_file);
@@ -33,8 +33,9 @@ int main(int argc, char* argv[])
     if (IP.data().vel_type[1]) SrcRec::SR_gr().load(IP.data().src_rec_file_gr);
     SrcRec::build_stas();
 
+    // build model grid
+    ModelGrid::init();
     // check data
-    std::cout << "Total number of stations: " << SrcRec::stas().stnm[10] << std::endl;
 
     SrcRec::SR_ph().release_shm();
     SrcRec::SR_gr().release_shm();
