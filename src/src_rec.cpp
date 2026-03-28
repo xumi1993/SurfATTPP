@@ -104,6 +104,7 @@ void SrcRec::load(const std::string& filepath)
     mpi.sync_from_main_rank(weight, n_obs);
 
     get_events();
+    get_periods();
 }
 
 void SrcRec::get_events(){
@@ -170,6 +171,88 @@ void SrcRec::get_events(){
     }
 }
 
+void SrcRec::get_periods(){
+    auto& mpi = Parallel::mpi();
+
+    if (mpi.is_main()){
+        std::vector<real_t> periods_vec(n_obs);
+        std::copy(period_all, period_all + n_obs, periods_vec.begin());
+        std::sort(periods_vec.begin(), periods_vec.end());
+        periods_vec.erase(std::unique(periods_vec.begin(), periods_vec.end()), periods_vec.end());
+        periods_info.nperiod = static_cast<int>(periods_vec.size());
+
+        periods_info.periods = Eigen::Map<Eigen::VectorX<real_t>>(periods_vec.data(), periods_info.nperiod);
+        periods_info.meanvel = Eigen::VectorX<real_t>::Zero(periods_info.nperiod);
+
+        for (int i = 0; i < periods_info.nperiod; ++i) {
+            real_t per = periods_info.periods(i);
+            int count = 0;
+            real_t sum_vel = _0_CR;
+            for (int j = 0; j < n_obs; ++j) {
+                if (std::abs(period_all[j] - per) < 1e-6) {
+                    count++;
+                    sum_vel += vel[j];
+                }
+            }
+            periods_info.n_obs.push_back(count);
+            periods_info.meanvel(i) = sum_vel / count;
+        }
+    }
+    mpi.barrier();
+}
+
+// ---------------------------------------------------------------------------
+void SrcRec::build_stas()
+{
+    auto& mpi = Parallel::mpi();
+    auto& st  = stas();
+
+    if (mpi.is_main()) {
+        // Build staname → (stla, stlo) map for each loaded table
+        auto make_map = [](const SrcRec& sr) {
+            std::map<std::string, std::pair<real_t, real_t>> m;
+            for (int i = 0; i < sr.n_obs; ++i)
+                m.try_emplace(sr.staname[i], sr.stla[i], sr.stlo[i]);
+            return m;
+        };
+
+        const bool have_ph = (SR_ph().n_obs > 0);
+        const bool have_gr = (SR_gr().n_obs > 0);
+
+        std::map<std::string, std::pair<real_t, real_t>> merged;
+        if (have_ph && have_gr) {
+            auto map_ph = make_map(SR_ph());
+            auto map_gr = make_map(SR_gr());
+            // intersection: keep only names present in both
+            for (auto& [name, coords] : map_ph)
+                if (map_gr.count(name)) merged[name] = coords;
+        } else if (have_ph) {
+            merged = make_map(SR_ph());
+        } else if (have_gr) {
+            merged = make_map(SR_gr());
+        }
+
+        st.stnm.clear(); st.stla.clear(); st.stlo.clear();
+        for (auto& [name, coords] : merged) {
+            st.stnm.push_back(name);
+            st.stla.push_back(coords.first);
+            st.stlo.push_back(coords.second);
+        }
+    }
+
+    // Broadcast to all ranks
+    int nsta = mpi.is_main() ? static_cast<int>(st.stnm.size()) : 0;
+    mpi.bcast(nsta);
+    if (!mpi.is_main()) {
+        st.stnm.resize(nsta);
+        st.stla.resize(nsta);
+        st.stlo.resize(nsta);
+    }
+    for (int i = 0; i < nsta; ++i)
+        mpi.bcast(st.stnm[i]);
+    mpi.bcast(st.stla.data(), nsta);
+    mpi.bcast(st.stlo.data(), nsta);
+}
 
 // ---------------------------------------------------------------------------
 void SrcRec::release_shm()

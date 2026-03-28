@@ -22,6 +22,10 @@ inline constexpr real_t REAL_EPS = std::numeric_limits<real_t>::epsilon();
 inline constexpr real_t REAL_MAX = std::numeric_limits<real_t>::max();
 inline constexpr real_t REAL_MIN = std::numeric_limits<real_t>::lowest();
 
+
+inline int ngrid_i, ngrid_j, ngrid_k;  // set by DomainParams::compute_grid()
+#define I2V(A,B,C) ((A)*ngrid_j*ngrid_k + (B)*ngrid_k + (C))  // 3D vector to 1D array index
+
 // ---------------------------------------------------------------------------
 // File paths
 // ---------------------------------------------------------------------------
@@ -49,9 +53,16 @@ constexpr real_t RAD2DEG   = 180.0/PI;
 constexpr int MPI_TAG_BASE = 1000;  // base tag for all MPI messages; add to avoid conflicts with internal MPI tags
 
 // ---------------------------------------------------------------------------
+// constant parameters
+// ---------------------------------------------------------------------------
+constexpr int IFLSPH = 1;
+constexpr int SURF_MODE = 1;
+
+// ---------------------------------------------------------------------------
 // module names
 // ---------------------------------------------------------------------------
 inline const std::string MODULE_SRCREC    = "SRCREC";
 inline const std::string MODULE_GRID      = "GRID";
 inline const std::string MODULE_OPTIM     = "OPTIM";
 inline const std::string MODULE_MAIN      = "MAIN";
+inline const std::string MODULE_INV1D     = "INV1D";
