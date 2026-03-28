@@ -22,6 +22,112 @@ inline real_t bilinear(const Eigen::MatrixXd& M,
          +    r1 *  r2  *M(idx0+1,idy0+1);
 }
 
+template <typename T>
+inline int locate_bissection(const T* valx, int n, T x){
+    int low = 0;
+    int high = n - 1;
+
+    if (x < valx[0] || x > valx[n-1]) {
+        return -1;
+    }
+    while (high - low > 1) {
+        int mid = (high + low) / 2;
+        if (valx[mid] > x)
+            high = mid;
+        else
+            low = mid;
+    }
+    if (x == valx[0]) {
+        return 0;
+    } else if (x == valx[n-1]) {
+        return n-2;
+    } else {
+        return low;
+    }
+}
+
+inline real_t bilinear_interpolation(real_t* xgrids, real_t* ygrids, 
+                                     int nx, int ny, real_t* values, 
+                                     real_t x, real_t y){
+    // convert values to 2D array
+    std::vector<std::vector<real_t>> values_2d(nx, std::vector<real_t>(ny, 0.0));
+    for (int i = 0; i < nx; i++){
+        for (int j = 0; j < ny; j++){
+            values_2d[i][j] = values[I2V_common_2d(i, j, ny)];
+        }
+    }
+
+    // find the index of x and y in xgrids and ygrids
+    int x_idx = -1;
+    int y_idx = -1;
+    
+    // find closest x
+    for (int i = 0; i < nx-1; i++){
+        if (x == xgrids[i]){
+            x_idx = i;
+            break;
+        } else if (x > xgrids[i] && x < xgrids[i+1]){
+            x_idx = i;
+            break;
+        }
+    }
+    if (x == xgrids[nx-1]){
+        x_idx = nx-1;
+    }
+
+    // find closest y
+    for (int i = 0; i < ny-1; i++){
+        if (y == ygrids[i]){
+            y_idx = i;
+            break;
+        } else if (y > ygrids[i] && y < ygrids[i+1]){
+            y_idx = i;
+            break;
+        }
+    }
+    if (y == ygrids[ny-1]){
+        y_idx = ny-1;
+    }
+
+    // if x or y is not in xgrids or ygrids, return -1
+    if (x_idx == -1 || y_idx == -1){
+        return NAN;
+    }
+
+    // if x and y are in xgrids and ygrids, return the value
+    if (x_idx == nx-1 && y_idx == ny-1){
+        return values_2d[x_idx][y_idx];
+    }
+
+    // if x is in xgrids and y is in ygrids, return the value
+    if (x_idx == nx-1){
+        return values_2d[x_idx][y_idx] + (y - ygrids[y_idx]) * (values_2d[x_idx][y_idx+1] - values_2d[x_idx][y_idx]) / (ygrids[y_idx+1] - ygrids[y_idx]);
+    }
+
+    if (y_idx == ny-1){
+        return values_2d[x_idx][y_idx] + (x - xgrids[x_idx]) * (values_2d[x_idx+1][y_idx] - values_2d[x_idx][y_idx]) / (xgrids[x_idx+1] - xgrids[x_idx]);
+    }
+
+    // if x and y are not in xgrids and ygrids, return the interpolated value
+    real_t x1 = xgrids[x_idx];
+    real_t x2 = xgrids[x_idx+1];
+    real_t y1 = ygrids[y_idx];
+    real_t y2 = ygrids[y_idx+1];
+
+    real_t f11 = values_2d[x_idx][y_idx];
+    real_t f21 = values_2d[x_idx+1][y_idx];
+    real_t f12 = values_2d[x_idx][y_idx+1];
+    real_t f22 = values_2d[x_idx+1][y_idx+1];
+    
+    real_t result = f11 * (x2 - x) * (y2 - y) +
+                        f21 * (x - x1) * (y2 - y) + 
+                        f12 * (x2 - x) * (y - y1) + 
+                        f22 * (x - x1) * (y - y1);
+    result /= ((x2 - x1) * (y2 - y1));
+
+    return result;
+}
+
 inline real_t vs2vp(real_t vs) {
     return 0.9409 + 2.0947*vs - 0.8206*vs*vs + 0.2683*vs*vs*vs - 0.0251*vs*vs*vs*vs;
 }
@@ -109,6 +215,169 @@ inline T gps2dist(T lat0, T lon0, T lat1, T lon1)
     T rad = T(2.0) * atan2(sqrt(a), sqrt(T(1.0) - a));
 
     return R_EARTH * rad;
+}
+
+// ---------------------------------------------------------------------------
+// gaussian_smooth_geo_2
+//
+// 2-D Gaussian smoothing on a geographic (lon/lat) grid.
+// sigma is the half-width in arc-degrees (~111*sigma km).
+//
+// Window logic (faithfully matches the Fortran original):
+//   hx = ceil(3*sigma / dx)          — lon half-width, constant
+//   hy = ceil(3*sigma / cos(lat) / dy) — lat half-width, varies with lat
+//
+// Vectorization strategy:
+//   • sin²(Δlat/2) and cos(lat_sub) are precomputed once per latitude row j
+//     as Eigen arrays (wn elements).
+//   • For each i, sin²(Δlon/2) is an Eigen array (wm elements).
+//   • The haversine 'a' matrix (wm×wn) is built with two outer-product ops,
+//     so the weight matrix w is computed without any scalar loop.
+// ---------------------------------------------------------------------------
+inline Eigen::MatrixX<real_t> gaussian_smooth_geo_2(
+    const Eigen::MatrixX<real_t>& data,
+    const Eigen::VectorX<real_t>& lons,
+    const Eigen::VectorX<real_t>& lats,
+    real_t sigma)
+{
+    const int nx = data.rows();   // n_lon
+    const int ny = data.cols();   // n_lat
+
+    const real_t sigma3   = 3.0 * sigma;
+    const real_t sigma_sq = sigma * sigma;
+    const real_t dx = lons(1) - lons(0);   // lon spacing [deg]
+    const real_t dy = lats(1) - lats(0);   // lat spacing [deg]
+
+    // lon window half-width (constant across latitudes — matches Fortran nx)
+    const int hx = static_cast<int>(sigma3 / dx);
+
+    Eigen::MatrixX<real_t> smdata = Eigen::MatrixX<real_t>::Zero(nx, ny);
+
+    for (int j = 0; j < ny; ++j) {
+        const real_t lat0_rad = lats(j) * DEG2RAD;
+        const real_t cos_lat0 = std::cos(lat0_rad);
+
+        // lat window half-width (varies — matches Fortran ny = sigma3/cosd/dy)
+        const int hy = static_cast<int>(sigma3 / cos_lat0 / dy);
+        const int n1 = std::max(0, j - hy);
+        const int n2 = std::min(ny - 1, j + hy);
+        const int wn = n2 - n1 + 1;
+
+        // --- precompute haversine lat-terms for all wn lat points (vectorized) ---
+        // sin²(Δlat/2)  (wn,)
+        Eigen::ArrayX<real_t> sin2_dlat =
+            ((lats.segment(n1, wn).array() - lats(j)) * (DEG2RAD * 0.5)).sin().square();
+        // cos(lat_sub)  (wn,)
+        Eigen::ArrayX<real_t> cos_lat1 =
+            (lats.segment(n1, wn).array() * DEG2RAD).cos();
+
+        for (int i = 0; i < nx; ++i) {
+            const int m1 = std::max(0, i - hx);
+            const int m2 = std::min(nx - 1, i + hx);
+            const int wm = m2 - m1 + 1;
+
+            // sin²(Δlon/2)  (wm,)
+            Eigen::ArrayX<real_t> sin2_dlon =
+                ((lons.segment(m1, wm).array() - lons(i)) * (DEG2RAD * 0.5)).sin().square();
+
+            // Haversine 'a' matrix  (wm × wn):
+            //   a(mi,ni) = sin2_dlat(ni)
+            //            + cos_lat0 * cos_lat1(ni) * sin2_dlon(mi)
+            // Built as two outer products (no scalar loop):
+            Eigen::ArrayX<real_t> lon_contrib = cos_lat0 * sin2_dlon; // (wm,)
+            Eigen::ArrayXX<real_t> a =
+                sin2_dlat.matrix().transpose().replicate(wm, 1).array() // (wm,wn): each row = sin2_dlat
+                + lon_contrib.matrix() * cos_lat1.matrix().transpose(); // (wm,wn): outer product
+
+            // delta [arc-deg] = 2 * RAD2DEG * atan(sqrt(a / (1-a)))
+            // w = exp(-delta² / (2*sigma²))
+            // Combined: w = exp(-(2*RAD2DEG)² * atan²(√(a/(1-a))) / (2*sigma²))
+            a = a.min(static_cast<real_t>(1.0));  // guard numerical noise near 1
+            const real_t inv_2sig2 = 1.0 / (2.0 * sigma_sq);
+            constexpr real_t two_rad2deg = 2.0 * RAD2DEG;
+            Eigen::ArrayXX<real_t> w =
+                (-(two_rad2deg * (a / (1.0 - a)).sqrt().atan()).square() * inv_2sig2).exp();
+
+            smdata(i, j) = (w * data.block(m1, n1, wm, wn).array()).sum() / w.sum();
+        }
+    }
+    return smdata;
+}
+
+// ---------------------------------------------------------------------------
+// gradient_2_geo
+//
+// Computes the geographic gradient of a 2-D field f(nx, ny) defined on a
+// regular lon/lat grid.  The output arrays tx and ty hold the x (longitude)
+// and y (latitude) components of the gradient in units of [f-unit / km].
+//
+// Central differences are used for interior points; one-sided differences
+// at the boundaries.  Grid spacing is converted to km via the spherical-
+// Earth approximation:
+//     dx_km = R_EARTH * dlon_deg * DEG2RAD * cos(lat_deg * DEG2RAD)
+//     dy_km = R_EARTH * dlat_deg * DEG2RAD
+//
+// Parameters:
+//   f   – field matrix, shape (nx, ny)
+//   lon – longitude vector, length nx  [degrees]
+//   lat – latitude  vector, length ny  [degrees]
+//   tx  – output: gradient in x/lon direction, shape (nx, ny)
+//   ty  – output: gradient in y/lat direction, shape (nx, ny)
+// ---------------------------------------------------------------------------
+inline void gradient_2_geo(
+    const Eigen::MatrixX<real_t>& f,
+    const Eigen::VectorX<real_t>& lon,
+    const Eigen::VectorX<real_t>& lat,
+    Eigen::MatrixX<real_t>& tx,
+    Eigen::MatrixX<real_t>& ty)
+{
+    const int nx = static_cast<int>(f.rows());
+    const int ny = static_cast<int>(f.cols());
+
+    // --- grid spacing vectors (km) -------------------------------------------
+    // dx1(i) = lon[i]-lon[i-1],  dx1(0) = 0  (boundary sentinel, never divided)
+    // dy1(j) = lat[j]-lat[j-1],  dy1(0) = 0
+    Eigen::VectorX<real_t> dx1 = Eigen::VectorX<real_t>::Zero(nx);
+    Eigen::VectorX<real_t> dy1 = Eigen::VectorX<real_t>::Zero(ny);
+    dx1.tail(nx - 1) = lon.tail(nx - 1) - lon.head(nx - 1);
+    dy1.tail(ny - 1) = lat.tail(ny - 1) - lat.head(ny - 1);
+
+    // Convert to km.  dx additionally scaled by cos(lat) per column.
+    // cos_lat(j) shape: (ny,)
+    Eigen::VectorX<real_t> cos_lat = (lat.array() * DEG2RAD).cos();
+    dx1 *= R_EARTH * DEG2RAD;
+    dy1 *= R_EARTH * DEG2RAD;
+
+    // dx(i,j) = dx1_km(i) * cos_lat(j)  →  outer product (nx×1) × (1×ny)
+    // dy(i,j) = dy1_km(j)               →  broadcast (1×ny) over nx rows
+    Eigen::MatrixX<real_t> dx = dx1 * cos_lat.transpose();          // (nx, ny)
+    Eigen::MatrixX<real_t> dy = Eigen::VectorX<real_t>::Ones(nx)
+                                * dy1.transpose();                   // (nx, ny)
+
+    tx.resize(nx, ny);
+    ty.resize(nx, ny);
+
+    // --- x-direction gradient (along rows) -----------------------------------
+    // Interior: central difference  tx(i,j) = (f(i+1,j)-f(i-1,j)) / (2*dx(i,j))
+    //   f.bottomRows(nx-2) = rows 2..nx-1  →  f(i+1,:) for i=1..nx-2
+    //   f.topRows(nx-2)    = rows 0..nx-3  →  f(i-1,:) for i=1..nx-2
+    tx.middleRows(1, nx - 2).array() =
+        (f.bottomRows(nx - 2) - f.topRows(nx - 2)).array()
+        / (2.0 * dx.middleRows(1, nx - 2).array());
+    // Boundaries: one-sided
+    tx.row(0).array()      = (f.row(1)      - f.row(0)     ).array() / dx.row(1).array();
+    tx.row(nx-1).array()   = (f.row(nx-1)   - f.row(nx-2)  ).array() / dx.row(nx-1).array();
+
+    // --- y-direction gradient (along columns) --------------------------------
+    // Interior: central difference  ty(i,j) = (f(i,j+1)-f(i,j-1)) / (2*dy(i,j))
+    //   f.rightCols(ny-2) = cols 2..ny-1  →  f(:,j+1) for j=1..ny-2
+    //   f.leftCols(ny-2)  = cols 0..ny-3  →  f(:,j-1) for j=1..ny-2
+    ty.middleCols(1, ny - 2).array() =
+        (f.rightCols(ny - 2) - f.leftCols(ny - 2)).array()
+        / (2.0 * dy.middleCols(1, ny - 2).array());
+    // Boundaries: one-sided
+    ty.col(0).array()      = (f.col(1)      - f.col(0)     ).array() / dy.col(1).array();
+    ty.col(ny-1).array()   = (f.col(ny-1)   - f.col(ny-2)  ).array() / dy.col(ny-1).array();
 }
 
 // check command line options

@@ -4,7 +4,7 @@
 # parent CMakeLists.txt, which already propagates MPI, HDF5, and yaml-cpp.
 # ---------------------------------------------------------------------------
 
-set(LIBS_TO_LINK objs surfker_obj Eigen3::Eigen ${MY_HDF5_LIBS} ${SPDLOG_TARGET}
+set(LIBS_TO_LINK objs surfker_obj minpack_obj Eigen3::Eigen ${MY_HDF5_LIBS} ${SPDLOG_TARGET}
     yaml-cpp::yaml-cpp MPI::MPI_CXX)
 
 # --- yaml_test --------------------------------------------------------------
@@ -101,5 +101,18 @@ add_test(
 add_test(
     NAME test_surfdisp
     COMMAND test_surfdisp
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# --- minpack_test -----------------------------------------------------------
+add_executable(test_minpack
+    minpack_test/test_minpack.cpp
+)
+target_link_libraries(test_minpack PRIVATE minpack_obj)
+target_include_directories(test_minpack PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(
+    NAME test_minpack
+    COMMAND test_minpack
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

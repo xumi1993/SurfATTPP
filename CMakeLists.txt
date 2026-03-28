@@ -151,6 +151,8 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_subdirectory("src/surfker")
+add_subdirectory("src/minpack")
+set(PACK_LIBS surfker_obj minpack_obj)
 
 file(GLOB SOURCES "src/*.cpp")
 add_library(objs OBJECT ${SOURCES} ${SURFKER_SOURCES})
@@ -163,7 +165,7 @@ target_link_libraries(objs PUBLIC
     ${SPDLOG_TARGET}
     MPI::MPI_CXX
     ${MY_HDF5_LIBS}
-    surfker_obj
+    ${PACK_LIBS}
 )
 
 # ---------------------------------------------------------------------------
@@ -177,7 +179,7 @@ foreach( execsourcefile ${APP_SOURCES} )
 
     add_executable(${execname} ${execsourcefile})
     
-    target_link_libraries(${execname} PRIVATE objs surfker_obj)
+    target_link_libraries(${execname} PRIVATE objs ${PACK_LIBS})
 
     # eigen
     target_link_libraries(${execname} PRIVATE Eigen3::Eigen)
