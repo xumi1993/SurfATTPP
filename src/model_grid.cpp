@@ -24,6 +24,7 @@ namespace {
 // build evenly-spaced coordinate vectors, and initialise the 3-D model arrays.
 ModelGrid::ModelGrid() {
     const auto &dom = InputParams::IP().domain();
+    auto &logger = ATTLogger::logger();
 
     // Grid spacing in lon, lat, and depth directions
     d_xyz[0] = dom.interval[0];
@@ -51,15 +52,15 @@ ModelGrid::ModelGrid() {
     ygrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[1], ybeg, yend);
     zgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[2], dom.depth[0], dom.depth[1]);
 
-    ATTLogger::logger().Info(
+    logger.Info(
         std::format("Model grids: nx,ny,nz: {}, {}, {},", n_xyz[0], n_xyz[1], n_xyz[2]),
         MODULE_GRID
     );
-    ATTLogger::logger().Info(
+    logger.Info(
         std::format("Longitude range: {:.3f} to {:.3f}", xbeg, xend),
         MODULE_GRID
     );
-    ATTLogger::logger().Info(
+    logger.Info(
         std::format("Latitude range: {:.3f} to {:.3f}", ybeg, yend),
         MODULE_GRID
     );
