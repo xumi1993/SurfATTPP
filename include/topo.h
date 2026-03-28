@@ -31,7 +31,8 @@ public:
     explicit Topography(const std::string& filepath);
     Topography() = default;
 
-    void bcast();
+    // Write to HDF5 file
+    void write(const std::string& filepath) const;
 
     // Apply Gaussian smoothing (sigma in degrees) to raw topo.
     Eigen::MatrixX<real_t> smooth(real_t sigma);
@@ -41,12 +42,10 @@ public:
               const Eigen::VectorX<real_t>& ygrids);
 
     // Calculate the dip angle (degrees) at each grid point, based on the gridded topo (z).
-    Eigen::MatrixX<real_t> calc_dip_angle(
-        const Eigen::VectorX<real_t>& xgrids,
-        const Eigen::VectorX<real_t>& ygrids
-    );
+    Eigen::MatrixX<real_t> calc_dip_angle();
     
     Eigen::VectorX<real_t> lon_raw, lat_raw;  // raw topo grid coordinates
+    Eigen::VectorX<real_t> lon, lat;  // raw topo grid coordinates
     Eigen::MatrixX<real_t> topo;              // topography (km, after unit conversion)
     Eigen::MatrixX<real_t> z;                 // topo interpolated onto model grid (km)
     real_t dx{0}, dy{0};                      // model grid spacing (degrees)
@@ -57,7 +56,7 @@ private:
         static std::unique_ptr<Topography> inst;
         return inst;
     }
-
+    void bcast();
     void read_from_file();
 
     void check_bounds(const Eigen::VectorX<real_t>& xgrids,

@@ -49,6 +49,8 @@ void Topography::grid(const Eigen::VectorX<real_t>& xgrids,
     int ny  = static_cast<int>(ygrids.size());
     dx  = xgrids(1) - xgrids(0);
     dy  = ygrids(1) - ygrids(0);
+    lon = xgrids;
+    lat = ygrids;
 
     if (mpi.is_main()) {
         auto [xx, yy] = meshgrid_ij(xgrids, ygrids);
@@ -88,10 +90,7 @@ void Topography::check_bounds(const Eigen::VectorX<real_t>& xgrids,
     }
 }
 
-Eigen::MatrixX<real_t> Topography::calc_dip_angle(
-    const Eigen::VectorX<real_t>& xgrids,
-    const Eigen::VectorX<real_t>& ygrids
-) {
+Eigen::MatrixX<real_t> Topography::calc_dip_angle() {
     auto &mpi = Parallel::mpi();
     
     if (z.size() == 0) {
@@ -101,7 +100,7 @@ Eigen::MatrixX<real_t> Topography::calc_dip_angle(
     Eigen::MatrixX<real_t> dip_angle;
     if (mpi.is_main()) {
         Eigen::MatrixX<real_t> tx, ty;
-        gradient_2_geo(z, xgrids, ygrids, tx, ty);
+        gradient_2_geo(z, lon, lat, tx, ty);
         dip_angle = (tx.array().square() + ty.array().square()).sqrt().atan();
         dip_angle *= RAD2DEG;
     } else {
@@ -110,4 +109,11 @@ Eigen::MatrixX<real_t> Topography::calc_dip_angle(
     mpi.barrier();
     mpi.bcast(dip_angle.data(), z.size());
     return dip_angle;
+}
+
+void Topography::write(const std::string& filepath) const {
+    H5IO file(filepath, H5IO::TRUNC);
+    file.write_vector("lon", lon);
+    file.write_vector("lat", lat);
+    file.write_matrix("z", z);
 }
