@@ -50,6 +50,12 @@ add_executable(test_eikonal
 target_link_libraries(test_eikonal PRIVATE ${LIBS_TO_LINK})
 target_compile_options(test_eikonal PRIVATE -O2)
 
+# --- surfdisp_test ----------------------------------------------------------
+add_executable(test_surfdisp
+    surfdisp_test/test_surfdisp.cpp
+)
+target_link_libraries(test_surfdisp PRIVATE ${LIBS_TO_LINK})
+
 # ---------------------------------------------------------------------------
 # CTest registration
 # ---------------------------------------------------------------------------
@@ -90,5 +96,10 @@ add_test(
 add_test(
     NAME test_eikonal
     COMMAND test_eikonal
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME test_surfdisp
+    COMMAND test_surfdisp
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

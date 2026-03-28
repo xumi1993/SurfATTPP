@@ -64,9 +64,6 @@ ModelGrid::ModelGrid() {
         std::format("Latitude range: {:.3f} to {:.3f}", ybeg, yend),
         MODULE_GRID
     );
-
-    // Allocate shared memory and populate initial 3-D model
-    build_init_model();
 }
 
 // Build a linearly-interpolated 1-D Vs profile spanning [vel_range[0], vel_range[1]]
@@ -117,6 +114,7 @@ std::vector<real_t> ModelGrid::load_3d_model() {
 void ModelGrid::build_init_model() {
     const auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
+    auto &logger = ATTLogger::logger();
     
     // Allocate node-local shared memory (all ranks on the same node share these buffers)
     mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vp3d, win_vp_);
@@ -125,12 +123,25 @@ void ModelGrid::build_init_model() {
 
     if (IP.inversion().init_model_type == 0) {
         // Build a simple linear Vs gradient
+        logger.Info(std::format(
+            "Building linear 1-D initial model from {:.2f} to {:.2f}", 
+            IP.inversion().vel_range[0], IP.inversion().vel_range[1]), MODULE_GRID
+        );
         build_1d_model_linear();
     } else if (IP.inversion().init_model_type == 1) {
         // Invert average dispersion curves to obtain a 1-D Vs model
+        logger.Info(
+            "Building 1-D initial model from surface-wave inversion of average dispersion curves",
+            MODULE_GRID
+        );
         build_1d_model_inversion();
     } else if (IP.inversion().init_model_type == 2) {
         // Load an externally-supplied 3-D model; only main rank does the I/O
+        logger.Info(std::format(
+            "Building 3-D initial model from HDF5 file: {}",
+            IP.inversion().init_model_path),
+            MODULE_GRID
+        );
         if (mpi.is_main()) {
             std::vector<real_t> model3d = load_3d_model();
             std::copy(model3d.begin(), model3d.end(), vs3d);

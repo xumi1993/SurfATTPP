@@ -77,7 +77,11 @@ DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
     req.rho_g_cm3 = vp2rho(req.vp_km_s);
     req.periods_s = periods_s;
     for (int i = 0; i < dep.size(); ++i) {
-        req.thickness_km(i) = dep(i + 1) - dep(i);
+        if (i == dep.size() - 1) {
+            req.thickness_km(i) = req.thickness_km(i-1);
+        } else {
+            req.thickness_km(i) = dep(i + 1) - dep(i);
+        }
     }
     req.thickness_km(mmax - 1) = 0.0;  // Last layer is half-space with zero thickness
 

@@ -22,6 +22,8 @@ public:
     ModelGrid();
     ~ModelGrid() { release_shm(); }
 
+    void build_init_model();
+
     Eigen::VectorX<real_t> xgrids;
     Eigen::VectorX<real_t> ygrids;
     Eigen::VectorX<real_t> zgrids;
@@ -46,6 +48,5 @@ private:
     void build_1d_model_linear();
     void build_1d_model_inversion();
     std::vector<real_t> load_3d_model();
-    void build_init_model();
     void release_shm();
 };

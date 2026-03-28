@@ -51,6 +51,9 @@ Parallel::Parallel() {
 // ---------------------------------------------------------------------------
 
 void Parallel::finalize() {
+    int finalized = 0;
+    MPI_Finalized(&finalized);
+    if (finalized) return;
     MPI_Barrier(MPI_COMM_WORLD);
     int ier = MPI_Finalize();
     if (ier != MPI_SUCCESS)
