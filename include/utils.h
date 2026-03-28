@@ -11,6 +11,14 @@
 // Helpers
 // ---------------------------------------------------------------------------
 
+inline int I2V_common(int A, int B, int C, int ny, int nz) {
+    return (A*nz*ny + B*nz + C);  // 3D vector to 1D array index
+}
+
+inline int I2V_common_2d(int A, int B, int ny) {
+    return (A*ny + B);  // 2D vector to 1D array index
+}
+
 // Bilinear interpolation at fractional indices (idx0+r1, idy0+r2)
 inline real_t bilinear(const Eigen::MatrixXd& M,
                        int idx0, int idy0,
@@ -218,6 +226,141 @@ inline T gps2dist(T lat0, T lon0, T lat1, T lon1)
 }
 
 // ---------------------------------------------------------------------------
+// meshgrid
+//
+// Replicates NumPy's meshgrid(x, y, indexing='xy') behaviour.
+// Given a 1-D x-vector (length nx) and y-vector (length ny), fills:
+//   X(i,j) = x(j)   — broadcast x across rows
+//   Y(i,j) = y(i)   — broadcast y across columns
+// so that X and Y have shape (ny, nx), matching the NumPy default.
+//
+// Example (indexing='ij' style, shape (nx,ny)):
+//   auto [X, Y] = meshgrid_ij(lon, lat);   // X(i,j)=lon(i), Y(i,j)=lat(j)
+// ---------------------------------------------------------------------------
+inline std::pair<Eigen::MatrixX<real_t>, Eigen::MatrixX<real_t>>
+meshgrid(const Eigen::VectorX<real_t>& x, const Eigen::VectorX<real_t>& y)
+{
+    const int nx = static_cast<int>(x.size());
+    const int ny = static_cast<int>(y.size());
+    // shape: (ny, nx)  — same as np.meshgrid(x, y)
+    Eigen::MatrixX<real_t> X = x.transpose().replicate(ny, 1);  // (ny, nx)
+    Eigen::MatrixX<real_t> Y = y.replicate(1, nx);               // (ny, nx)
+    return {X, Y};
+}
+
+// 'ij' indexing variant: shape (nx, ny), X(i,j)=x(i), Y(i,j)=y(j)
+inline std::pair<Eigen::MatrixX<real_t>, Eigen::MatrixX<real_t>>
+meshgrid_ij(const Eigen::VectorX<real_t>& x, const Eigen::VectorX<real_t>& y)
+{
+    const int nx = static_cast<int>(x.size());
+    const int ny = static_cast<int>(y.size());
+    Eigen::MatrixX<real_t> X = x.replicate(1, ny);               // (nx, ny)
+    Eigen::MatrixX<real_t> Y = y.transpose().replicate(nx, 1);   // (nx, ny)
+    return {X, Y};
+}
+
+// ---------------------------------------------------------------------------
+// interp2d
+//
+// Eigen-native version of bilinear_interpolation.
+//
+// Interpolates a scalar field z(nx, ny) defined on a regular or irregular
+// grid (xgrid, ygrid) at query points (xq, yq).
+//
+// Parameters:
+//   xgrid – 1-D x-axis nodes, strictly increasing, length nx
+//   ygrid – 1-D y-axis nodes, strictly increasing, length ny
+//   z     – field values, shape (nx, ny),  z(i,j) at (xgrid(i), ygrid(j))
+//   xq    – query x-coordinates, length nq
+//   yq    – query y-coordinates, length nq  (same length as xq)
+//
+// Returns:
+//   zq    – interpolated values at (xq(k), yq(k)), length nq.
+//           Points outside the grid extent return NaN.
+//
+// Implementation:
+//   Uses std::lower_bound per query point (O(log n)).  The weight
+//   computation is identical to the scalar bilinear_interpolation above.
+// ---------------------------------------------------------------------------
+inline Eigen::VectorX<real_t> interp2d(
+    const Eigen::VectorX<real_t>& xgrid,
+    const Eigen::VectorX<real_t>& ygrid,
+    const Eigen::MatrixX<real_t>& z,
+    const Eigen::VectorX<real_t>& xq,
+    const Eigen::VectorX<real_t>& yq)
+{
+    const int nx = static_cast<int>(xgrid.size());
+    const int ny = static_cast<int>(ygrid.size());
+    const int nq = static_cast<int>(xq.size());
+
+    Eigen::VectorX<real_t> zq(nq);
+
+    const real_t* px = xgrid.data();
+    const real_t* py = ygrid.data();
+
+    for (int k = 0; k < nq; ++k) {
+        const real_t qx = xq(k);
+        const real_t qy = yq(k);
+
+        // --- locate bounding cell in x ---
+        if (qx < xgrid(0) || qx > xgrid(nx - 1) ||
+            qy < ygrid(0) || qy > ygrid(ny - 1)) {
+            zq(k) = std::numeric_limits<real_t>::quiet_NaN();
+            continue;
+        }
+
+        int i = static_cast<int>(
+            std::lower_bound(px, px + nx, qx) - px);
+        if (i == nx) --i;
+        if (i > 0 && xgrid(i) > qx) --i;
+        i = std::clamp(i, 0, nx - 2);
+
+        int j = static_cast<int>(
+            std::lower_bound(py, py + ny, qy) - py);
+        if (j == ny) --j;
+        if (j > 0 && ygrid(j) > qy) --j;
+        j = std::clamp(j, 0, ny - 2);
+
+        // --- bilinear weights ---
+        const real_t x1 = xgrid(i),  x2 = xgrid(i + 1);
+        const real_t y1 = ygrid(j),  y2 = ygrid(j + 1);
+        const real_t tx = (qx - x1) / (x2 - x1);
+        const real_t ty = (qy - y1) / (y2 - y1);
+
+        zq(k) = (1 - tx) * (1 - ty) * z(i,     j    )
+              + (    tx) * (1 - ty) * z(i + 1, j    )
+              + (1 - tx) * (    ty) * z(i,     j + 1)
+              + (    tx) * (    ty) * z(i + 1, j + 1);
+    }
+    return zq;
+}
+
+// 2-D overload: xq and yq are matrices (e.g. from meshgrid / meshgrid_ij).
+// Returns a matrix of the same shape as xq/yq.
+inline Eigen::MatrixX<real_t> interp2d(
+    const Eigen::VectorX<real_t>& xgrid,
+    const Eigen::VectorX<real_t>& ygrid,
+    const Eigen::MatrixX<real_t>& z,
+    const Eigen::MatrixX<real_t>& xq,
+    const Eigen::MatrixX<real_t>& yq)
+{
+    const int rows = static_cast<int>(xq.rows());
+    const int cols = static_cast<int>(xq.cols());
+
+    // Flatten to column vectors — materialize to VectorX so the 1-D overload
+    // is selected unambiguously (Map converts to both VectorX and MatrixX).
+    Eigen::VectorX<real_t> xq_flat =
+        Eigen::Map<const Eigen::VectorX<real_t>>(xq.data(), rows * cols);
+    Eigen::VectorX<real_t> yq_flat =
+        Eigen::Map<const Eigen::VectorX<real_t>>(yq.data(), rows * cols);
+
+    Eigen::VectorX<real_t> zq_flat = interp2d(xgrid, ygrid, z, xq_flat, yq_flat);
+
+    // Reshape back to (rows, cols)
+    return Eigen::Map<Eigen::MatrixX<real_t>>(zq_flat.data(), rows, cols);
+}
+
+// ---------------------------------------------------------------------------
 // gaussian_smooth_geo_2
 //
 // 2-D Gaussian smoothing on a geographic (lon/lat) grid.
@@ -286,8 +429,8 @@ inline Eigen::MatrixX<real_t> gaussian_smooth_geo_2(
             // Built as two outer products (no scalar loop):
             Eigen::ArrayX<real_t> lon_contrib = cos_lat0 * sin2_dlon; // (wm,)
             Eigen::ArrayXX<real_t> a =
-                sin2_dlat.matrix().transpose().replicate(wm, 1).array() // (wm,wn): each row = sin2_dlat
-                + lon_contrib.matrix() * cos_lat1.matrix().transpose(); // (wm,wn): outer product
+                sin2_dlat.transpose().replicate(wm, 1)                          // (wm,wn): each row = sin2_dlat
+                + (lon_contrib.matrix() * cos_lat1.matrix().transpose()).array(); // (wm,wn): outer product
 
             // delta [arc-deg] = 2 * RAD2DEG * atan(sqrt(a / (1-a)))
             // w = exp(-delta² / (2*sigma²))

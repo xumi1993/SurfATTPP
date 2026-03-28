@@ -66,3 +66,4 @@ inline const std::string MODULE_GRID      = "GRID";
 inline const std::string MODULE_OPTIM     = "OPTIM";
 inline const std::string MODULE_MAIN      = "MAIN";
 inline const std::string MODULE_INV1D     = "INV1D";
+inline const std::string MODULE_TOPO      = "TOPO";
