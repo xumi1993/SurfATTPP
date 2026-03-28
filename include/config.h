@@ -57,6 +57,13 @@ constexpr int MPI_TAG_BASE = 1000;  // base tag for all MPI messages; add to avo
 // ---------------------------------------------------------------------------
 constexpr int IFLSPH = 1;
 constexpr int SURF_MODE = 1;
+constexpr int FORWARD_ONLY = 0;
+constexpr int INVERSION_MODE = 1;
+
+// ---------------------------------------------------------------------------
+// global variables
+// ---------------------------------------------------------------------------
+inline int run_mode = INVERSION_MODE;
 
 // ---------------------------------------------------------------------------
 // module names

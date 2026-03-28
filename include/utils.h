@@ -523,21 +523,3 @@ inline void gradient_2_geo(
     ty.col(ny-1).array()   = (f.col(ny-1)   - f.col(ny-2)  ).array() / dy.col(ny-1).array();
 }
 
-// check command line options
-inline void parse_options(int argc, char* argv[]){
-    bool input_file_found = false;
-
-    for (int i = 1; i < argc; i++){
-       if (strcmp(argv[i],"-i") == 0){    // have input file
-            input_file = argv[i+1];
-            input_file_found = std::filesystem::exists(input_file);  // check if file exists
-        }
-    }
-
-    // error if input_file is not found
-    if(!input_file_found){
-        throw std::runtime_error(
-            "input file not found\nusage: mpirun -np 4 ./REFATT -i input_params.yaml"
-        );
-    }
-}

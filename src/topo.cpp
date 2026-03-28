@@ -1,6 +1,7 @@
 #include "topo.h"
 #include "h5io.h"
 #include "logger.h"
+#include "sph2loc.h"
 
 Topography::Topography(const std::string& filepath)
     : topo_file_(filepath)
@@ -109,6 +110,53 @@ Eigen::MatrixX<real_t> Topography::calc_dip_angle() {
     mpi.barrier();
     mpi.bcast(dip_angle.data(), z.size());
     return dip_angle;
+}
+
+void Topography::rotate(
+    const real_t xmin, const real_t xmax,
+    const real_t ymin, const real_t ymax,
+    const real_t clat, const real_t clon, const real_t angle)
+{
+    auto &mpi = Parallel::mpi();
+    auto &logger = ATTLogger::logger();
+
+    dx = lon(1) - lon(0);
+    dy = lat(1) - lat(0);
+    int nx = static_cast<int>((xmax - xmin) / dx) + 1;
+    int ny = static_cast<int>((ymax - ymin) / dy) + 1;
+    Eigen::VectorX<real_t> x = Eigen::VectorX<real_t>::LinSpaced(nx, xmin, xmax);
+    Eigen::VectorX<real_t> y = Eigen::VectorX<real_t>::LinSpaced(ny, ymin, ymax);
+    if (mpi.is_main()) {
+        Eigen::MatrixX<real_t>xx_bk, yy_bk;
+        auto [xx, yy] = meshgrid_ij(x, y);
+        sph2loc::rtp_rotation_reverse(yy, xx, clat, clon, angle, yy_bk, xx_bk);
+        if (xx_bk.minCoeff() < lon.minCoeff() || xx_bk.maxCoeff() > lon.maxCoeff() ||
+            yy_bk.minCoeff() < lat.minCoeff() || yy_bk.maxCoeff() > lat.maxCoeff()) {
+            logger.Error("Rotated grid extends beyond topography bounds.", MODULE_TOPO);
+            exit(EXIT_FAILURE);
+        }
+        z = interp2d(lon, lat, z, xx_bk, yy_bk);
+    }
+    mpi.barrier();
+    if (!mpi.is_main()) z.resize(nx, ny);
+    lon = x;
+    lat = y;
+    mpi.bcast(z.data(), nx * ny);
+}
+
+void Topography::copy() {
+    auto &mpi = Parallel::mpi();
+    if (mpi.is_main()) {
+        lon = lon_raw;
+        lat = lat_raw;
+        z = topo;
+    }
+    mpi.barrier();
+    mpi.bcast(lon.data(), lon.size());
+    mpi.bcast(lat.data(), lat.size());
+    mpi.bcast(z.data(), z.size());
+    dx = lon(1) - lon(0);
+    dy = lat(1) - lat(0);
 }
 
 void Topography::write(const std::string& filepath) const {

@@ -5,14 +5,15 @@
 #include "config.h"
 #include "utils.h"
 #include "model_grid.h"
+#include "argparser.h"
 
 #include <algorithm>
 
 
 int main(int argc, char* argv[])
 {
-    // parse options
-    parse_options(argc, argv);
+    // parse options    
+    argparse_tomo(argc, argv);
 
     // initialise MPI
     Parallel::init();
