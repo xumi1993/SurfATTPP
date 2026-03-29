@@ -272,12 +272,18 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
         throw std::runtime_error("SrcRec::write: no observations to write");
     }
     auto &mpi = Parallel::mpi();
+    auto &logger = ATTLogger::logger();
+
     if (mpi.is_main()) {
         rapidcsv::Document doc;
         if (is_fwd){
-            doc.SetColumn<std::string> (0,  fmt_col(tt,         n_obs, 4));
+            if (tt_fwd == nullptr) {
+                logger.Error("Forward-modeled travel times (tt_fwd) are not assigned", MODULE_SRCREC);
+                exit(EXIT_FAILURE);
+            }
+            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd, n_obs, 4));
         } else {
-            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd,     n_obs, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs, 4));
         }
         doc.SetColumn<std::string> (1,  staname);
         doc.SetColumn<std::string> (2,  fmt_col(stla,       n_obs, 4));
@@ -289,6 +295,10 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
         doc.SetColumn<std::string> (8,  fmt_col(weight,     n_obs, 4));
         doc.SetColumn<std::string> (9,  fmt_col(dist,       n_obs, 3));
         if (is_fwd) {
+            if (vel_fwd.size() == 0) {
+                logger.Error("Forward-modeled velocities (vel_fwd) are not assigned", MODULE_SRCREC);
+                exit(EXIT_FAILURE);
+            }
             doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs, 4));
         } else {
             doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs, 4));
