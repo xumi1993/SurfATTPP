@@ -27,22 +27,22 @@ ModelGrid::ModelGrid() {
     auto &logger = ATTLogger::logger();
 
     // Grid spacing in lon, lat, and depth directions
-    d_xyz[0] = dom.interval[0];
-    d_xyz[1] = dom.interval[1];
-    d_xyz[2] = dom.interval[2];
+    dgrid_i = dom.interval[0];
+    dgrid_j = dom.interval[1];
+    dgrid_k = dom.interval[2];
 
     // Expand the station bounding box by num_grid_margin cells on each side
     real_t lon_min, lon_max, lat_min, lat_max;
     get_domain_min_max(lon_min, lon_max, lat_min, lat_max);
-    real_t xbeg = lon_min - dom.num_grid_margin * d_xyz[0];
-    real_t xend = lon_max + dom.num_grid_margin * d_xyz[0];
-    real_t ybeg = lat_min - dom.num_grid_margin * d_xyz[1];
-    real_t yend = lat_max + dom.num_grid_margin * d_xyz[1];
+    real_t xbeg = lon_min - dom.num_grid_margin * dgrid_i;
+    real_t xend = lon_max + dom.num_grid_margin * dgrid_i;
+    real_t ybeg = lat_min - dom.num_grid_margin * dgrid_j;
+    real_t yend = lat_max + dom.num_grid_margin * dgrid_j;
 
     // Number of grid nodes (inclusive on both ends)
-    n_xyz[0] = static_cast<int>((xend - xbeg) / d_xyz[0]) + 1;
-    n_xyz[1] = static_cast<int>((yend - ybeg) / d_xyz[1]) + 1;
-    n_xyz[2] = static_cast<int>((dom.depth[1] - dom.depth[0]) / d_xyz[2]) + 1;
+    n_xyz[0] = static_cast<int>((xend - xbeg) / dgrid_i) + 1;
+    n_xyz[1] = static_cast<int>((yend - ybeg) / dgrid_j) + 1;
+    n_xyz[2] = static_cast<int>((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1;
     // Expose grid sizes through the I2V macro variables
     ngrid_i = n_xyz[0];
     ngrid_j = n_xyz[1];
@@ -88,18 +88,27 @@ void ModelGrid::build_1d_model_inversion() {
 // Validates that the stored grid dimensions match the current model grid.
 std::vector<real_t> ModelGrid::load_3d_model() {
     const auto &IP = InputParams::IP();
-    std::vector<real_t> model3d;
+    std::vector<real_t> model3d, model_tmp;
     H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
     hsize_t nz, ny, nx;
 
     try {
-        model3d = f.read_volume<real_t>("vs", nz, ny, nx);
+        model_tmp = f.read_volume<real_t>("vs", nz, ny, nx);
         // Ensure the file's grid dimensions are consistent with n_xyz
         if (nx != static_cast<hsize_t>(n_xyz[0]) || ny != static_cast<hsize_t>(n_xyz[1]) || nz != static_cast<hsize_t>(n_xyz[2])) {
             throw std::runtime_error("ModelGrid: invalid shape of 3D model in HDF5 file");
         }
     } catch (const std::exception &e) {
         throw std::runtime_error(std::string("ModelGrid: failed to load 3D model from HDF5 file: ") + e.what());
+    }
+    model3d.resize(nz * ny * nx);
+    for (int k = 0; k < ngrid_k; ++k) {
+        for (int j = 0; j < ngrid_j; ++j) {
+            for (int i = 0; i < ngrid_i; ++i) {
+                const int isrc = k * ngrid_j * ngrid_i + j * ngrid_i + i;
+                model3d[I2V(i, j, k)] = model_tmp[isrc];
+            }
+        }
     }
     return model3d;
 }
@@ -144,11 +153,17 @@ void ModelGrid::build_init_model() {
         );
         if (mpi.is_main()) {
             std::vector<real_t> model3d = load_3d_model();
-            std::copy(model3d.begin(), model3d.end(), vs3d);
             // Derive Vp and density from Vs using empirical scaling relations
-            for (size_t i = 0; i < model3d.size(); ++i) {
-                vp3d[i] = vs2vp(vs3d[i]);
-                rho3d[i] = vp2rho(vp3d[i]);
+            vs1d.setZero(ngrid_k);
+            for (int k = 0; k < ngrid_k; ++k){
+                for (int j = 0; j < ngrid_j; ++j){
+                    for (int i = 0; i < ngrid_i; ++i){
+                        vs1d(k) += vs3d[I2V(i, j, k)];
+                        vp3d[I2V(i, j, k)] = vs2vp(vs3d[I2V(i, j, k)]);
+                        rho3d[I2V(i, j, k)] = vp2rho(vp3d[I2V(i, j, k)]);
+                    }
+                }
+                vs1d(k) /= (ngrid_i * ngrid_j);
             }
         }
         mpi.barrier();

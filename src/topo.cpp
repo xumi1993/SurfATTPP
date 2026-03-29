@@ -2,6 +2,7 @@
 #include "h5io.h"
 #include "logger.h"
 #include "sph2loc.h"
+#include "surfdisp.h"
 
 Topography::Topography(const std::string& filepath)
     : topo_file_(filepath)
@@ -38,24 +39,24 @@ void Topography::bcast() {
     mpi.bcast(topo.data(), nx * ny);
 }
 
-Eigen::MatrixX<real_t> Topography::smooth(const real_t sigma) {
-    return gaussian_smooth_geo_2(topo, lon_raw, lat_raw, sigma);
+void Topography::smooth(const real_t sigma) {
+    z = gaussian_smooth_geo_2(z, lon_raw, lat_raw, sigma);
 }
 
-void Topography::grid(const Eigen::VectorX<real_t>& xgrids,
-                      const Eigen::VectorX<real_t>& ygrids) {
+void Topography::grid(const Eigen::VectorX<real_t>& x,
+                      const Eigen::VectorX<real_t>& y) {
     auto& mpi = Parallel::mpi();
 
-    check_bounds(xgrids, ygrids);
-    int nx  = static_cast<int>(xgrids.size());
-    int ny  = static_cast<int>(ygrids.size());
-    dx  = xgrids(1) - xgrids(0);
-    dy  = ygrids(1) - ygrids(0);
-    lon = xgrids;
-    lat = ygrids;
+    check_bounds(x, y);
+    int nx  = static_cast<int>(x.size());
+    int ny  = static_cast<int>(y.size());
+    dx  = x(1) - x(0);
+    dy  = y(1) - y(0);
+    lon = x;
+    lat = y;
 
     if (mpi.is_main()) {
-        auto [xx, yy] = meshgrid_ij(xgrids, ygrids);
+        auto [xx, yy] = meshgrid_ij(x, y);
         z = interp2d(lon_raw, lat_raw, topo, xx, yy);
     } else{
         z.resize(nx, ny);
@@ -64,8 +65,8 @@ void Topography::grid(const Eigen::VectorX<real_t>& xgrids,
     mpi.bcast(z.data(), nx * ny);
 }
 
-void Topography::check_bounds(const Eigen::VectorX<real_t>& xgrids,
-                               const Eigen::VectorX<real_t>& ygrids) {
+void Topography::check_bounds(const Eigen::VectorX<real_t>& x,
+                               const Eigen::VectorX<real_t>& y) {
     auto &logger = ATTLogger::logger();
 
     real_t lon_min = lon_raw.minCoeff();
@@ -73,10 +74,10 @@ void Topography::check_bounds(const Eigen::VectorX<real_t>& xgrids,
     real_t lat_min = lat_raw.minCoeff();
     real_t lat_max = lat_raw.maxCoeff();
 
-    real_t x_min = xgrids.minCoeff();
-    real_t x_max = xgrids.maxCoeff();
-    real_t y_min = ygrids.minCoeff();
-    real_t y_max = ygrids.maxCoeff();
+    real_t x_min = x.minCoeff();
+    real_t x_max = x.maxCoeff();
+    real_t y_min = y.minCoeff();
+    real_t y_max = y.maxCoeff();
 
     if (x_min < lon_min || x_max > lon_max ||
         y_min < lat_min || y_max > lat_max) {

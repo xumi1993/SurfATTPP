@@ -12,7 +12,7 @@ Inversion1D::Inversion1D() {
 }
 
 Eigen::VectorX<real_t> Inversion1D::inv1d(
-    Eigen::VectorX<real_t> zgrids,
+    Eigen::VectorX<real_t> zarr,
     Eigen::VectorX<real_t> init_vs
 ) {
     auto& IP = InputParams::IP();
@@ -22,10 +22,10 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
     misfits.clear();
     niter = 0;
 
-    int nz = static_cast<int>(zgrids.size());
+    int nz = static_cast<int>(zarr.size());
     real_t step_length = IP.inversion().step_length;
 
-    real_t sigma = 0.68 * zgrids(zgrids.size() - 1) / IP.inversion().n_inv_grid[2];
+    real_t sigma = 0.68 * zarr(zarr.size() - 1) / IP.inversion().n_inv_grid[2];
     logger.Info("1D inversion using averaged surface wave data", MODULE_INV1D);
 
     // define model update vector
@@ -37,14 +37,16 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
         // Compute predicted dispersion curve and misfit
         update_total.setZero();
         real_t misfit_total = _0_CR;
-        for (int itype = 0; itype < 2; ++itype) {
+        // for (int itype = 0; itype < 2; ++itype) {
+        for (auto tp : {surfType::PH, surfType::GR}) {
+            int itype = static_cast<int>(tp);
             if (!IP.data().vel_type[itype]) continue;
             auto &sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
             int nperiod = sr.periods_info.nperiod;
 
             surfker::DispersionRequest req = surfker::build_disp_req(
-                zgrids, vs1d, sr.periods_info.periods,
-                IFLSPH, IP.data().iwave, SURF_MODE, itype
+                zarr, vs1d, sr.periods_info.periods,
+                IFLSPH, IP.data().iwave, IMODE, itype
             );
 
             Eigen::VectorX<real_t> pred_vel = surfker::surfdisp(req);
@@ -65,7 +67,7 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
                 update += sen * (pred_vel(iper) - sr.periods_info.meanvel(iper));
             }
             update /= nperiod;
-            update = gaussian_smooth_1d(update, zgrids, sigma);
+            update = gaussian_smooth_1d(update, zarr, sigma);
             update_total += update * IP.data().weights[itype];
         }
         misfits.push_back(misfit_total);

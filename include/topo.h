@@ -35,11 +35,11 @@ public:
     void write(const std::string& filepath) const;
 
     // Apply Gaussian smoothing (sigma in degrees) to raw topo.
-    Eigen::MatrixX<real_t> smooth(real_t sigma);
+    void smooth(real_t sigma);
 
     // Interpolate topo onto model grid xgrids x ygrids (lon/lat in degrees).
-    void grid(const Eigen::VectorX<real_t>& xgrids,
-              const Eigen::VectorX<real_t>& ygrids);
+    void grid(const Eigen::VectorX<real_t>& x,
+              const Eigen::VectorX<real_t>& y);
 
     // Calculate the dip angle (degrees) at each grid point, based on the gridded topo (z).
     Eigen::MatrixX<real_t> calc_dip_angle();
@@ -66,8 +66,8 @@ private:
     void bcast();
     void read_from_file();
 
-    void check_bounds(const Eigen::VectorX<real_t>& xgrids,
-                      const Eigen::VectorX<real_t>& ygrids);
+    void check_bounds(const Eigen::VectorX<real_t>& x,
+                      const Eigen::VectorX<real_t>& y);
 
     std::string topo_file_;
 };

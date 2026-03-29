@@ -223,6 +223,8 @@ void SrcRec::get_periods(){
         }
     }
     mpi.barrier();
+    mpi.bcast(periods_info.nperiod);
+    mpi.bcast(periods_info.periods.data(), periods_info.nperiod);
 }
 
 // ---------------------------------------------------------------------------

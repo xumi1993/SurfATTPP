@@ -6,6 +6,8 @@
 #include "utils.h"
 #include "model_grid.h"
 #include "argparser.h"
+#include "topo.h"
+#include "surf_grid.h"
 
 #include <algorithm>
 
@@ -36,7 +38,19 @@ int main(int argc, char* argv[])
 
     // build model grid
     ModelGrid::init();
-    // check data
+    auto &mg = ModelGrid::MG();
+
+    // build initial model
+    mg.build_init_model();
+
+    // load topography if needed
+    if (IP.topo().is_consider_topo) {
+        // load topography
+        Topography::read(IP.topo().topo_file);
+    }
+    // build surface grid and compute reference travel times
+    if (IP.data().vel_type[0]) SurfGrid::SG_ph().build_media();
+    if (IP.data().vel_type[1]) SurfGrid::SG_gr().build_media();
 
     SrcRec::SR_ph().release_shm();
     SrcRec::SR_gr().release_shm();

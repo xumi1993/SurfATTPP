@@ -1,0 +1,62 @@
+#pragma once
+
+#include "input_params.h"
+#include "src_rec.h"
+#include "parallel.h"
+#include "logger.h"
+#include "config.h"
+#include "topo.h"
+#include "surfdisp.h"
+#include "model_grid.h"
+
+#include <Eigen/Core>
+#include <Eigen/Dense>
+
+class SurfGrid {
+public:
+    // Phase-velocity grid
+    static SurfGrid& SG_ph() {
+        static SurfGrid inst(surfType::PH);
+        return inst;
+    }
+
+    // Group-velocity grid
+    static SurfGrid& SG_gr() {
+        static SurfGrid inst(surfType::GR);
+        return inst;
+    }
+
+    SurfGrid(const SurfGrid&)            = delete;
+    SurfGrid& operator=(const SurfGrid&) = delete;
+    ~SurfGrid() = default;
+
+    int nperiod;
+    int itype;  // 0: phase velocity, 1: group velocity
+    real_t* svel;  // length nperiod, phase or group velocity at each period
+    real_t* a;
+    real_t* b;
+    real_t* c;
+    real_t* topo_angle;
+    real_t* m11;
+    real_t* m12;
+    real_t* m22;
+    real_t* ref_t;
+
+    void build_media();
+    void fwdsurf();
+
+private:
+    MPI_Win win_svel_ = MPI_WIN_NULL;
+    MPI_Win win_a_    = MPI_WIN_NULL;
+    MPI_Win win_b_    = MPI_WIN_NULL;
+    MPI_Win win_c_    = MPI_WIN_NULL;
+    MPI_Win win_topo_ = MPI_WIN_NULL;
+    MPI_Win win_m11_  = MPI_WIN_NULL;
+    MPI_Win win_m12_  = MPI_WIN_NULL;
+    MPI_Win win_m22_  = MPI_WIN_NULL;
+    MPI_Win win_ref_t_ = MPI_WIN_NULL;
+
+    explicit SurfGrid(surfType tp);
+    void release_shm();
+    void build_media_matrix_with_topo();
+};

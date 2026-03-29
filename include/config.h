@@ -24,6 +24,7 @@ inline constexpr real_t REAL_MIN = std::numeric_limits<real_t>::lowest();
 
 
 inline int ngrid_i, ngrid_j, ngrid_k;  // set by DomainParams::compute_grid()
+inline real_t dgrid_i, dgrid_j, dgrid_k;  // grid spacing in km, set by DomainParams::compute_grid()
 #define I2V(A,B,C) ((A)*ngrid_j*ngrid_k + (B)*ngrid_k + (C))  // 3D vector to 1D array index
 
 // ---------------------------------------------------------------------------
@@ -56,9 +57,10 @@ constexpr int MPI_TAG_BASE = 1000;  // base tag for all MPI messages; add to avo
 // constant parameters
 // ---------------------------------------------------------------------------
 constexpr int IFLSPH = 1;
-constexpr int SURF_MODE = 1;
+constexpr int IMODE = 1;
 constexpr int FORWARD_ONLY = 0;
 constexpr int INVERSION_MODE = 1;
+enum class surfType { PH = 0, GR = 1 };
 
 // ---------------------------------------------------------------------------
 // global variables
@@ -69,7 +71,7 @@ inline int run_mode = INVERSION_MODE;
 // module names
 // ---------------------------------------------------------------------------
 inline const std::string MODULE_SRCREC    = "SRCREC";
-inline const std::string MODULE_GRID      = "GRID";
+inline const std::string MODULE_GRID      = "SURFGRID";
 inline const std::string MODULE_OPTIM     = "OPTIM";
 inline const std::string MODULE_MAIN      = "MAIN";
 inline const std::string MODULE_INV1D     = "INV1D";

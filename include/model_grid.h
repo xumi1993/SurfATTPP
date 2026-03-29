@@ -24,12 +24,11 @@ public:
 
     void build_init_model();
 
+    Eigen::VectorX<real_t> vs1d;  // 1D S-wave velocity model for depth kernel calculation
+    std::vector<int> n_xyz = {0, 0, 0};  // number of grid points in x/y/z directions (excluding margins)
     Eigen::VectorX<real_t> xgrids;
     Eigen::VectorX<real_t> ygrids;
     Eigen::VectorX<real_t> zgrids;
-    Eigen::VectorX<real_t> vs1d;  // 1D S-wave velocity model for depth kernel calculation
-    std::vector<int> n_xyz = {0, 0, 0};  // number of grid points in x/y/z directions (excluding margins)
-    std::vector<real_t> d_xyz = {_0_CR, _0_CR, _0_CR};  // grid spacing in x/y/z directions
 
     real_t* vp3d;
     real_t* vs3d;

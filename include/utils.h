@@ -54,7 +54,7 @@ inline int locate_bissection(const T* valx, int n, T x){
     }
 }
 
-inline real_t bilinear_interpolation(real_t* xgrids, real_t* ygrids, 
+inline real_t bilinear_interpolation(real_t* xarr, real_t* yarr, 
                                      int nx, int ny, real_t* values, 
                                      real_t x, real_t y){
     // convert values to 2D array
@@ -65,39 +65,39 @@ inline real_t bilinear_interpolation(real_t* xgrids, real_t* ygrids,
         }
     }
 
-    // find the index of x and y in xgrids and ygrids
+    // find the index of x and y in xarr and yarr
     int x_idx = -1;
     int y_idx = -1;
     
     // find closest x
     for (int i = 0; i < nx-1; i++){
-        if (x == xgrids[i]){
+        if (x == xarr[i]){
             x_idx = i;
             break;
-        } else if (x > xgrids[i] && x < xgrids[i+1]){
+        } else if (x > xarr[i] && x < xarr[i+1]){
             x_idx = i;
             break;
         }
     }
-    if (x == xgrids[nx-1]){
+    if (x == xarr[nx-1]){
         x_idx = nx-1;
     }
 
     // find closest y
     for (int i = 0; i < ny-1; i++){
-        if (y == ygrids[i]){
+        if (y == yarr[i]){
             y_idx = i;
             break;
-        } else if (y > ygrids[i] && y < ygrids[i+1]){
+        } else if (y > yarr[i] && y < yarr[i+1]){
             y_idx = i;
             break;
         }
     }
-    if (y == ygrids[ny-1]){
+    if (y == yarr[ny-1]){
         y_idx = ny-1;
     }
 
-    // if x or y is not in xgrids or ygrids, return -1
+    // if x or y is not in xarr or yarr, return -1
     if (x_idx == -1 || y_idx == -1){
         return NAN;
     }
@@ -109,18 +109,18 @@ inline real_t bilinear_interpolation(real_t* xgrids, real_t* ygrids,
 
     // if x is in xgrids and y is in ygrids, return the value
     if (x_idx == nx-1){
-        return values_2d[x_idx][y_idx] + (y - ygrids[y_idx]) * (values_2d[x_idx][y_idx+1] - values_2d[x_idx][y_idx]) / (ygrids[y_idx+1] - ygrids[y_idx]);
+        return values_2d[x_idx][y_idx] + (y - yarr[y_idx]) * (values_2d[x_idx][y_idx+1] - values_2d[x_idx][y_idx]) / (yarr[y_idx+1] - yarr[y_idx]);
     }
 
     if (y_idx == ny-1){
-        return values_2d[x_idx][y_idx] + (x - xgrids[x_idx]) * (values_2d[x_idx+1][y_idx] - values_2d[x_idx][y_idx]) / (xgrids[x_idx+1] - xgrids[x_idx]);
+        return values_2d[x_idx][y_idx] + (x - xarr[x_idx]) * (values_2d[x_idx+1][y_idx] - values_2d[x_idx][y_idx]) / (xarr[x_idx+1] - xarr[x_idx]);
     }
 
     // if x and y are not in xgrids and ygrids, return the interpolated value
-    real_t x1 = xgrids[x_idx];
-    real_t x2 = xgrids[x_idx+1];
-    real_t y1 = ygrids[y_idx];
-    real_t y2 = ygrids[y_idx+1];
+    real_t x1 = xarr[x_idx];
+    real_t x2 = xarr[x_idx+1];
+    real_t y1 = yarr[y_idx];
+    real_t y2 = yarr[y_idx+1];
 
     real_t f11 = values_2d[x_idx][y_idx];
     real_t f21 = values_2d[x_idx+1][y_idx];
@@ -523,3 +523,12 @@ inline void gradient_2_geo(
     ty.col(ny-1).array()   = (f.col(ny-1)   - f.col(ny-2)  ).array() / dy.col(ny-1).array();
 }
 
+inline Eigen::VectorX<real_t> extract_1d_from_3d(
+    const real_t* data, const int ix, const int iy, const int nz
+) {
+    Eigen::VectorX<real_t> data_1d(nz);
+    for (int k = 0; k < nz; k++){
+        data_1d(k) = data[I2V(ix, iy, k)];
+    }
+    return data_1d;
+}
