@@ -21,7 +21,7 @@ int main(int argc, char* argv[])
     }
 
     // initialize logger (console only)
-    ATTLogger::init("surfatt_rotate_topo.log", /*log_level=*/0, /*console_only=*/true);
+    ATTLogger::init("", /*log_level=*/1, /*console_only=*/true);
 
     auto args = argparse_rotate_topo(argc, argv);
     auto& logger = ATTLogger::logger();

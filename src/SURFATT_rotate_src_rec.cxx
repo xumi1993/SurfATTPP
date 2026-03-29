@@ -19,7 +19,7 @@ int main(int argc, char* argv[])
     }
 
     // logger 
-    ATTLogger::init("", 1, true);
+    ATTLogger::init("", /*log_level=*/1, /*console_only=*/true);
 
     // load source-receiver tables into shared memory
     SrcRec sr;
