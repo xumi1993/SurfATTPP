@@ -149,19 +149,19 @@ inline void rotate_z(Eigen::VectorX<real_t>& x,
 //   4. rotate_x by +psi     →  additional rotation in local frame
 //   5. xyz → rtp
 // ---------------------------------------------------------------------------
-inline void rtp_rotation(
+inline std::pair<Eigen::VectorX<real_t>, Eigen::VectorX<real_t>> rtp_rotation(
     const Eigen::VectorX<real_t>& t,
     const Eigen::VectorX<real_t>& p,
-    real_t theta0, real_t phi0, real_t psi,
-    Eigen::VectorX<real_t>& new_t,
-    Eigen::VectorX<real_t>& new_p)
+    real_t theta0, real_t phi0, real_t psi)
 {
     Eigen::VectorX<real_t> x, y, z, r;
+    Eigen::VectorX<real_t> new_t, new_p;
     rtp2xyz(static_cast<real_t>(1), t, p, x, y, z);
     rotate_z(x, y, z, -phi0);
     rotate_y(x, y, z,  theta0);
     rotate_x(x, y, z,  psi);
     xyz2rtp(x, y, z, r, new_t, new_p);
+    return {new_t, new_p};
 }
 
 // ---------------------------------------------------------------------------

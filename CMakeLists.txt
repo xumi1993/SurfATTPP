@@ -171,9 +171,8 @@ target_link_libraries(objs PUBLIC
 # ---------------------------------------------------------------------------
 # Executable
 # ---------------------------------------------------------------------------
-set(APP_SOURCES
-  src/SURFATT_tomo.cxx
-)
+file(GLOB APP_SOURCES "src/*.cxx")
+
 foreach( execsourcefile ${APP_SOURCES} )
     get_filename_component(execname ${execsourcefile} NAME_WE)
 

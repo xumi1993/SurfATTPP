@@ -54,6 +54,7 @@ public:
     // Call after loading both tables. Broadcasts result to all ranks.
     static void build_stas();
 
+    SrcRec() = default;
     SrcRec(const SrcRec&)            = delete;
     SrcRec& operator=(const SrcRec&) = delete;
     ~SrcRec() { release_shm(); }
@@ -66,6 +67,9 @@ public:
 
     // Free all shared-memory windows. Call before MPI_Finalize().
     void release_shm();
+
+    // write the source-receiver table to a CSV file (for debugging)
+    void write(const std::string& filepath);
 
     // Number of rows after load()
     int n_obs = 0;
@@ -94,8 +98,6 @@ public:
     PeriodInfo periods_info;
 
 private:
-    SrcRec() = default;
-
     // One MPI_Win per numeric field
     MPI_Win win_stla_      = MPI_WIN_NULL;
     MPI_Win win_stlo_      = MPI_WIN_NULL;

@@ -44,12 +44,12 @@ public:
     // Calculate the dip angle (degrees) at each grid point, based on the gridded topo (z).
     Eigen::MatrixX<real_t> calc_dip_angle();
 
-    // rotate the topography by a specified angle (degrees) around a center point (clon, clat).
+    // rotate the topography by a specified angle (degrees) around a center point (clat, clon).
     void rotate(const real_t xmin, const real_t xmax,
                 const real_t ymin, const real_t ymax,
                 const real_t clat, const real_t clon, const real_t angle);
 
-    inline void copy();
+    void copy();
     
     Eigen::VectorX<real_t> lon_raw, lat_raw;  // raw topo grid coordinates
     Eigen::VectorX<real_t> lon, lat;  // raw topo grid coordinates

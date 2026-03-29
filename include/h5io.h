@@ -49,6 +49,7 @@ public:
     template<typename T>
     void write_scalar(const std::string &name, T value) {
         ensure_not_readonly();
+        remove_if_exists(name);
         hsize_t dims[1] = {1};
         H5::DataSpace sp(1, dims);
         H5::DataSet ds = file_.createDataSet(name, h5_type_of<T>(), sp);
@@ -67,6 +68,7 @@ public:
     template<typename T>
     void write_vector(const std::string &name, const std::vector<T> &v) {
         ensure_not_readonly();
+        remove_if_exists(name);
         hsize_t dims[1] = {static_cast<hsize_t>(v.size())};
         H5::DataSpace sp(1, dims);
         H5::DataSet ds = file_.createDataSet(name, h5_type_of<T>(), sp);
@@ -78,6 +80,7 @@ public:
                       const Eigen::DenseBase<Derived> &v) {
         using T = typename Derived::Scalar;
         ensure_not_readonly();
+        remove_if_exists(name);
         // Force evaluation to a contiguous column-vector
         Eigen::Matrix<T, Eigen::Dynamic, 1> tmp = v;
         hsize_t dims[1] = {static_cast<hsize_t>(tmp.size())};
@@ -102,6 +105,7 @@ public:
     void write_matrix(const std::string &name,
                       const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> &M) {
         ensure_not_readonly();
+        remove_if_exists(name);
         // Write as row-major so dimensions match intuition (rows × cols)
         Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Rm = M;
         hsize_t dims[2] = {static_cast<hsize_t>(M.rows()),
@@ -130,6 +134,7 @@ public:
                       const std::vector<T> &data,
                       hsize_t nz, hsize_t ny, hsize_t nx) {
         ensure_not_readonly();
+        remove_if_exists(name);
         if (data.size() != nz * ny * nx)
             throw std::invalid_argument(
                 "H5IO::write_volume: data.size() != nz*ny*nx");
@@ -181,6 +186,12 @@ public:
 private:
     H5::H5File file_;
     bool       readonly_{false};
+
+    void remove_if_exists(const std::string& name) {
+        if (file_.nameExists(name)) {
+            file_.unlink(name);
+        }
+    }
 
     void ensure_not_readonly() const {
         if (readonly_)

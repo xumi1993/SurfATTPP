@@ -3,8 +3,8 @@
 #include "utils.h"
 #include "config.h"
 
-#include <algorithm>
-#include <cstring>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 #include <string>
@@ -252,6 +252,53 @@ void SrcRec::build_stas()
         mpi.bcast(st.stnm[i]);
     mpi.bcast(st.stla.data(), nsta);
     mpi.bcast(st.stlo.data(), nsta);
+}
+
+// ---------------------------------------------------------------------------
+static std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6) {
+    std::vector<std::string> v(n);
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(prec);
+    for (int i = 0; i < n; ++i) {
+        oss.str(""); oss.clear();
+        oss << data[i];
+        v[i] = oss.str();
+    }
+    return v;
+}
+
+void SrcRec::write(const std::string& filepath){
+    if (n_obs == 0) {
+        throw std::runtime_error("SrcRec::write: no observations to write");
+    }
+    auto &mpi = Parallel::mpi();
+    if (mpi.is_main()) {
+        rapidcsv::Document doc;
+        doc.SetColumn<std::string> (0,  fmt_col(tt,         n_obs, 4));
+        doc.SetColumn<std::string> (1,  staname);
+        doc.SetColumn<std::string> (2,  fmt_col(stla,       n_obs, 4));
+        doc.SetColumn<std::string> (3,  fmt_col(stlo,       n_obs, 4));
+        doc.SetColumn<std::string> (4,  evtname);
+        doc.SetColumn<std::string> (5,  fmt_col(evla,       n_obs, 4));
+        doc.SetColumn<std::string> (6,  fmt_col(evlo,       n_obs, 4));
+        doc.SetColumn<std::string> (7,  fmt_col(period_all, n_obs, 2));
+        doc.SetColumn<std::string> (8,  fmt_col(weight,     n_obs, 4));
+        doc.SetColumn<std::string> (9,  fmt_col(dist,       n_obs, 3));
+        doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs, 4));
+        doc.SetColumnName(0,  "tt");
+        doc.SetColumnName(1,  "staname");
+        doc.SetColumnName(2,  "stla");
+        doc.SetColumnName(3,  "stlo");
+        doc.SetColumnName(4,  "evtname");
+        doc.SetColumnName(5,  "evla");
+        doc.SetColumnName(6,  "evlo");
+        doc.SetColumnName(7,  "period");
+        doc.SetColumnName(8,  "weight");
+        doc.SetColumnName(9,  "dist");
+        doc.SetColumnName(10, "vel");
+        doc.Save(filepath);
+    }
+    mpi.barrier();
 }
 
 // ---------------------------------------------------------------------------

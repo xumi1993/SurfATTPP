@@ -18,6 +18,7 @@ void Topography::read_from_file() {
     lon_raw = Eigen::Map<Eigen::VectorX<real_t>>(lon_vec.data(), lon_vec.size());
     lat_raw = Eigen::Map<Eigen::VectorX<real_t>>(lat_vec.data(), lat_vec.size());
     topo    = file.read_matrix<real_t>("z");
+    topo.transposeInPlace();  // HDF5 is row-major, but we want column-major
     topo   /= 1000.0;  // convert from m to km
 }
 
@@ -160,8 +161,12 @@ void Topography::copy() {
 }
 
 void Topography::write(const std::string& filepath) const {
-    H5IO file(filepath, H5IO::TRUNC);
-    file.write_vector("lon", lon);
-    file.write_vector("lat", lat);
-    file.write_matrix("z", z);
+    auto& mpi = Parallel::mpi();
+    if (mpi.is_main()) {
+        H5IO file(filepath, H5IO::TRUNC);
+        file.write_vector("lon", lon);
+        file.write_vector("lat", lat);
+        file.write_matrix("z", z);
+    }
+    mpi.barrier();
 }
