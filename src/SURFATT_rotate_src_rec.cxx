@@ -10,6 +10,13 @@ int main(int argc, char* argv[])
 
     // initialise MPI
     Parallel::init();
+    auto& mpi = Parallel::mpi();
+    if (mpi.size() > 1) {
+        mpi.finalize();
+        throw std::runtime_error(
+            "SURFATT_rotate_src_rec is not designed for parallel execution. Please run with a single process."
+        );
+    }
 
     // logger 
     ATTLogger::init("", 1, true);
