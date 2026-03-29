@@ -11,6 +11,12 @@
 
 
 // ---------------------------------------------------------------------------
+// Load the source-receiver observation table from CSV and place numeric fields
+// into MPI shared-memory windows.
+// Design choice:
+//   - Only rank 0 performs file I/O (single reader, deterministic parsing).
+//   - Other ranks obtain the same data via broadcast + shared-memory sync,
+//     avoiding duplicated memory footprint per rank.
 void SrcRec::load(const std::string& filepath)
 {
     auto& mpi = Parallel::mpi();
@@ -70,7 +76,9 @@ void SrcRec::load(const std::string& filepath)
     // 2. Broadcast row count
     mpi.bcast(n_obs);
 
-    // 3. One shared window per numeric field
+    // 3) Allocate one shared-memory window per numeric field.
+    //    This allows all local ranks on the node to access a single copy
+    //    instead of storing duplicated arrays.
     mpi.alloc_shared(n_obs, stla, win_stla_);
     mpi.alloc_shared(n_obs, stlo, win_stlo_);
     mpi.alloc_shared(n_obs, evla, win_evla_);
@@ -93,6 +101,8 @@ void SrcRec::load(const std::string& filepath)
     }
     mpi.barrier();
 
+    // After rank 0 populates the shared buffers, synchronize visibility so
+    // every rank sees the same finalized content before downstream processing.
     mpi.sync_from_main_rank(stla, n_obs);
     mpi.sync_from_main_rank(stlo, n_obs);
     mpi.sync_from_main_rank(evla, n_obs);
@@ -103,10 +113,20 @@ void SrcRec::load(const std::string& filepath)
     mpi.sync_from_main_rank(vel, n_obs);
     mpi.sync_from_main_rank(weight, n_obs);
 
+    // Build derived metadata used by inversion/forward steps:
+    //   - event-wise receiver index lists
+    //   - per-period statistics (counts and mean velocities)
     get_events();
     get_periods();
 }
 
+// Build an event -> observation-index mapping from evtname and distribute
+// event payloads to destination ranks.
+//
+// Distribution strategy:
+//   - rank 0 constructs the global event map.
+//   - each event is assigned to a rank via select_rank_for_src(i_src).
+//   - assigned rank stores the event in events_local / src_name_list_local.
 void SrcRec::get_events(){
     auto& mpi = Parallel::mpi();
     auto& logger = ATTLogger::logger();
@@ -114,7 +134,7 @@ void SrcRec::get_events(){
     if (mpi.is_main()){
         src_name_list.resize(evtname.size());
         std::copy(evtname.begin(), evtname.end(), src_name_list.begin());
-        // Extract unique event names
+        // Extract sorted unique event names from the per-observation evtname list.
         std::sort(src_name_list.begin(), src_name_list.end());
         src_name_list.erase(std::unique(src_name_list.begin(), src_name_list.end()), src_name_list.end());
 
@@ -136,7 +156,9 @@ void SrcRec::get_events(){
     mpi.barrier();
     mpi.bcast(nsrc_total);
 
-    // distribute events map to all ranks
+    // Distribute event records to their target ranks.
+    // We broadcast event names (small metadata), then send larger payloads
+    // (evla/evlo/receiver-index list) only to the selected destination rank.
     logger.Info("Distributing event information to all ranks", MODULE_SRCREC);    
     for (int i_src = 0; i_src < nsrc_total; i_src++) {
         int dst_rank = mpi.select_rank_for_src(i_src);
@@ -171,6 +193,8 @@ void SrcRec::get_events(){
     }
 }
 
+// Compute unique period values and average velocity for each period.
+// Current implementation performs this aggregation on rank 0 only.
 void SrcRec::get_periods(){
     auto& mpi = Parallel::mpi();
 
@@ -202,6 +226,11 @@ void SrcRec::get_periods(){
 }
 
 // ---------------------------------------------------------------------------
+// Build the global station list used by the workflow.
+// Rules:
+//   - If both phase and group datasets are available, keep the intersection
+//     of station names to ensure consistency across data types.
+//   - If only one dataset is available, use all stations from that dataset.
 void SrcRec::build_stas()
 {
     auto& mpi = Parallel::mpi();
@@ -255,6 +284,8 @@ void SrcRec::build_stas()
 }
 
 // ---------------------------------------------------------------------------
+// Convert a numeric array into fixed-precision string values for CSV output.
+// rapidcsv writing here is string-based to keep formatting explicit/consistent.
 static std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6) {
     std::vector<std::string> v(n);
     std::ostringstream oss;
@@ -267,6 +298,9 @@ static std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6)
     return v;
 }
 
+// Write the current observation table to CSV.
+// If is_fwd == true, output forward-modeled fields (tt_fwd / vel_fwd);
+// otherwise output observed/reference fields (tt / vel).
 void SrcRec::write(const std::string& filepath, const bool is_fwd){
     if (n_obs == 0) {
         throw std::runtime_error("SrcRec::write: no observations to write");
@@ -320,6 +354,8 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
 }
 
 // ---------------------------------------------------------------------------
+// Release all MPI shared-memory windows allocated in load().
+// Must be called when SrcRec data are no longer needed to avoid SHM leaks.
 void SrcRec::release_shm()
 {
     auto& mpi = Parallel::mpi();
