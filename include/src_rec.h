@@ -69,7 +69,7 @@ public:
     void release_shm();
 
     // write the source-receiver table to a CSV file (for debugging)
-    void write(const std::string& filepath);
+    void write(const std::string& filepath, const bool is_fwd = false);
 
     // Number of rows after load()
     int n_obs = 0;
@@ -88,6 +88,7 @@ public:
     real_t* vel       = nullptr;
     real_t* weight    = nullptr;
     real_t* tt_fwd    = nullptr;  // forward-modeled travel time (computed in surfdisp.cpp)
+    Eigen::VectorX<real_t> vel_fwd;  // for convenient access in Eigen
 
     std::vector<std::string> evtname;  
     std::vector<std::string> staname;
