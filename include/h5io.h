@@ -27,7 +27,7 @@ template<> inline H5::PredType h5_type_of<real2_t>()       { return H5::PredType
 //   f.write_scalar("niter", 40);
 //   f.write_vector("depth", v);
 //   f.write_matrix("vel",   M);
-//   f.write_volume("rho",   data, nz, ny, nx);
+//   f.write_volume("rho",   data, ni, nj, nk);
 //   f.write_attr  ("/",     "creator", "SurfATT");
 //
 // Usage (read):
@@ -35,8 +35,8 @@ template<> inline H5::PredType h5_type_of<real2_t>()       { return H5::PredType
 //   int niter = f.read_scalar<int>("niter");
 //   auto v    = f.read_vector<double>("depth");
 //   auto M    = f.read_matrix<double>("vel");     // returns MatrixXd (col-major)
-//   hsize_t nz,ny,nx;
-//   auto d    = f.read_volume<double>("rho", nz, ny, nx);  // flat [nz*ny*nx]
+//   hsize_t ni,nj,nk;
+//   auto d    = f.read_volume<double>("rho", ni, nj, nk);  // flat [ni*nj*nk]
 // ---------------------------------------------------------------------------
 class H5IO {
 public:
@@ -127,27 +127,27 @@ public:
         return Rm;  // implicitly converts to ColMajor if assigned to MatrixX*
     }
 
-    // ---- 3-D volume (flat array, dims: nz × ny × nx, row-major on disk) ---
-    // data must have exactly nz*ny*nx elements.
+    // ---- 3-D volume (flat array, dims: ni × nj × nk, row-major on disk) ---
+    // data must have exactly ni*nj*nk elements.
     template<typename T>
     void write_volume(const std::string &name,
                       const std::vector<T> &data,
-                      hsize_t nz, hsize_t ny, hsize_t nx) {
+                      hsize_t ni, hsize_t nj, hsize_t nk) {
         ensure_not_readonly();
         remove_if_exists(name);
-        if (data.size() != nz * ny * nx)
+        if (data.size() != ni * nj * nk)
             throw std::invalid_argument(
-                "H5IO::write_volume: data.size() != nz*ny*nx");
-        hsize_t dims[3] = {nz, ny, nx};
+                "H5IO::write_volume: data.size() != ni*nj*nk");
+        hsize_t dims[3] = {ni, nj, nk};
         H5::DataSpace sp(3, dims);
         H5::DataSet   ds = file_.createDataSet(name, h5_type_of<T>(), sp);
         ds.write(data.data(), h5_type_of<T>());
     }
 
-    // Read a 3-D dataset; nz/ny/nx are set to the actual dataset dimensions.
+    // Read a 3-D dataset; ni/nj/nk are set to the actual dataset dimensions.
     template<typename T>
     std::vector<T> read_volume(const std::string &name,
-                               hsize_t &nz, hsize_t &ny, hsize_t &nx) const {
+                               hsize_t &ni, hsize_t &nj, hsize_t &nk) const {
         H5::DataSet   ds = file_.openDataSet(name);
         H5::DataSpace sp = ds.getSpace();
         if (sp.getSimpleExtentNdims() != 3)
@@ -155,17 +155,17 @@ public:
                 "H5IO::read_volume: dataset '" + name + "' is not 3-D");
         hsize_t dims[3] = {0, 0, 0};
         sp.getSimpleExtentDims(dims, nullptr);
-        nz = dims[0]; ny = dims[1]; nx = dims[2];
-        std::vector<T> data(nz * ny * nx);
+        ni = dims[0]; nj = dims[1]; nk = dims[2];
+        std::vector<T> data(ni * nj * nk);
         ds.read(data.data(), h5_type_of<T>());
         return data;
     }
 
     // Convenience: index helper for flat 3-D arrays (row-major)
-    // Usage: data[idx3(iz, iy, ix, ny, nx)]
-    static constexpr hsize_t idx3(hsize_t iz, hsize_t iy, hsize_t ix,
-                                   hsize_t ny, hsize_t nx) noexcept {
-        return iz * ny * nx + iy * nx + ix;
+    // Usage: data[idx3(ii, jj, kk, nj, nk)]
+    static constexpr hsize_t idx3(hsize_t ii, hsize_t jj, hsize_t kk,
+                                   hsize_t nj, hsize_t nk) noexcept {
+        return ii * nj * nk + jj * nk + kk;
     }
 
     // ---- String attribute on a group/dataset -------------------------------

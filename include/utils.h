@@ -141,10 +141,13 @@ inline real_t vs2vp(real_t vs) {
 }
 
 template<typename T>
-inline Eigen::Matrix<T, Eigen::Dynamic, 1> vs2vp(const Eigen::Matrix<T, Eigen::Dynamic, 1>& vs) {
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> vs2vp(
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vs
+) {
     return (0.9409 + 2.0947*vs.array() - 0.8206*vs.array().square() +
             0.2683*vs.array().cube() - 0.0251*vs.array().pow(4)).matrix();
 }
+
 
 // d(rho)/d(vp): derivative of vp2rho w.r.t. vp (scalar)
 inline real_t drho_dalpha(real_t vp) {
@@ -153,7 +156,7 @@ inline real_t drho_dalpha(real_t vp) {
 
 // d(rho)/d(vp): element-wise, vector overload
 template<typename T>
-inline Eigen::Matrix<T, Eigen::Dynamic, 1> drho_dalpha(const Eigen::Matrix<T, Eigen::Dynamic, 1>& vp) {
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> drho_dalpha(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vp) {
     auto a = vp.array();
     return (1.6612 - 2*0.4721*a + 3*0.0671*a.square() - 4*0.0043*a.cube() + 5*0.000106*a.pow(4)).matrix();
 }
@@ -165,7 +168,9 @@ inline real_t dalpha_dbeta(real_t vs) {
 
 // d(vp)/d(vs): element-wise, vector overload
 template<typename T>
-inline Eigen::Matrix<T, Eigen::Dynamic, 1> dalpha_dbeta(const Eigen::Matrix<T, Eigen::Dynamic, 1>& vs) {
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> dalpha_dbeta(
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vs
+) {
     auto a = vs.array();
     return (2.0947 - 2*0.8206*a + 3*0.2683*a.square() - 4*0.0251*a.cube()).matrix();
 }
@@ -175,7 +180,9 @@ inline real_t vp2rho(real_t vp) {
 }
 
 template<typename T>
-inline Eigen::Matrix<T, Eigen::Dynamic, 1> vp2rho(const Eigen::Matrix<T, Eigen::Dynamic, 1>& vp) {
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> vp2rho(
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vp
+) {
     return (1.6612*vp.array() - 0.4721*vp.array().square() + 
             0.0671*vp.array().cube() - 0.0043*vp.array().pow(4) + 
             0.000106*vp.array().pow(5)).matrix();

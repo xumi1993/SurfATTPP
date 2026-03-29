@@ -3,7 +3,12 @@
 #include "logger.h"
 #include "inversion1d.h"
 #include "h5io.h"
+#include "minpack.hpp"
 #include "utils.h"
+
+#include <array>
+#include <cmath>
+#include <vector>
 
 
 namespace {
@@ -17,6 +22,94 @@ namespace {
         lon_max = stlo_vec.maxCoeff();
         lat_min = stla_vec.minCoeff();
         lat_max = stla_vec.maxCoeff();
+    }
+
+    // Fit parameters of depth-dependent phase function:
+    // anomfun(a) = (sqrt(p0^2 + p1*(a-1)) - p0) / p2
+    // so that anomfun(anchor_i) ~= n_pi_i, using minpack::lmdif1.
+    std::array<real_t, 3> dep_anom(
+        const Eigen::VectorX<real_t>& zgrids,
+        const int nz,
+        const real_t asanom_size
+    ) {
+        if (nz <= 1) {
+            throw std::runtime_error("ModelGrid::dep_anom: nz must be > 1");
+        }
+        if (zgrids.size() < 2) {
+            throw std::runtime_error("ModelGrid::dep_anom: zgrids size must be >= 2");
+        }
+
+        auto &logger = ATTLogger::logger();
+        const int maxanchor = nz * 2 + 1;
+        const real_t dz = zgrids(1) - zgrids(0);
+        const real_t nanomtop = asanom_size / dz;
+        const real_t anom_size_inc =
+            (static_cast<real_t>(zgrids.size() - 1) - static_cast<real_t>(nz) * nanomtop) /
+            static_cast<real_t>(2 * nz * (nz - 1));
+
+        Eigen::VectorX<real_t> anch = Eigen::VectorX<real_t>::Zero(maxanchor);
+        Eigen::VectorX<real_t> n_pi = Eigen::VectorX<real_t>::Zero(maxanchor);
+
+        anch(0) = _1_CR;
+        n_pi(0) = _0_CR;
+        logger.Info(
+            std::format(
+                "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
+                (anch(0) - _1_CR) * dz,
+                n_pi(0) * static_cast<real_t>(2)
+            ),
+            MODULE_GRID
+        );
+
+        for (int i = 1; i < maxanchor; ++i) {
+            anch(i) = anch(i - 1)
+                      + (nanomtop - anom_size_inc) / static_cast<real_t>(2)
+                      + static_cast<real_t>(i - 1) * anom_size_inc;
+            n_pi(i) = n_pi(i - 1) + static_cast<real_t>(0.25);
+
+            logger.Info(
+                std::format(
+                    "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
+                    (anch(i) - _1_CR) * dz,
+                    n_pi(i) * static_cast<real_t>(2)
+                ),
+                MODULE_GRID
+            );
+        }
+
+        std::vector<double> para = {1.0, 1.0, 1.0};
+        std::vector<double> fitfun;
+        const double tol = 1.0e-7;
+
+        const auto info = minpack::lmdif1(
+            [&anch, &n_pi](int m, int /*n*/, const double* x, double* fvec, int& iflag) {
+                constexpr double eps = 1.0e-12;
+                if (std::abs(x[2]) < eps) {
+                    iflag = -1;
+                    return;
+                }
+                for (int i = 0; i < m; ++i) {
+                    const double arg = x[0] * x[0] + x[1] * (static_cast<double>(anch(i)) - 1.0);
+                    if (arg < 0.0) {
+                        iflag = -1;
+                        return;
+                    }
+                    const double anomfun = (std::sqrt(arg) - x[0]) / x[2];
+                    fvec[i] = std::abs(anomfun - static_cast<double>(n_pi(i)));
+                }
+            },
+            maxanchor, 3,para, fitfun, tol
+        );
+
+        if (info == minpack::InfoCode::ImproperInput) {
+            throw std::runtime_error("ModelGrid::dep_anom: minpack lmdif1 failed with ImproperInput");
+        }
+
+        return {
+            static_cast<real_t>(para[0]),
+            static_cast<real_t>(para[1]),
+            static_cast<real_t>(para[2])
+        };
     }
 }
 
@@ -88,27 +181,20 @@ void ModelGrid::build_1d_model_inversion() {
 // Validates that the stored grid dimensions match the current model grid.
 std::vector<real_t> ModelGrid::load_3d_model() {
     const auto &IP = InputParams::IP();
-    std::vector<real_t> model3d, model_tmp;
+    std::vector<real_t> model3d;
     H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
-    hsize_t nz, ny, nx;
+    hsize_t nx = 0, ny = 0, nz = 0;
 
     try {
-        model_tmp = f.read_volume<real_t>("vs", nz, ny, nx);
-        // Ensure the file's grid dimensions are consistent with n_xyz
-        if (nx != static_cast<hsize_t>(n_xyz[0]) || ny != static_cast<hsize_t>(n_xyz[1]) || nz != static_cast<hsize_t>(n_xyz[2])) {
+        model3d = f.read_volume<real_t>("vs", nx, ny, nz);
+        // Ensure the file's grid dimensions are consistent with n_xyz (i,j,k order)
+        if (nx != static_cast<hsize_t>(n_xyz[0]) ||
+            ny != static_cast<hsize_t>(n_xyz[1]) ||
+            nz != static_cast<hsize_t>(n_xyz[2])) {
             throw std::runtime_error("ModelGrid: invalid shape of 3D model in HDF5 file");
         }
     } catch (const std::exception &e) {
         throw std::runtime_error(std::string("ModelGrid: failed to load 3D model from HDF5 file: ") + e.what());
-    }
-    model3d.resize(nz * ny * nx);
-    for (int k = 0; k < ngrid_k; ++k) {
-        for (int j = 0; j < ngrid_j; ++j) {
-            for (int i = 0; i < ngrid_i; ++i) {
-                const int isrc = k * ngrid_j * ngrid_i + j * ngrid_i + i;
-                model3d[I2V(i, j, k)] = model_tmp[isrc];
-            }
-        }
     }
     return model3d;
 }
@@ -153,6 +239,7 @@ void ModelGrid::build_init_model() {
         );
         if (mpi.is_main()) {
             std::vector<real_t> model3d = load_3d_model();
+            std::copy(model3d.begin(), model3d.end(), vs3d);
             // Derive Vp and density from Vs using empirical scaling relations
             vs1d.setZero(ngrid_k);
             for (int k = 0; k < ngrid_k; ++k){
@@ -188,9 +275,108 @@ void ModelGrid::build_init_model() {
     }
 
     // Broadcast the model from main rank to all other ranks
+    mpi.bcast(vs1d.data(), ngrid_k);
     mpi.sync_from_main_rank(vp3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
     mpi.sync_from_main_rank(vs3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
     mpi.sync_from_main_rank(rho3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+}
+
+void ModelGrid::add_perturbation(
+    const int nx, const int ny, const int nz,
+    const real_t pert_vel, const real_t hmargin,
+    const real_t anom_size, const bool only_vs
+) {
+    auto &mpi = Parallel::mpi();
+    const int nelem = ngrid_i * ngrid_j * ngrid_k;
+
+    if (mpi.is_main()) {
+
+        const int ntaper_i = static_cast<int>(hmargin / dgrid_i);
+        const int ntaper_j = static_cast<int>(hmargin / dgrid_j);
+        const int inner_i = ngrid_i - 2 * ntaper_i;
+        const int inner_j = ngrid_j - 2 * ntaper_j;
+
+        if (inner_i <= 0 || inner_j <= 0) {
+            throw std::runtime_error(
+                "ModelGrid::add_perturbation: hmargin too large for current grid size");
+        }
+
+        Eigen::VectorX<real_t> x_pert = Eigen::VectorX<real_t>::Zero(ngrid_i);
+        Eigen::VectorX<real_t> y_pert = Eigen::VectorX<real_t>::Zero(ngrid_j);
+        Eigen::VectorX<real_t> z_pert = Eigen::VectorX<real_t>::Zero(ngrid_k);
+
+        // x_pert[ntaper_i : ni-ntaper_i-1] = sin(nx*pi*arange(inner_i)/inner_i)
+        {
+            Eigen::VectorX<real_t> ii = Eigen::VectorX<real_t>::LinSpaced(
+                inner_i, _0_CR, static_cast<real_t>(inner_i - 1));
+            x_pert.segment(ntaper_i, inner_i) =
+                (static_cast<real_t>(nx) * PI * ii.array() / static_cast<real_t>(inner_i)).sin().matrix();
+        }
+
+        // y_pert[ntaper_j : nj-ntaper_j-1] = sin(ny*pi*arange(inner_j)/inner_j)
+        {
+            Eigen::VectorX<real_t> jj = Eigen::VectorX<real_t>::LinSpaced(
+                inner_j, _0_CR, static_cast<real_t>(inner_j - 1));
+            y_pert.segment(ntaper_j, inner_j) =
+                (static_cast<real_t>(ny) * PI * jj.array() / static_cast<real_t>(inner_j)).sin().matrix();
+        }
+
+        if (anom_size <= _0_CR) {
+            // Uniform-depth wavelength branch.
+            Eigen::VectorX<real_t> kk = Eigen::VectorX<real_t>::LinSpaced(
+                ngrid_k, _0_CR, static_cast<real_t>(ngrid_k - 1));
+            z_pert = (static_cast<real_t>(nz) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
+        } else {
+            // Depth-varying wavelength branch fitted by minpack.
+            const auto para = dep_anom(zgrids, nz, anom_size);
+            for (int k = 0; k < ngrid_k; ++k) {
+                const real_t phase = (
+                    std::sqrt(para[0] * para[0] + para[1] * static_cast<real_t>(k)) - para[0]
+                ) / para[2];
+                z_pert(k) = std::sin(static_cast<real_t>(2) * PI * phase);
+            }
+        }
+
+        // Apply perturbation (vectorized along k for each i,j line)
+        for (int i = 0; i < ngrid_i; ++i) {
+            for (int j = 0; j < ngrid_j; ++j) {
+                const real_t amp = x_pert(i) * y_pert(j) * pert_vel;
+                Eigen::Map<Eigen::VectorX<real_t>> vs_line(&vs3d[I2V(i, j, 0)], ngrid_k);
+                vs_line.array() *= (_1_CR + amp * z_pert.array());
+            }
+        }
+
+        if (!only_vs) {
+            Eigen::Map<Eigen::VectorX<real_t>> vs_vec(vs3d, nelem);
+            Eigen::Map<Eigen::VectorX<real_t>> vp_vec(vp3d, nelem);
+            Eigen::Map<Eigen::VectorX<real_t>> rho_vec(rho3d, nelem);
+            vp_vec = vs2vp<real_t>(vs_vec);
+            rho_vec = vp2rho<real_t>(vp_vec);
+        }
+    }
+
+    mpi.barrier();
+    mpi.sync_from_main_rank(vs3d, nelem);
+    mpi.sync_from_main_rank(vp3d, nelem);
+    mpi.sync_from_main_rank(rho3d, nelem);
+}
+
+void ModelGrid::write(std::string &subname) {
+    auto &IP = InputParams::IP();
+    auto &mpi = Parallel::mpi();
+    if (mpi.is_main()) {
+        std::string filename = std::format("{}/{}", IP.output().output_path, subname);
+        H5IO f(filename, H5IO::TRUNC);
+        f.write_vector("xgrids", xgrids);
+        f.write_vector("ygrids", ygrids);
+        f.write_vector("zgrids", zgrids);
+        f.write_volume("vs", std::vector<real_t>(vs3d, vs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+        if (IP.inversion().use_alpha_beta_rho) {
+            f.write_volume("vp", std::vector<real_t>(vp3d, vp3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("rho", std::vector<real_t>(rho3d, rho3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+        }
+    }
+    mpi.barrier();
 }
 
 // Free the MPI shared-memory windows and null the associated raw pointers.

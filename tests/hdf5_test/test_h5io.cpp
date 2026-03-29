@@ -188,41 +188,41 @@ static void test_parallel_write(const std::string &base_path) {
 }
 
 // ---------------------------------------------------------------------------
-// Test: 3-D volume read / write
+// Test: 3-D volume read / write (i,j,k order)
 // ---------------------------------------------------------------------------
 static void test_volume(const std::string &path) {
-    const hsize_t NZ = 4, NY = 3, NX = 5;
-    const hsize_t total = NZ * NY * NX;
+    const hsize_t NI = 4, NJ = 3, NK = 5;
+    const hsize_t total = NI * NJ * NK;
 
-    // Fill with v[iz][iy][ix] = iz*100 + iy*10 + ix
+    // Fill with v[ii][jj][kk] = ii*100 + jj*10 + kk
     std::vector<double> ref(total);
-    for (hsize_t iz = 0; iz < NZ; ++iz)
-        for (hsize_t iy = 0; iy < NY; ++iy)
-            for (hsize_t ix = 0; ix < NX; ++ix)
-                ref[H5IO::idx3(iz, iy, ix, NY, NX)] =
-                    static_cast<double>(iz * 100 + iy * 10 + ix);
+    for (hsize_t ii = 0; ii < NI; ++ii)
+        for (hsize_t jj = 0; jj < NJ; ++jj)
+            for (hsize_t kk = 0; kk < NK; ++kk)
+                ref[H5IO::idx3(ii, jj, kk, NJ, NK)] =
+                    static_cast<double>(ii * 100 + jj * 10 + kk);
 
     if (Parallel::mpi().is_main()) {
         H5IO f(path, H5IO::TRUNC);
-        f.write_volume<double>("vel3d", ref, NZ, NY, NX);
+        f.write_volume<double>("vel3d", ref, NI, NJ, NK);
     }
     Parallel::mpi().barrier();
 
     H5IO f(path, H5IO::RDONLY);
-    hsize_t rz = 0, ry = 0, rx = 0;
-    auto d = f.read_volume<double>("vel3d", rz, ry, rx);
+    hsize_t ri = 0, rj = 0, rk = 0;
+    auto d = f.read_volume<double>("vel3d", ri, rj, rk);
 
-    assert(rz == NZ && ry == NY && rx == NX);
+    assert(ri == NI && rj == NJ && rk == NK);
     assert(d.size() == total);
     for (hsize_t i = 0; i < total; ++i)
         assert(near(d[i], ref[i]));
 
     // Spot-check a specific voxel: [2][1][3] = 213
-    assert(near(d[H5IO::idx3(2, 1, 3, NY, NX)], 213.0));
+    assert(near(d[H5IO::idx3(2, 1, 3, NJ, NK)], 213.0));
 
     print("[PASS] 3-D volume write/read (" +
-          std::to_string(NZ) + "x" + std::to_string(NY) + "x" +
-          std::to_string(NX) + ")");
+          std::to_string(NI) + "x" + std::to_string(NJ) + "x" +
+          std::to_string(NK) + ")");
 }
 
 // ---------------------------------------------------------------------------

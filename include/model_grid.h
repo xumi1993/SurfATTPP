@@ -23,6 +23,12 @@ public:
     ~ModelGrid() { release_shm(); }
 
     void build_init_model();
+    void add_perturbation(
+        const int nx, const int ny, const int nz,
+        const real_t pert_vel, const real_t hmargin = _0_CR,
+        const real_t anom_size = _0_CR, const bool only_vs = false
+    );
+    void write(std::string &subname);
 
     Eigen::VectorX<real_t> vs1d;  // 1D S-wave velocity model for depth kernel calculation
     std::vector<int> n_xyz = {0, 0, 0};  // number of grid points in x/y/z directions (excluding margins)

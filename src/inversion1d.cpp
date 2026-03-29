@@ -56,9 +56,9 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
             surfker::DepthKernel1D kernels = surfker::depthkernel1d(req);
 
             update.setZero();
-            auto vp = vs2vp(vs1d);
-            auto db = dalpha_dbeta(vs1d);
-            auto dr = drho_dalpha(vp);
+            auto vp = vs2vp<real_t>(vs1d);
+            auto db = dalpha_dbeta<real_t>(vs1d);
+            auto dr = drho_dalpha<real_t>(vp);
             for (int iper = 0; iper < nperiod; ++iper) {
                 Eigen::VectorX<real_t> sen =
                       kernels.sen_vs.row(iper).transpose().array()

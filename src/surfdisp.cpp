@@ -73,8 +73,8 @@ DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
     req.depths_km(mmax - 1) = dep(dep.size() - 1);
     req.vs_km_s.head(vs.size()) = vs;
     req.vs_km_s(mmax - 1) = vs(vs.size() - 1);
-    req.vp_km_s = vs2vp(req.vs_km_s);
-    req.rho_g_cm3 = vp2rho(req.vp_km_s);
+    req.vp_km_s = vs2vp<real_t>(req.vs_km_s);
+    req.rho_g_cm3 = vp2rho<real_t>(req.vp_km_s);
     req.periods_s = periods_s;
     for (int i = 0; i < dep.size(); ++i) {
         if (i == dep.size() - 1) {
