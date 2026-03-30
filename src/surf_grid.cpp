@@ -153,7 +153,7 @@ void SurfGrid::fwdsurf(){
     for (int ix = 0; ix < ngrid_i; ++ix) {
         for (int iy = 0; iy < ngrid_j; ++iy) {
             int loc_rank = mpi.select_rank_for_src(ix * ngrid_j + iy);
-            // logger.Debug(std::format("Rank:{}, Computing dispersion for grid point ({}, {})", loc_rank, ix, iy), MODULE_GRID, false);
+            logger.Debug(std::format("Rank:{}, Computing dispersion for grid point ({}, {})", loc_rank, ix, iy), MODULE_GRID, false);
             if (mpi.rank() == loc_rank) {
                 Eigen::VectorX<real_t> vs1d = extract_1d_from_3d(mg.vs3d, ix, iy, ngrid_k);
                 auto req = surfker::build_disp_req(mg.zgrids, vs1d, periods,

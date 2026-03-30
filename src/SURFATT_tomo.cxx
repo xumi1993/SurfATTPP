@@ -53,12 +53,12 @@ int main(int argc, char* argv[])
     if (IP.data().vel_type[0]) SurfGrid::SG_ph().build_media();
     if (IP.data().vel_type[1]) SurfGrid::SG_gr().build_media();
 
-    // // run forward and adjoint calculations
-    // if (FORWARD_ONLY) {
-    //     preproc::run_forward_adjoint(false);
-    // } else {
-    //     preproc::run_forward_adjoint(true);
-    // }
+    // run forward and adjoint calculations
+    if (FORWARD_ONLY) {
+        preproc::run_forward_adjoint(false);
+    } else {
+        preproc::run_forward_adjoint(true);
+    }
 
     SrcRec::SR_ph().release_shm();
     SrcRec::SR_gr().release_shm();

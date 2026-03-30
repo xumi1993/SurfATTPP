@@ -15,7 +15,7 @@ data:
 output:
   output_path: OUTPUT_FILES/ # path to save output files
   output_in_process_data: True
-  log_level: 1 # 0 debug mode, 1 verbose mode
+  log_level: 2 # 1 debug mode, 2: info mode, 3: warning mode, 4: error mode
 
 domain:
   depth: [0, 10] # depth range in km

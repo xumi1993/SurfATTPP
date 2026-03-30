@@ -23,12 +23,13 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
     auto& logger = ATTLogger::logger();
 
     real_t chi = _0_CR;
+    logger.Info("Running forward or/and adjoint calculations for each event...", MODULE_PREPROC);
     for (auto evt : sr.events_local) {
         real_t evla = evt.second.evla;
         real_t evlo = evt.second.evlo;
         int iper = evt.second.iper;
 
-        logger.Info(std::format("Rank:{}, Computing travel time for event: {} ",
+        logger.Debug(std::format("Rank:{}, Computing travel time for event: {} ",
             mpi.rank(), evt.first), 
             MODULE_PREPROC, false
         );
