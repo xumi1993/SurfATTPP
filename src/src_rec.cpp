@@ -323,6 +323,7 @@ void SrcRec::gather_syn_tt()
         mpi.bcast(src_name);
 
         if (mpi.is_main()) {
+            tt_fwd.Zero(n_obs);  // reset to default before gathering
             int n_rec;
             if (dst_rank == 0) {
                 auto& info = events_local[src_name];
@@ -352,11 +353,9 @@ void SrcRec::gather_syn_tt()
     }
     mpi.barrier();
 
-    if (mpi.is_node_main()) {
-        Eigen::Map<Eigen::VectorX<real_t>> tt_fwd_map(tt_fwd, n_obs);
-        Eigen::Map<Eigen::VectorX<real_t>> vel_map(vel, n_obs);
+    if (mpi.is_main()) {
         Eigen::Map<Eigen::VectorX<real_t>> dist_map(dist, n_obs);
-        vel_map = dist_map.array() / tt_fwd_map.array();
+        vel_fwd = dist_map.array() / tt_fwd.array();
     }
 }
 
@@ -389,11 +388,11 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
     if (mpi.is_main()) {
         rapidcsv::Document doc;
         if (is_fwd){
-            if (tt_fwd == nullptr) {
+            if (tt_fwd.size() == 0) {
                 logger.Error("Forward-modeled travel times (tt_fwd) are not assigned", MODULE_SRCREC);
                 exit(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd, n_obs, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs, 4));
         } else {
             doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs, 4));
         }

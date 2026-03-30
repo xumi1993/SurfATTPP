@@ -93,7 +93,7 @@ public:
     real_t* tt        = nullptr;
     real_t* vel       = nullptr;
     real_t* weight    = nullptr;
-    real_t* tt_fwd    = nullptr;  // forward-modeled travel time (computed in surfdisp.cpp)
+    Eigen::VectorX<real_t> tt_fwd;  // forward-modeled travel time (computed in surfdisp.cpp)
     Eigen::VectorX<real_t> vel_fwd;  // for convenient access in Eigen
 
     std::vector<std::string> evtname;  
