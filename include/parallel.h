@@ -135,6 +135,13 @@ public:
     void sum_all_all(T send, T &recv) {
         MPI_Allreduce(&send, &recv, 1, mpi_type_of<T>(), MPI_SUM, comm_);
     }
+
+    // sum scalar allreduce in-place (recv = recv + send)
+    template<typename T>
+    void sum_all_all_inplace(T &recv) {
+        MPI_Allreduce(MPI_IN_PLACE, &recv, 1, mpi_type_of<T>(), MPI_SUM, comm_);
+    }
+
     // nD arrays: allreduce
     template<typename T>
     void sum_all_all(const T *send, T *recv, int count) {

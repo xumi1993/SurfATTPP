@@ -50,7 +50,7 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
             );
 
             Eigen::VectorX<real_t> pred_vel = surfker::surfdisp(req);
-            real_t misfit = 0.5 * (pred_vel - sr.periods_info.meanvel).squaredNorm();
+            real_t misfit = 0.5 * (pred_vel - sr.periods_info.meanvel).array().square().sum();
             misfit_total += misfit * IP.data().weights[itype];
 
             surfker::DepthKernel1D kernels = surfker::depthkernel1d(req);
