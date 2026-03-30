@@ -316,7 +316,7 @@ void SrcRec::gather_syn_tt()
 {
     auto &mpi = Parallel::mpi();
 
-    for (int i_src; i_src < nsrc_total; i_src++) {
+    for (int i_src = 0; i_src < nsrc_total; i_src++) {
         int dst_rank = mpi.select_rank_for_src(i_src);
         std::string src_name;
         if (mpi.is_main()) src_name = src_name_list[i_src];
@@ -330,7 +330,7 @@ void SrcRec::gather_syn_tt()
                 n_rec = static_cast<int>(info.rec_indices.size());
                 for (int i = 0; i < n_rec; ++i) {
                     int rec_idx = info.rec_indices[i];
-                    tt_fwd[rec_idx] = info.syn_data[i];
+                    tt_fwd(rec_idx) = info.syn_data[i];
                 }
             } else {
                 mpi.recv(&n_rec, 1, dst_rank);
@@ -340,7 +340,7 @@ void SrcRec::gather_syn_tt()
                 mpi.recv(rec_indices.data(), n_rec, dst_rank);
                 for (int i = 0; i < n_rec; ++i) {
                     int rec_idx = rec_indices[i];
-                    tt_fwd[rec_idx] = syn_tt(i);
+                    tt_fwd(rec_idx) = syn_tt(i);
                 }
             }
         } else if (mpi.rank() == dst_rank) {
@@ -446,4 +446,3 @@ void SrcRec::release_shm()
     mpi.free_shared(vel,        win_vel_);
     mpi.free_shared(weight,     win_weight_);
 }
-
