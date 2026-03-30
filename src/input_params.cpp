@@ -42,9 +42,9 @@ void InputParams::load_data(const YAML::Node &n) {
 }
 
 void InputParams::load_output(const YAML::Node &n) {
-    output_.output_path   = req<std::string>(n, "output_path");
-    output_.verbose_level = req<int>(n, "verbose_level");
-    output_.log_level     = req<int>(n, "log_level");
+    output_.output_path   = opt<std::string>(n, "output_path", "OUTPUT_FILES/");
+    output_.output_in_process_data = opt<bool>(n, "output_in_process_data", false);
+    output_.log_level     = opt<int>(n, "log_level", 1);
 }
 
 void InputParams::load_domain(const YAML::Node &n) {
@@ -141,7 +141,7 @@ void InputParams::bcast_data() {
 void InputParams::bcast_output() {
     auto &mpi = Parallel::mpi();
     mpi.bcast(output_.output_path);
-    mpi.bcast(output_.verbose_level);
+    mpi.bcast(output_.output_in_process_data);
     mpi.bcast(output_.log_level);
 }
 

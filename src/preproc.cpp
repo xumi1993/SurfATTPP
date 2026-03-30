@@ -20,6 +20,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
     auto& IP = InputParams::IP();
     auto& mg = ModelGrid::MG();
     auto& mpi = Parallel::mpi();
+    auto& logger = ATTLogger::logger();
 
     real_t chi = _0_CR;
     for (auto evt : sr.events_local) {
@@ -27,10 +28,15 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
         real_t evlo = evt.second.evlo;
         int iper = evt.second.iper;
 
+        logger.Info(std::format("Rank:{}, Computing travel time for event: {} ",
+            mpi.rank(), evt.first), 
+            MODULE_PREPROC, false
+        );
         auto svel_ij = extract_period_ij(sg.svel, sg.nperiod, iper);
         auto m11_ij = extract_period_ij(sg.m11, sg.nperiod, iper);
         auto m12_ij = extract_period_ij(sg.m12, sg.nperiod, iper);
         auto m22_ij = extract_period_ij(sg.m22, sg.nperiod, iper);
+
         // Compute the travel time for this source-receiver pair and period
         // using the surface wave dispersion grid (sg) and model grid (mg).
         // This is a placeholder; the actual computation would involve
@@ -69,17 +75,24 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
 void preproc::run_forward_adjoint(const bool is_calc_adj){
     auto& IP = InputParams::IP();
     auto& mg = ModelGrid::MG();
+    auto& logger = ATTLogger::logger();
 
    for (surfType tp : {surfType::PH, surfType::GR}) {
         if (!IP.data().vel_type[static_cast<size_t>(tp)]) continue;
         auto &sg = (tp == surfType::PH) ? SurfGrid::SG_ph() : SurfGrid::SG_gr();
         auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
 
+        logger.Info(std::format("Running forward and adjoint calculations for {} data", surfTypeStr[static_cast<size_t>(tp)]), MODULE_PREPROC);
         // Compute surface wave dispersion from the 3D S-wave velocity model.
         sg.fwdsurf();
 
         // calculate travel time for each source-receiver pair and period, and store in sr.events_local
         forward_for_event(sr, sg, is_calc_adj);
+
+        // gather synthetic travel times to the main rank for output and inversion steps
+        if (FORWARD_ONLY || IP.output().output_in_process_data) {
+            sr.gather_syn_tt();
+        }
 
         // compute kernel
     }

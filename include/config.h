@@ -15,6 +15,7 @@
 #endif
 
 #include <string>
+#include <vector>
 
 // Convenience constant sized to the active precision
 #include <limits>
@@ -61,6 +62,7 @@ constexpr int IMODE = 1;
 constexpr int FORWARD_ONLY = 0;
 constexpr int INVERSION_MODE = 1;
 enum class surfType { PH = 0, GR = 1 };
+inline std::vector<std::string> surfTypeStr = {"PH", "GR"};
 
 // ---------------------------------------------------------------------------
 // global variables
@@ -76,3 +78,4 @@ inline const std::string MODULE_OPTIM     = "OPTIM";
 inline const std::string MODULE_MAIN      = "MAIN";
 inline const std::string MODULE_INV1D     = "INV1D";
 inline const std::string MODULE_TOPO      = "TOPO";
+inline const std::string MODULE_PREPROC   = "PREPROC";

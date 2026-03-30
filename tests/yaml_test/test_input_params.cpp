@@ -31,7 +31,6 @@ static void check_data() {
 static void check_output() {
     const auto &o = InputParams::IP().output();
     assert(o.output_path   == "OUTPUT_FILES/");
-    assert(o.verbose_level == 2);
     assert(o.log_level     == 1);
     std::cout << "[PASS] output\n";
 }

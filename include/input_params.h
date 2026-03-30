@@ -21,7 +21,7 @@ struct DataParams {
 
 struct OutputParams {
     std::string output_path;
-    int verbose_level;  // 0 quiet, 1 verbose, 2 full
+    bool output_in_process_data;
     int log_level;      // 0 debug, 1 verbose
 };
 

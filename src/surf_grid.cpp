@@ -115,7 +115,9 @@ void SurfGrid::build_media_matrix_with_topo() {
 void SurfGrid::build_media() {
     auto &mpi = Parallel::mpi();
     auto &IP = InputParams::IP();
-    
+    auto &logger = ATTLogger::logger();
+
+    logger.Info("Building anisotropic media matrix for each period...", MODULE_GRID);
     int n_elem = ngrid_i * ngrid_j * nperiod;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
@@ -151,6 +153,7 @@ void SurfGrid::fwdsurf(){
     for (int ix = 0; ix < ngrid_i; ++ix) {
         for (int iy = 0; iy < ngrid_j; ++iy) {
             int loc_rank = mpi.select_rank_for_src(ix * ngrid_j + iy);
+            // logger.Debug(std::format("Rank:{}, Computing dispersion for grid point ({}, {})", loc_rank, ix, iy), MODULE_GRID, false);
             if (mpi.rank() == loc_rank) {
                 Eigen::VectorX<real_t> vs1d = extract_1d_from_3d(mg.vs3d, ix, iy, ngrid_k);
                 auto req = surfker::build_disp_req(mg.zgrids, vs1d, periods,
@@ -163,9 +166,10 @@ void SurfGrid::fwdsurf(){
             }
         }
     }
-
-    mpi.sum_all_all(tmp_svel.data(), svel, n_elem);
+    mpi.barrier();
+    mpi.sum_all(tmp_svel.data(), svel, n_elem);
     mpi.sync_from_main_rank(svel, n_elem);
+
 }
 
 

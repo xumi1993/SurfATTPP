@@ -35,7 +35,6 @@ static void verify_all() {
 
     // output
     assert(o.output_path   == "OUTPUT_FILES/");
-    assert(o.verbose_level == 2);
     assert(o.log_level     == 1);
 
     // domain

@@ -19,7 +19,6 @@ struct event_info {
     int iper;
     std::vector<int> rec_indices;
     Eigen::VectorX<real_t> syn_data;
-    Eigen::VectorX<real_t> adjoint_source;
 };
 
 struct Stations {
@@ -69,6 +68,9 @@ public:
     // Must call release_shm() before MPI_Finalize().
     void load(const std::string& filepath);
 
+    // gather synthetic travel times
+    void gather_syn_tt();
+
     // Free all shared-memory windows. Call before MPI_Finalize().
     void release_shm();
 
@@ -96,7 +98,7 @@ public:
 
     std::vector<std::string> evtname;  
     std::vector<std::string> staname;
-    std::map<std::string, event_info> events;  // map from event name to list of row indices for that event
+    // std::map<std::string, event_info> events;  // map from event name to list of row indices for that event
     std::map<std::string, event_info> events_local; 
     std::vector<std::string> src_name_list_local;
     std::vector<std::string> src_name_list;

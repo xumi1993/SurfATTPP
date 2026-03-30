@@ -116,8 +116,8 @@ void SrcRec::load(const std::string& filepath)
     // Build derived metadata used by inversion/forward steps:
     //   - event-wise receiver index lists
     //   - per-period statistics (counts and mean velocities)
-    get_events();
     get_periods();
+    get_events();
 }
 
 // Build an event -> observation-index mapping from evtname and distribute
@@ -131,17 +131,20 @@ void SrcRec::get_events(){
     auto& mpi = Parallel::mpi();
     auto& logger = ATTLogger::logger();
 
+    std::vector<std::string> valid_event_keys;
+    std::map<std::string, event_info> events;
     if (mpi.is_main()){
-        src_name_list.resize(evtname.size());
-        std::copy(evtname.begin(), evtname.end(), src_name_list.begin());
+        valid_event_keys.resize(evtname.size());
+        std::copy(evtname.begin(), evtname.end(), valid_event_keys.begin());
         // Extract sorted unique event names from the per-observation evtname list.
-        std::sort(src_name_list.begin(), src_name_list.end());
-        src_name_list.erase(std::unique(src_name_list.begin(), src_name_list.end()), src_name_list.end());
+        std::sort(valid_event_keys.begin(), valid_event_keys.end());
+        valid_event_keys.erase(std::unique(valid_event_keys.begin(), valid_event_keys.end()), valid_event_keys.end());        
 
-        for (const auto& src : src_name_list) {
+        for (const auto& src : valid_event_keys) {
             for (int iper = 0; iper < periods_info.nperiod; ++iper) {
                 event_info info;
                 for (int i = 0; i < n_obs; ++i) {
+                    
                     if (evtname[i] == src && real_t_equal(periods_info.periods(iper), period_all[i])) {
                         info.rec_indices.push_back(i);
                         info.evla = evla[i];
@@ -150,17 +153,23 @@ void SrcRec::get_events(){
                         info.iper = iper;
                     }
                 }
-                if (info.rec_indices.size() > 0) {
-                    info.syn_data.resize(info.rec_indices.size(), _0_CR);  // placeholder for synthetic data
+                int n_rec = info.rec_indices.size();
+                if (n_rec > 0) {
+                    info.syn_data.setZero(n_rec);  // placeholder for synthetic data
                     std::string key = std::format("{}_{:d}", src, iper);
                     events[key] = info;
+                    src_name_list.push_back(key);
                 }
             }
         }
-        nsrc_total = static_cast<int>(events.size());
+        nsrc_total = static_cast<int>(src_name_list.size());
     }
     mpi.barrier();
     mpi.bcast(nsrc_total);
+    if (!mpi.is_main()) src_name_list.resize(nsrc_total);
+    for (int i = 0; i < nsrc_total; ++i) {
+        mpi.bcast(src_name_list[i]);
+    }
 
     // Distribute event records to their target ranks.
     // We broadcast event names (small metadata), then send larger payloads
@@ -198,11 +207,13 @@ void SrcRec::get_events(){
             mpi.recv(&info.iper, 1, 0);
             mpi.recv(&n_rec, 1, 0);
             info.rec_indices.resize(n_rec);
+            info.syn_data.resize(n_rec);
             mpi.recv(info.rec_indices.data(), n_rec, 0);
             mpi.recv(info.syn_data.data(), n_rec, 0);
             events_local[src_name] = info;
         }
     }
+    mpi.barrier();
 }
 
 // Compute unique period values and average velocity for each period.
@@ -216,7 +227,6 @@ void SrcRec::get_periods(){
         std::sort(periods_vec.begin(), periods_vec.end());
         periods_vec.erase(std::unique(periods_vec.begin(), periods_vec.end()), periods_vec.end());
         periods_info.nperiod = static_cast<int>(periods_vec.size());
-
         periods_info.periods = Eigen::Map<Eigen::VectorX<real_t>>(periods_vec.data(), periods_info.nperiod);
         periods_info.meanvel = Eigen::VectorX<real_t>::Zero(periods_info.nperiod);
 
@@ -236,7 +246,12 @@ void SrcRec::get_periods(){
     }
     mpi.barrier();
     mpi.bcast(periods_info.nperiod);
+    if (!mpi.is_main()) {
+        periods_info.periods.resize(periods_info.nperiod);
+        periods_info.meanvel.resize(periods_info.nperiod);
+    }
     mpi.bcast(periods_info.periods.data(), periods_info.nperiod);
+    mpi.bcast(periods_info.meanvel.data(), periods_info.nperiod);
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +276,6 @@ void SrcRec::build_stas()
 
         const bool have_ph = (SR_ph().n_obs > 0);
         const bool have_gr = (SR_gr().n_obs > 0);
-
         std::map<std::string, std::pair<real_t, real_t>> merged;
         if (have_ph && have_gr) {
             auto map_ph = make_map(SR_ph());
@@ -282,6 +296,7 @@ void SrcRec::build_stas()
             st.stlo.push_back(coords.second);
         }
     }
+    mpi.barrier();
 
     // Broadcast to all ranks
     int nsta = mpi.is_main() ? static_cast<int>(st.stnm.size()) : 0;
@@ -296,6 +311,55 @@ void SrcRec::build_stas()
     mpi.bcast(st.stla.data(), nsta);
     mpi.bcast(st.stlo.data(), nsta);
 }
+
+void SrcRec::gather_syn_tt()
+{
+    auto &mpi = Parallel::mpi();
+
+    for (int i_src; i_src < nsrc_total; i_src++) {
+        int dst_rank = mpi.select_rank_for_src(i_src);
+        std::string src_name;
+        if (mpi.is_main()) src_name = src_name_list[i_src];
+        mpi.bcast(src_name);
+
+        if (mpi.is_main()) {
+            int n_rec;
+            if (dst_rank == 0) {
+                auto& info = events_local[src_name];
+                n_rec = static_cast<int>(info.rec_indices.size());
+                for (int i = 0; i < n_rec; ++i) {
+                    int rec_idx = info.rec_indices[i];
+                    tt_fwd[rec_idx] = info.syn_data[i];
+                }
+            } else {
+                mpi.recv(&n_rec, 1, dst_rank);
+                Eigen::VectorX<real_t> syn_tt(n_rec);
+                std::vector<int> rec_indices(n_rec);
+                mpi.recv(syn_tt.data(), n_rec, dst_rank);
+                mpi.recv(rec_indices.data(), n_rec, dst_rank);
+                for (int i = 0; i < n_rec; ++i) {
+                    int rec_idx = rec_indices[i];
+                    tt_fwd[rec_idx] = syn_tt(i);
+                }
+            }
+        } else if (mpi.rank() == dst_rank) {
+            auto& info = events_local[src_name];
+            int n_rec = static_cast<int>(info.rec_indices.size());
+            mpi.send(&n_rec, 1, 0);
+            mpi.send(info.syn_data.data(), n_rec, 0);
+            mpi.send(info.rec_indices.data(), n_rec, 0);
+        }
+    }
+    mpi.barrier();
+
+    if (mpi.is_node_main()) {
+        Eigen::Map<Eigen::VectorX<real_t>> tt_fwd_map(tt_fwd, n_obs);
+        Eigen::Map<Eigen::VectorX<real_t>> vel_map(vel, n_obs);
+        Eigen::Map<Eigen::VectorX<real_t>> dist_map(dist, n_obs);
+        vel_map = dist_map.array() / tt_fwd_map.array();
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 // Convert a numeric array into fixed-precision string values for CSV output.

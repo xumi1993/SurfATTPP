@@ -219,7 +219,7 @@ void ModelGrid::build_init_model() {
     if (IP.inversion().init_model_type == 0) {
         // Build a simple linear Vs gradient
         logger.Info(std::format(
-            "Building linear 1-D initial model from {:.2f} to {:.2f}", 
+            "Building linear 1-D initial model with S-wave velocity from {:.2f} to {:.2f} km/s", 
             IP.inversion().vel_range[0], IP.inversion().vel_range[1]), MODULE_GRID
         );
         build_1d_model_linear();

@@ -8,6 +8,7 @@
 #include "argparser.h"
 #include "topo.h"
 #include "surf_grid.h"
+#include "preproc.h"
 
 #include <algorithm>
 
@@ -51,6 +52,13 @@ int main(int argc, char* argv[])
     // build surface grid and compute reference travel times
     if (IP.data().vel_type[0]) SurfGrid::SG_ph().build_media();
     if (IP.data().vel_type[1]) SurfGrid::SG_gr().build_media();
+
+    // // run forward and adjoint calculations
+    // if (FORWARD_ONLY) {
+    //     preproc::run_forward_adjoint(false);
+    // } else {
+    //     preproc::run_forward_adjoint(true);
+    // }
 
     SrcRec::SR_ph().release_shm();
     SrcRec::SR_gr().release_shm();
