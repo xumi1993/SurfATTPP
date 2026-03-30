@@ -19,6 +19,10 @@ inline int I2V_common_2d(int A, int B, int ny) {
     return (A*ny + B);  // 2D vector to 1D array index
 }
 
+inline bool real_t_equal(real_t a, real_t b, real_t tol = 1e-6) {
+    return std::abs(a - b) < tol;
+}
+
 // Bilinear interpolation at fractional indices (idx0+r1, idy0+r2)
 inline real_t bilinear(const Eigen::MatrixXd& M,
                        int idx0, int idy0,

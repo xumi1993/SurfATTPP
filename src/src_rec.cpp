@@ -139,16 +139,22 @@ void SrcRec::get_events(){
         src_name_list.erase(std::unique(src_name_list.begin(), src_name_list.end()), src_name_list.end());
 
         for (const auto& src : src_name_list) {
-            event_info info;
-            for (int i = 0; i < n_obs; ++i) {
-                if (evtname[i] == src) {
-                    info.rec_indices.push_back(i);
-                    info.evla = evla[i];
-                    info.evlo = evlo[i];
+            for (int iper = 0; iper < periods_info.nperiod; ++iper) {
+                event_info info;
+                for (int i = 0; i < n_obs; ++i) {
+                    if (evtname[i] == src && real_t_equal(periods_info.periods(iper), period_all[i])) {
+                        info.rec_indices.push_back(i);
+                        info.evla = evla[i];
+                        info.evlo = evlo[i];
+                        info.period = period_all[i];
+                        info.iper = iper;
+                    }
                 }
-            }
-            if (info.rec_indices.size() > 0) {
-                events[src] = info;
+                if (info.rec_indices.size() > 0) {
+                    info.syn_data.resize(info.rec_indices.size(), _0_CR);  // placeholder for synthetic data
+                    std::string key = std::format("{}_{:d}", src, iper);
+                    events[key] = info;
+                }
             }
         }
         nsrc_total = static_cast<int>(events.size());
@@ -176,8 +182,11 @@ void SrcRec::get_events(){
                 int n_rec = static_cast<int>(info.rec_indices.size());
                 mpi.send(&info.evla, 1, dst_rank);
                 mpi.send(&info.evlo, 1, dst_rank);
+                mpi.send(&info.period, 1, dst_rank);
+                mpi.send(&info.iper, 1, dst_rank);
                 mpi.send(&n_rec, 1, dst_rank);
                 mpi.send(info.rec_indices.data(), n_rec, dst_rank);
+                mpi.send(info.syn_data.data(), n_rec, dst_rank);  
             }
         } else if (mpi.rank() == dst_rank) {
             src_name_list_local.push_back(src_name);
@@ -185,9 +194,12 @@ void SrcRec::get_events(){
             int n_rec = 0;
             mpi.recv(&info.evla, 1, 0);
             mpi.recv(&info.evlo, 1, 0);
+            mpi.recv(&info.period, 1, 0);
+            mpi.recv(&info.iper, 1, 0);
             mpi.recv(&n_rec, 1, 0);
             info.rec_indices.resize(n_rec);
             mpi.recv(info.rec_indices.data(), n_rec, 0);
+            mpi.recv(info.syn_data.data(), n_rec, 0);
             events_local[src_name] = info;
         }
     }

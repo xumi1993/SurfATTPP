@@ -15,7 +15,11 @@
 struct event_info {
     real_t evla;
     real_t evlo;
+    real_t period;
+    int iper;
     std::vector<int> rec_indices;
+    Eigen::VectorX<real_t> syn_data;
+    Eigen::VectorX<real_t> adjoint_source;
 };
 
 struct Stations {
