@@ -9,6 +9,7 @@
 #include "topo.h"
 #include "surf_grid.h"
 #include "preproc.h"
+#include "decomposer.h"
 
 #include <algorithm>
 
@@ -43,6 +44,9 @@ int main(int argc, char* argv[])
 
     // build initial model
     mg.build_init_model();
+
+    // initialize decomposer (for parallel execution)
+    Decomposer::DCP();
 
     // load topography if needed
     if (IP.topo().is_consider_topo) {

@@ -28,6 +28,7 @@ inline int ngrid_i, ngrid_j, ngrid_k;  // set by DomainParams::compute_grid()
 inline real_t dgrid_i, dgrid_j, dgrid_k;  // grid spacing in km, set by DomainParams::compute_grid()
 #define I2V(A,B,C) ((A)*ngrid_j*ngrid_k + (B)*ngrid_k + (C))  // 3D vector to 1D array index
 
+
 // ---------------------------------------------------------------------------
 // File paths
 // ---------------------------------------------------------------------------

@@ -499,7 +499,7 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     return Ta;
 }
 
-void eikonal::mask_uniform_grid(
+void mask_uniform_grid(
     const Eigen::VectorX<real_t>& xx,
     const Eigen::VectorX<real_t>& yy,
     Eigen::MatrixX<real_t>& tableAdj,

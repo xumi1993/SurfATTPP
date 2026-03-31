@@ -236,6 +236,10 @@ public:
                     0, comm_);
     }
 
+    // Wait for multiple requests (e.g. from multiple isend/irecv calls)
+    inline void wait_req(MPI_Request& req){
+        MPI_Wait(&req, MPI_STATUS_IGNORE);
+    }
     // ---- Work distribution (scatter_all_i equivalent) ----------------------
     // Divides [1..total] across all ranks; returns [istart, iend] (1-based,
     // inclusive), matching the Fortran scatter_all_i convention.
