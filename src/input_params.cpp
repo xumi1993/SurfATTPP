@@ -61,6 +61,7 @@ void InputParams::load_topo(const YAML::Node &n) {
 }
 
 void InputParams::load_inversion(const YAML::Node &n) {
+    inversion_.is_anisotropy      = opt<bool>(n, "is_anisotropy", false);
     inversion_.use_alpha_beta_rho = req<bool>(n, "use_alpha_beta_rho");
     inversion_.rho_scaling        = req<bool>(n, "rho_scaling");
 
@@ -163,6 +164,7 @@ void InputParams::bcast_topo() {
 
 void InputParams::bcast_inversion() {
     auto &mpi = Parallel::mpi();
+    mpi.bcast(inversion_.is_anisotropy);
     mpi.bcast(inversion_.use_alpha_beta_rho);
     mpi.bcast(inversion_.rho_scaling);
     mpi.bcast(inversion_.init_model_type);
@@ -186,4 +188,3 @@ void InputParams::bcast_all_params() {
     bcast_topo();
     bcast_inversion();
 }
-

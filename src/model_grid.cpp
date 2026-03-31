@@ -364,7 +364,7 @@ void ModelGrid::add_perturbation(
     mpi.sync_from_main_rank(rho3d, nelem);
 }
 
-void ModelGrid::write(std::string &subname) {
+void ModelGrid::write(const std::string &subname) {
     auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
     if (mpi.is_main()) {

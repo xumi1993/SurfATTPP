@@ -16,6 +16,11 @@ void sregn96_c(const float* thk, const float* vp, const float* vs, const float* 
               double* stressu, double* stressw, double* dc2da, double* dc2db,
               double* dc2dh, double* dc2dr, int iflsph);
 
+void sregn96_hti_c(const float* thk, const float* vp, const float* vs, const float* rhom,
+                  int nlayer, double* t, double* cp, double* cg, double* dispu, double* dispw,
+                  double* stressu, double* stressw, double* dc2da, double* dc2db,
+                  double* dc2dh, double* dc2dr, double* dc2dgc, double* dc2dgs, int iflsph);
+
 void sregnpu_c(const float* thk, const float* vp, const float* vs, const float* rhom,
               int nlayer, double* t, double* cp, double* cg, double* dispu, double* dispw,
               double* stressu, double* stressw, double* t1, double* cp1, double* t2, double* cp2,
@@ -132,13 +137,10 @@ DepthKernel1D depthkernel1d(const DispersionRequest& req) {
     const int kmax = static_cast<int>(req.periods_s.size());
     const int nz = mmax - 1;  // Fortran uses mmax = nz + 1 for layered model
 
-    Eigen::VectorXf rvp(mmax), rvs(mmax), rrho(mmax), rthk(mmax);
-    for (int i = 0; i < mmax; ++i) {
-        rthk(i) = static_cast<float>(req.thickness_km(i)); 
-        rvp(i) = static_cast<float>(req.vp_km_s(i));
-        rvs(i) = static_cast<float>(req.vs_km_s(i));
-        rrho(i) = static_cast<float>(req.rho_g_cm3(i));
-    }
+    Eigen::VectorXf rthk = req.thickness_km.cast<float>();
+    Eigen::VectorXf rvp  = req.vp_km_s.cast<float>();
+    Eigen::VectorXf rvs  = req.vs_km_s.cast<float>();
+    Eigen::VectorXf rrho = req.rho_g_cm3.cast<float>();
 
     // Get periods in double precision for Fortran
     Eigen::VectorXd t(kmax);
@@ -258,6 +260,74 @@ DepthKernel1D depthkernel1d(const DispersionRequest& req) {
     }
 
     return DepthKernel1D{sen_vs, sen_vp, sen_rho};
+}
+
+DepthKernelHTI1D depthkernelHTI1d(const DispersionRequest& req) {
+    validate_request(req);
+
+    if (!(req.iwave == 2 && req.igr == 0)) {
+        throw std::runtime_error(
+            "surfker::depthkernelHTI1d: only Rayleigh phase velocity is supported (iwave=2, igr=0)");
+    }
+
+    const int mmax = static_cast<int>(req.vs_km_s.size());
+    const int kmax = static_cast<int>(req.periods_s.size());
+    const int nz = mmax - 1;
+
+    Eigen::VectorXf rthk = req.thickness_km.cast<float>();
+    Eigen::VectorXf rvp  = req.vp_km_s.cast<float>();
+    Eigen::VectorXf rvs  = req.vs_km_s.cast<float>();
+    Eigen::VectorXf rrho = req.rho_g_cm3.cast<float>();
+
+    Eigen::VectorXd t = req.periods_s.cast<double>();
+    Eigen::VectorXd cp = Eigen::VectorXd::Zero(kmax);
+    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+                 mmax, req.iflsph, req.iwave, req.mode, 0, kmax,
+                 t.data(), cp.data());
+
+    Eigen::MatrixX<real_t> sen_vs  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
+    Eigen::MatrixX<real_t> sen_vp  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
+    Eigen::MatrixX<real_t> sen_rho = Eigen::MatrixX<real_t>::Zero(kmax, nz);
+    Eigen::MatrixX<real_t> sen_gc  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
+    Eigen::MatrixX<real_t> sen_gs  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
+
+    Eigen::VectorXd cg = Eigen::VectorXd::Zero(kmax);
+    Eigen::VectorXd dispu = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dispw = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd stressu = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd stressw = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dcdar = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dcdbr = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dcdhr = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dcdrr = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dcdgc = Eigen::VectorXd::Zero(mmax);
+    Eigen::VectorXd dcdgs = Eigen::VectorXd::Zero(mmax);
+
+    for (int i = 0; i < kmax; ++i) {
+        dcdar.setZero();
+        dcdbr.setZero();
+        dcdhr.setZero();
+        dcdrr.setZero();
+        dcdgc.setZero();
+        dcdgs.setZero();
+
+        double t_val = t(i);
+        double cp_val = cp(i);
+        sregn96_hti_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(), mmax,
+                      &t_val, &cp_val, cg.data() + i, dispu.data(), dispw.data(),
+                      stressu.data(), stressw.data(), dcdar.data(), dcdbr.data(),
+                      dcdhr.data(), dcdrr.data(), dcdgc.data(), dcdgs.data(), req.iflsph);
+
+        for (int j = 0; j < nz; ++j) {
+            sen_vs(i, j) = static_cast<real_t>(dcdbr(j));
+            sen_vp(i, j) = static_cast<real_t>(dcdar(j));
+            sen_rho(i, j) = static_cast<real_t>(dcdrr(j));
+            sen_gc(i, j) = static_cast<real_t>(dcdgc(j));
+            sen_gs(i, j) = static_cast<real_t>(dcdgs(j));
+        }
+    }
+
+    return DepthKernelHTI1D{sen_vs, sen_vp, sen_rho, sen_gc, sen_gs};
 }
 
 }  // namespace surfker

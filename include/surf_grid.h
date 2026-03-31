@@ -11,6 +11,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 class SurfGrid {
 public:
@@ -42,8 +43,17 @@ public:
     real_t* m22;
     real_t* ref_t;
 
+    std::vector<Eigen::MatrixX<real_t>> adj_s_local;  // length nperiod, each is a matrix of svel on the surface grid
+    std::vector<Eigen::MatrixX<real_t>> adj_xi_local;  // length nperiod, each is a matrix of xi on the surface grid
+    std::vector<Eigen::MatrixX<real_t>> adj_eta_local;  // length nperiod, each is a matrix of eta on the surface grid
+    std::vector<Eigen::MatrixX<real_t>> kden_s_local;    // length nperiod, each is a vector of a on the surface grid
+    
+    Eigen::Tensor<real_t, 4, Eigen::RowMajor> sen_vp, sen_vs, sen_rho;  // sensitivity kernels for vp, vs, rho with shape (ngrid_i, ngrid_j, ngrid_k, nperiod)
+    Eigen::Tensor<real_t, 4, Eigen::RowMajor> sen_gc, sen_gs;  // sensitivity kernels for anisotropy parameters (if applicable)
+
     void build_media();
     void fwdsurf();
+    void compute_dispersion_kernel();
 
 private:
     MPI_Win win_svel_ = MPI_WIN_NULL;

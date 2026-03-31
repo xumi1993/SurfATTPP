@@ -82,4 +82,10 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     const Eigen::VectorXd& yrec_deg,
     const Eigen::VectorXd& sourceAdj);
 
+void mask_uniform_grid(
+    const Eigen::VectorX<real_t>& xx,
+    const Eigen::VectorX<real_t>& yy,
+    Eigen::MatrixX<real_t>& tableAdj,
+    real_t x0, real_t y0);      // set to large value (e.g. 1e10) where mask=0
+
 } // namespace eikonal

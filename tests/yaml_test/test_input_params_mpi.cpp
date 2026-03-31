@@ -50,6 +50,7 @@ static void verify_all() {
     assert_near(t.wavelen_factor, 2.5);
 
     // inversion
+    assert(inv.is_anisotropy      == true);
     assert(inv.use_alpha_beta_rho == true);
     assert(inv.rho_scaling        == true);
     assert(inv.init_model_type    == 1);

@@ -499,4 +499,28 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     return Ta;
 }
 
+void eikonal::mask_uniform_grid(
+    const Eigen::VectorX<real_t>& xx,
+    const Eigen::VectorX<real_t>& yy,
+    Eigen::MatrixX<real_t>& tableAdj,
+    real_t x0, real_t y0
+) {
+    const int nx = static_cast<int>(xx.size());
+    const int ny = static_cast<int>(yy.size());
+    if (nx < 2 || ny < 2) return;
+
+    const real_t dx = xx(1) - xx(0);
+    const real_t dy = yy(1) - yy(0);
+
+    // abs(xx-x0) < 1.5*dx  -> x in (x0-1.5dx, x0+1.5dx)
+    const int ix_lo = std::max(0, static_cast<int>(std::floor((x0 - 1.5 * dx - xx(0)) / dx)) + 1);
+    const int ix_hi = std::min(nx - 1, static_cast<int>(std::ceil ((x0 + 1.5 * dx - xx(0)) / dx)) - 1);
+    const int iy_lo = std::max(0, static_cast<int>(std::floor((y0 - 1.5 * dy - yy(0)) / dy)) + 1);
+    const int iy_hi = std::min(ny - 1, static_cast<int>(std::ceil ((y0 + 1.5 * dy - yy(0)) / dy)) - 1);
+
+    if (ix_lo <= ix_hi && iy_lo <= iy_hi) {
+        tableAdj.block(ix_lo, iy_lo, ix_hi - ix_lo + 1, iy_hi - iy_lo + 1).setZero();
+    }
+}
+
 } // namespace eikonal

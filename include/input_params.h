@@ -40,6 +40,7 @@ struct TopoParams {
 
 struct InversionParams {
     // model parametrisation
+    bool is_anisotropy;
     bool use_alpha_beta_rho;
     bool rho_scaling;
     // initial model
