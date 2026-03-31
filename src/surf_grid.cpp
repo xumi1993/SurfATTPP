@@ -10,6 +10,7 @@ inline int kernel_idx4(const int ix, const int iy, const int iz, const int iper,
                        const int ngrid_j, const int ngrid_k, const int nperiod) {
     return (((ix * ngrid_j) + iy) * ngrid_k + iz) * nperiod + iper;
 }
+
 }
 
 SurfGrid::SurfGrid(surfType tp){
@@ -18,6 +19,7 @@ SurfGrid::SurfGrid(surfType tp){
     Eigen::VectorX<real_t> periods = sr.periods_info.periods;
     SurfGrid::itype = static_cast<int>(tp);
     auto& IP = InputParams::IP();
+    auto& dcp = Decomposer::DCP();
 
     // Allocate shared memory for the grid arrays
     auto& mpi = Parallel::mpi();
@@ -56,12 +58,12 @@ SurfGrid::SurfGrid(surfType tp){
             }
         }
 
-        sen_vp = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k, nperiod);
-        sen_vs = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k, nperiod);
-        sen_rho = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k, nperiod);
+        sen_vp_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_vs_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_rho_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
         if (InputParams::IP().inversion().is_anisotropy) {
-            sen_gc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k, nperiod);
-            sen_gs = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k, nperiod);
+            sen_gc_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+            sen_gs_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
         }
     }
 
@@ -205,6 +207,7 @@ void SurfGrid::compute_dispersion_kernel() {
     auto& IP = InputParams::IP();
     auto& sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     auto& logger = ATTLogger::logger();
+    auto& dcp = Decomposer::DCP();
 
     const bool is_aniso = IP.inversion().is_anisotropy;
     logger.Info(
@@ -213,59 +216,38 @@ void SurfGrid::compute_dispersion_kernel() {
         MODULE_GRID
     );
 
-    const int n4 = ngrid_i * ngrid_j * ngrid_k * nperiod;
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> tmp_sen_vp(ngrid_i, ngrid_j, ngrid_k, nperiod);
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> tmp_sen_vs(ngrid_i, ngrid_j, ngrid_k, nperiod);
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> tmp_sen_rho(ngrid_i, ngrid_j, ngrid_k, nperiod);
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> tmp_sen_gc(ngrid_i, ngrid_j, ngrid_k, nperiod);
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> tmp_sen_gs(ngrid_i, ngrid_j, ngrid_k, nperiod);
-    tmp_sen_vp.setZero();
-    tmp_sen_vs.setZero();
-    tmp_sen_rho.setZero();        
-    tmp_sen_gc.setZero();
-    tmp_sen_gs.setZero();
-
     using MatRM = Eigen::Matrix<real_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
-    for (int ix = 0; ix < ngrid_i; ++ix) {
-        for (int iy = 0; iy < ngrid_j; ++iy) {
-            int loc_rank = mpi.select_rank_for_src(ix * ngrid_j + iy);
-            if (mpi.rank() == loc_rank) {
-                Eigen::VectorX<real_t> vs1d = extract_1d_from_3d(mg.vs3d, ix, iy, ngrid_k);
-                auto req = surfker::build_disp_req(mg.zgrids, vs1d, sr.periods_info.periods,
-                                        IFLSPH, IP.data().iwave, IMODE, itype);
+    for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+        for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+            int ix_glob = dcp.loc_I_start() + ix;
+            int iy_glob = dcp.loc_J_start() + iy;
+            Eigen::VectorX<real_t> vs1d = extract_1d_from_3d(mg.vs3d, ix_glob, iy_glob, ngrid_k);
+            auto req = surfker::build_disp_req(mg.zgrids, vs1d, sr.periods_info.periods,
+                                    IFLSPH, IP.data().iwave, IMODE, itype);
 
-                const int id0 = kernel_idx4(ix, iy, 0, 0, ngrid_j, ngrid_k, nperiod);
-                Eigen::Map<MatRM> vs_block(tmp_sen_vs.data() + id0, ngrid_k, nperiod);
-                Eigen::Map<MatRM> vp_block(tmp_sen_vp.data() + id0, ngrid_k, nperiod);
-                Eigen::Map<MatRM> rho_block(tmp_sen_rho.data() + id0, ngrid_k, nperiod);
-                if (is_aniso) {
-                    auto kernels = surfker::depthkernelHTI1d(req);
-                    Eigen::Map<MatRM> gc_block(tmp_sen_gc.data() + id0, ngrid_k, nperiod);
-                    Eigen::Map<MatRM> gs_block(tmp_sen_gs.data() + id0, ngrid_k, nperiod);
-                    vs_block = kernels.sen_vs.transpose();
-                    vp_block = kernels.sen_vp.transpose();
-                    rho_block = kernels.sen_rho.transpose();
-                    gc_block = kernels.sen_gc.transpose();
-                    gs_block = kernels.sen_gs.transpose();
-                } else {
-                    auto kernels = surfker::depthkernel1d(req);
-                    vs_block = kernels.sen_vs.transpose();
-                    vp_block = kernels.sen_vp.transpose();
-                    rho_block = kernels.sen_rho.transpose();
-                }
+            const int id0 = kernel_idx4(ix, iy, 0, 0, dcp.loc_ny(), ngrid_k, nperiod);
+            Eigen::Map<MatRM> vs_block(sen_vs_loc.data() + id0, ngrid_k, nperiod);
+            Eigen::Map<MatRM> vp_block(sen_vp_loc.data() + id0, ngrid_k, nperiod);
+            Eigen::Map<MatRM> rho_block(sen_rho_loc.data() + id0, ngrid_k, nperiod);
+            if (is_aniso) {
+                auto kernels = surfker::depthkernelHTI1d(req);
+                Eigen::Map<MatRM> gc_block(sen_gc_loc.data() + id0, ngrid_k, nperiod);
+                Eigen::Map<MatRM> gs_block(sen_gs_loc.data() + id0, ngrid_k, nperiod);
+                vs_block = kernels.sen_vs.transpose();
+                vp_block = kernels.sen_vp.transpose();
+                rho_block = kernels.sen_rho.transpose();
+                gc_block = kernels.sen_gc.transpose();
+                gs_block = kernels.sen_gs.transpose();
+            } else {
+                auto kernels = surfker::depthkernel1d(req);
+                vs_block = kernels.sen_vs.transpose();
+                vp_block = kernels.sen_vp.transpose();
+                rho_block = kernels.sen_rho.transpose();
             }
         }
     }
     mpi.barrier();
-    mpi.sum_all(tmp_sen_vp.data(), sen_vp.data(), n4);
-    mpi.sum_all(tmp_sen_vs.data(), sen_vs.data(), n4);
-    mpi.sum_all(tmp_sen_rho.data(), sen_rho.data(), n4);
-    if (is_aniso) {
-        mpi.sum_all(tmp_sen_gc.data(), sen_gc.data(), n4);
-        mpi.sum_all(tmp_sen_gs.data(), sen_gs.data(), n4);
-    }
-
 }
 
 

@@ -1,6 +1,7 @@
 #include "preproc.h"
 #include "eikonal_solver.h"
 #include "utils.h"
+#include "decomposer.h"
 
 namespace{
 Eigen::Matrix<real_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
@@ -122,15 +123,69 @@ void reset_kernel_accumulators(SrcRec& sr, SurfGrid& sg) {
         }
     }
     if (mpi.is_main()){
-        sg.sen_vp.setZero();
-        sg.sen_vs.setZero();
-        sg.sen_rho.setZero();
+        sg.sen_vp_loc.setZero();
+        sg.sen_vs_loc.setZero();
+        sg.sen_rho_loc.setZero();
         if (IP.inversion().is_anisotropy) {
-            sg.sen_gc.setZero();
-            sg.sen_gs.setZero();
+            sg.sen_gc_loc.setZero();
+            sg.sen_gs_loc.setZero();
         }
     }
 }
+
+void combine_kernels(SurfGrid& sg) {
+    auto& IP = InputParams::IP();
+    auto& mpi = Parallel::mpi();
+    auto& logger = ATTLogger::logger();
+    auto& dcp = Decomposer::DCP();
+    auto& mg = ModelGrid::MG();
+
+    Eigen::MatrixX<real_t> k_tt, k_den, k_xi, keta;
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> k_alpha, k_beta, k_rho, k_gc, k_gs;
+    k_beta = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    k_alpha = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    k_rho = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    k_beta.setZero();
+    k_alpha.setZero();
+    k_rho.setZero();
+    if (IP.inversion().is_anisotropy) {
+        k_gc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        k_gs = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        k_gc.setZero();
+        k_gs.setZero();
+    }
+
+    for (int iper = 0; iper < sg.nperiod; ++iper) {
+        // Combine the local kernel accumulators across ranks to get the global kernel for this period.
+        Eigen::MatrixX<real_t> k_tt = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+        mpi.sum_all_all(sg.adj_s_local[iper].data(), k_tt.data(), ngrid_i * ngrid_j);
+        if ( !real_t_equal(IP.inversion().kdensity_coe, _0_CR) ) {
+            Eigen::MatrixX<real_t> k_den = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            mpi.sum_all_all(sg.kden_s_local[iper].data(), k_den.data(), ngrid_i * ngrid_j);
+        }
+        if (IP.inversion().is_anisotropy) {
+            Eigen::MatrixX<real_t> k_xi = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            Eigen::MatrixX<real_t> k_eta = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            //TODO: sum anisotropy kernels across ranks if needed
+        } else {
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        int iglob_x = dcp.loc_I_start() + ix;
+                        int iglob_y = dcp.loc_J_start() + iy;
+                        int idx_global = I2V(iglob_x, iglob_y, iper);
+                        k_alpha(ix, iy, k) += k_tt(iglob_x, iglob_y) * sg.svel[idx_global];
+                        k_beta(ix, iy, k) += k_tt(iglob_x, iglob_y);
+                        k_rho(ix, iy, k) += k_den(iglob_x, iglob_y);
+                    }
+                }
+            }
+
+        }
+
+    }
+}
+    
 
 } // namespace
 
