@@ -8,16 +8,14 @@ preproc::extract_period_ij(const real_t* buf, int np, int iper) {
     using MatRM = Eigen::Matrix<real_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
     using Strd  = Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>;
     using MapMatConst = Eigen::Map<const MatRM, 0, Strd>;
-    // 步长: 行间隔=nj*np, 列间隔=np
+    // Each period's data is stored contiguously in memory, so we can create a Map with the appropriate stride to access it.
     const Strd stride(ngrid_j * np, np);
-    // 零拷贝视图（不连续）
+    // Map the buffer to a matrix view for the specified period (iper).
     MapMatConst view(buf + iper, ngrid_i, ngrid_j, stride);
-    // 拷贝成连续RowMajor矩阵，便于后续数值核
     return view;
 }
 
 real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
-    auto& IP = InputParams::IP();
     auto& mg = ModelGrid::MG();
     auto& mpi = Parallel::mpi();
     auto& logger = ATTLogger::logger();
@@ -75,7 +73,6 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
 
 void preproc::run_forward_adjoint(const bool is_calc_adj){
     auto& IP = InputParams::IP();
-    auto& mg = ModelGrid::MG();
     auto& logger = ATTLogger::logger();
 
    for (surfType tp : {surfType::PH, surfType::GR}) {
@@ -91,8 +88,13 @@ void preproc::run_forward_adjoint(const bool is_calc_adj){
         forward_for_event(sr, sg, is_calc_adj);
 
         // gather synthetic travel times to the main rank for output and inversion steps
-        if (FORWARD_ONLY || IP.output().output_in_process_data) {
+        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data) {
+            logger.Info("Gathering forward-modeled travel times to the main rank for output...", MODULE_PREPROC);
             sr.gather_syn_tt();
+            sr.write(
+                std::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, 
+                surfTypeStr[static_cast<size_t>(tp)]), true
+            );
         }
 
         // compute kernel

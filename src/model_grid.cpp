@@ -270,6 +270,9 @@ void ModelGrid::build_init_model() {
                     }
                 }
             }
+            if (IP.output().output_initial_model) {
+                write(std::string("initial_model.h5"));
+            }
         }
         mpi.barrier();
     }

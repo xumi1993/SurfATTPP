@@ -14,6 +14,7 @@ data:
 
 output:
   output_path: OUTPUT_FILES/ # path to save output files
+  output_initial_model: True # whether output initial model
   output_in_process_data: True
   log_level: 2 # 1 debug mode, 2: info mode, 3: warning mode, 4: error mode
 

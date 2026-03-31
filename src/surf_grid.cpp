@@ -121,20 +121,19 @@ void SurfGrid::build_media() {
     int n_elem = ngrid_i * ngrid_j * nperiod;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
-        if (mpi.is_node_main()) {
-            std::copy(m11, m11 + n_elem, a);
-            std::copy(m12, m12 + n_elem, b);
-            std::transform(m22, m22 + n_elem, c, [](auto x) { return -x; });
-        }
     } else {
         if (mpi.is_node_main()) {
             std::fill(a, a + n_elem, _1_CR);
             std::fill(b, b + n_elem, _1_CR);
             std::fill(c, c + n_elem, _0_CR);
-            std::fill(m11, m11 + n_elem, _1_CR);
-            std::fill(m12, m12 + n_elem, _1_CR);
-            std::fill(m22, m22 + n_elem, _0_CR);
         }
+    }
+    if (mpi.is_node_main()) {
+        // Keep consistent with SurfATT-iso Fortran implementation:
+        // m11 = a, m22 = b, m12 = -c
+        std::copy(a, a + n_elem, m11);
+        std::copy(b, b + n_elem, m22);
+        std::transform(c, c + n_elem, m12, [](auto x) { return -x; });
     }
 }
 

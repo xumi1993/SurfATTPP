@@ -315,6 +315,7 @@ void SrcRec::build_stas()
 void SrcRec::gather_syn_tt()
 {
     auto &mpi = Parallel::mpi();
+    if (mpi.is_main()) tt_fwd.setZero(n_obs);
 
     for (int i_src = 0; i_src < nsrc_total; i_src++) {
         int dst_rank = mpi.select_rank_for_src(i_src);
@@ -323,7 +324,6 @@ void SrcRec::gather_syn_tt()
         mpi.bcast(src_name);
 
         if (mpi.is_main()) {
-            tt_fwd.Zero(n_obs);  // reset to default before gathering
             int n_rec;
             if (dst_rank == 0) {
                 auto& info = events_local[src_name];

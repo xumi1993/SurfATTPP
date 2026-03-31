@@ -59,3 +59,4 @@ gmt*
 src_rec_file_rotated.csv
 hawaii*.nc
 OUTPUT_FILES*/
+check*.ipynb
