@@ -52,6 +52,8 @@ constexpr real_t _9999_CR   = 9999.0;
 constexpr real_t _M_1_CR    = -1.0;
 constexpr real_t DEG2RAD   = PI/180.0;
 constexpr real_t RAD2DEG   = 180.0/PI;
+constexpr real_t VERYTINY = 1e-12;
+constexpr real_t VERYHUGE = 1e+12;   
 
 constexpr int MPI_TAG_BASE = 1000;  // base tag for all MPI messages; add to avoid conflicts with internal MPI tags
 

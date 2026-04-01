@@ -4,7 +4,116 @@
 #include "utils.h"
 
 namespace{
- 
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> compute_laplacian_3d_standard(const real_t ch, const real_t cv) {
+        auto &dcp = Decomposer::DCP();
+
+        Eigen::Tensor<real_t, 3, Eigen::RowMajor> lap(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        lap.setZero();
+
+        int ix_start, iy_start;
+        int ib, ie, jb, je;
+
+        // Determine boundary indices based on domain decomposition
+        if (dcp.neighbors_id()[0] != -1) {
+            ix_start = 1;
+            ib = 0;
+        } else {
+            ix_start = 0;
+            ib = 1;
+        }
+        if (dcp.neighbors_id()[1] != -1) {
+            ie = dcp.loc_nx();
+        } else {
+            ie = dcp.loc_nx() - 1;
+        }
+        if (dcp.neighbors_id()[2] != -1) {
+            iy_start = 1;
+            jb = 0;
+        } else {
+            iy_start = 0;
+            jb = 1;
+        }
+        if (dcp.neighbors_id()[3] != -1) {
+            je = dcp.loc_ny();
+        } else {
+            je = dcp.loc_ny() - 1;
+        }
+
+        real_t dx2_inv = _1_CR / (dgrid_i * dgrid_i);
+        real_t dy2_inv = _1_CR / (dgrid_j * dgrid_j);
+        real_t dz2_inv = _1_CR / (dgrid_k * dgrid_k);
+        // Compute standard 7-point Laplacian
+        for (int ix = ib; ix < ie; ++ix) {
+            for (int iy = jb; iy < je; ++iy) {
+                real_t dy2_corr_inv = _1_CR / std::pow(std::cos(dcp.y_loc_expd(iy) * DEG2RAD), 2);  // correction for spherical coordinates
+                for (int k = 0; k < ngrid_k; ++k) {
+                    real_t center = dcp.expd_field(ix+ix_start, iy+iy_start, k);
+
+                    // X-direction second derivative: ch * (u[i+1] + u[i-1] - 2*u[i]) / dx²
+                    real_t d2u_dx2 = ch * dx2_inv *(
+                        dcp.expd_field(ix+ix_start+1, iy+iy_start, k) + 
+                        dcp.expd_field(ix+ix_start-1, iy+iy_start, k) - 
+                        _2_CR * center
+                    );
+
+                    // Y-direction second derivative: ch * (u[j+1] + u[j-1] - 2*u[j]) / (dy² * cos²(y))
+                    real_t d2u_dy2 = ch * dy2_corr_inv * dy2_inv * (
+                        dcp.expd_field(ix+ix_start, iy+iy_start+1, k) + 
+                        dcp.expd_field(ix+ix_start, iy+iy_start-1, k) - 
+                        _2_CR * center
+                    );
+
+                    // Z-direction second derivative: ch * (u[k+1] + u[k-1] - 2*u[k]) / dz²
+                    real_t d2u_dz2 = ch * dz2_inv * (
+                        dcp.expd_field(ix+ix_start, iy+iy_start, k+1) + 
+                        dcp.expd_field(ix+ix_start, iy+iy_start, k-1) - 
+                        _2_CR * center
+                    );
+                    lap(ix, iy, k) = d2u_dx2 + d2u_dy2 + d2u_dz2;
+                }
+            }
+        }
+        return lap;
+    }
+
+    void apply_boundary_conditions(Eigen::Tensor<real_t, 3, Eigen::RowMajor> &arr) {
+        auto &dcp = Decomposer::DCP();
+        if (dcp.neighbors_id()[0] == -1) {
+            for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                for (int k = 0; k < ngrid_k; ++k) {
+                    arr(0, iy, k) = arr(1, iy, k);  // Neumann BC at left boundary
+                }
+            }
+        }
+        if (dcp.neighbors_id()[1] == -1) {
+            for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                for (int k = 0; k < ngrid_k; ++k) {
+                    arr(dcp.loc_nx() - 1, iy, k) = arr(dcp.loc_nx() - 2, iy, k);  // Neumann BC at right boundary
+                }
+            }
+        }
+        if (dcp.neighbors_id()[2] == -1) {
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int k = 0; k < dcp.loc_ny(); ++k) {
+                    arr(ix, 0, k) = arr(ix, 1, k);  // Neumann BC at bottom boundary
+                }
+            }
+        }
+        if (dcp.neighbors_id()[3] == -1) {
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int k = 0; k < dcp.loc_ny(); ++k) {
+                    arr(ix, dcp.loc_ny() - 1, k) = arr(ix, dcp.loc_ny() - 2, k);  // Neumann BC at top boundary
+                }
+            }
+        }
+        // Global boundaries in Z-direction
+        for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+            for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                arr(ix, iy, 0) = arr(ix, iy, 1);  // Neumann BC at bottom boundary in Z
+                arr(ix, iy, ngrid_k - 1) = arr(ix, iy, ngrid_k - 2);  // Neumann BC at top boundary in Z
+            }
+        }
+    }
 }
 
 void PostProc::InvGrid::init(const std::vector<int> &n_inv, int nset_) {
@@ -231,4 +340,72 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::InvGrid::inv2fwd(const real_
     }
     arr_fwd = arr_fwd / static_cast<real_t>(nset);  // average over staggered sets
     return arr_fwd;
+}
+
+Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::pde_smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf) {
+    auto &logger = ATTLogger::logger();
+    auto &dcp = Decomposer::DCP();
+    auto &IP = InputParams::IP();
+    auto &mpi = Parallel::mpi();
+
+    real_t sigma_h = IP.postproc().sigma[0];
+    real_t sigma_v = IP.postproc().sigma[1];
+
+    if (sigma_h <= _0_CR || sigma_v <= _0_CR ) {
+        logger.Error("Invalid sigma values for PDE-based smoothing. All sigma values must be positive.", MODULE_POSTPROC);
+        exit(EXIT_FAILURE);
+    }
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> smoothed_buf(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    smoothed_buf = buf;  // initialize smoothed_buf with the input buf
+
+    // Determine diffusion coefficients
+    real_t cmax = std::min({dgrid_i*dgrid_i, dgrid_j*dgrid_j, dgrid_k*dgrid_k}) / 9.0;
+    if (cmax <= VERYTINY) {
+        logger.Error("Grid spacing is too small for PDE-based smoothing.", MODULE_POSTPROC);
+        exit(EXIT_FAILURE);
+    }
+    real_t ch, cv;
+    if (sigma_v >= sigma_h) {
+        cv = cmax;
+        ch = cv * (sigma_h * sigma_h) / (sigma_v * sigma_v);
+    } else {
+        ch = cmax;
+        cv = ch * (sigma_v * sigma_v) / (sigma_h * sigma_h);
+    }
+
+    real_t dt = _1_CR;
+    int nstep = int(std::ceil(std::pow(std::max(sigma_h, sigma_v), 2) / (2 * cmax * dt)));
+
+    mpi.barrier();
+
+    for (int istep = 0; istep < nstep; ++istep) {
+        // Prepare ghost cells for domain decomposition
+        dcp.prepare_expanded_field(smoothed_buf.data());
+
+        // Compute Laplacian using selected stencil
+        Eigen::Tensor<real_t, 3, Eigen::RowMajor> lap = compute_laplacian_3d_standard(ch, cv);
+
+        // update smoothed_buf
+        smoothed_buf = smoothed_buf + dt * lap;
+
+        // Apply boundary conditions
+        apply_boundary_conditions(smoothed_buf);
+
+        mpi.barrier();
+    }
+    return smoothed_buf;
+}
+
+Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf) {
+    auto &IP = InputParams::IP();
+    if (IP.postproc().smooth_method == 0) {
+        return pde_smooth(buf);
+    } else if (IP.postproc().smooth_method == 1) {
+        std::vector<real_t> inv_buf = inv_grid.fwd2inv(buf);
+        // Here we can apply some smoothing in the inversion grid if needed (not implemented in this example)
+        return inv_grid.inv2fwd(inv_buf.data());
+    } else {
+        ATTLogger::logger().Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
+        exit(EXIT_FAILURE);
+    }
 }

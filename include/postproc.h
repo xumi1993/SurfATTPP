@@ -49,12 +49,14 @@ public:
         }
     };
 
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf);
     InvGrid inv_grid;      // isotropic inversion grid
     InvGrid inv_grid_ani;  // anisotropy inversion grid
 
 private:
     PostProc(const PostProc &)            = delete;
     PostProc &operator=(const PostProc &) = delete;
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> pde_smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf);
    
 
 };
