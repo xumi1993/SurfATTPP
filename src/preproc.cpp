@@ -176,6 +176,7 @@ void reset_kernel_accumulators(SrcRec& sr, SurfGrid& sg) {
 void prepare_dispersion_kernel(SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& logger = ATTLogger::logger();
+    auto& mpi = Parallel::mpi();
 
     logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
     sg.compute_dispersion_kernel();
@@ -187,7 +188,7 @@ void prepare_dispersion_kernel(SurfGrid& sg) {
     if (IP.inversion().is_anisotropy) {
         sg.prepare_aniso_media();
     }
-
+    mpi.barrier();
 }
 
 void combine_kernels(SurfGrid& sg) {
@@ -198,11 +199,28 @@ void combine_kernels(SurfGrid& sg) {
     auto& mg = ModelGrid::MG();
 
 
-    // initialize the model perturbation arrays to zero before accumulating kernels.
+    // Resize to hold all parameter slots; default-construct (no storage) first,
+    // then allocate only the entries that are actually used.
+    logger.Info("Combining traveltime kernels with surface wave kernels...", MODULE_PREPROC);
     int n_params = (IP.inversion().is_anisotropy) ? N_KER_ANI : N_KER_ISO;
-    for (int i = 0; i < n_params; ++i){
-        sg.ker_loc.emplace_back(Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k));
-        sg.ker_loc.back().setZero();
+    sg.ker_loc.assign(n_params, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
+
+    // vs kernel — always allocated (index 0)
+    sg.ker_loc[0] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    sg.ker_loc[0].setZero();
+    if (IP.inversion().use_alpha_beta_rho) {
+        // vp (1) and rho (2) — only when parametrised independently
+        sg.ker_loc[1] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[1].setZero();
+        sg.ker_loc[2] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[2].setZero();
+    }
+    if (IP.inversion().is_anisotropy) {
+        // Gc (3) and Gs (4)
+        sg.ker_loc[3] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[3].setZero();
+        sg.ker_loc[4] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[4].setZero();
     }
     if (IP.inversion().is_kden){
         sg.ker_den_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
@@ -222,35 +240,103 @@ void combine_kernels(SurfGrid& sg) {
             mpi.sum_all_all(sg.kden_s_local[iper].data(), adj_den.data(), ngrid_i * ngrid_j);
         }
         if (IP.inversion().is_anisotropy) {
-            adj_xi = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            adj_xi  = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
             adj_eta = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
-            //TODO: sum anisotropy kernels across ranks if needed
-        } else {
-            if (IP.inversion().use_alpha_beta_rho) {
-            
-                for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
-                    for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
-                        for (int k = 0; k < ngrid_k; ++k) {
-                            int iglob_x = dcp.loc_I_start() + ix;
-                            int iglob_y = dcp.loc_J_start() + iy;
-                            sg.ker_loc[0](ix, iy, k) -= adj_tt(iglob_x, iglob_y) * sg.sen_vs_loc(ix, iy, k, iper);
-                            sg.ker_loc[1](ix, iy, k) -= adj_tt(iglob_x, iglob_y) * sg.sen_vp_loc(ix, iy, k, iper);
-                            if (IP.inversion().is_kden) {
-                                sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * sg.sen_vs_loc(ix, iy, k, iper);
-                            }
-                            if (!IP.inversion().rho_scaling) {
-                                sg.ker_loc[2](ix, iy, k) -= adj_tt(iglob_x, iglob_y) * sg.sen_rho_loc(ix, iy, k, iper);
-                            }
+            mpi.sum_all_all(sg.adj_xi_local[iper].data(),  adj_xi.data(),  ngrid_i * ngrid_j);
+            mpi.sum_all_all(sg.adj_eta_local[iper].data(), adj_eta.data(), ngrid_i * ngrid_j);
+        }
+
+        // Isotropic parameter kernels — gated by use_alpha_beta_rho only
+        if (IP.inversion().use_alpha_beta_rho) {
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                    const int iglob_x = dcp.loc_I_start() + ix;
+                    const int iglob_y = dcp.loc_J_start() + iy;
+                    const real_t att = adj_tt(iglob_x, iglob_y);
+                    // In the anisotropic case term1 = -1/sqrt(1+r1²+r2²), otherwise 1
+                    const real_t r1 = IP.inversion().is_anisotropy ? sg.r1_loc(ix, iy, iper) : _0_CR;
+                    const real_t r2 = IP.inversion().is_anisotropy ? sg.r2_loc(ix, iy, iper) : _0_CR;
+                    const real_t scale = _1_CR / std::sqrt(_1_CR + r1*r1 + r2*r2);
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        sg.ker_loc[0](ix, iy, k) -= att * scale * sg.sen_vs_loc(ix, iy, k, iper);
+                        sg.ker_loc[1](ix, iy, k) -= att * scale * sg.sen_vp_loc(ix, iy, k, iper);
+                        if (IP.inversion().is_kden) {
+                            sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * scale * sg.sen_vs_loc(ix, iy, k, iper);
+                        }
+                        if (!IP.inversion().rho_scaling) {
+                            sg.ker_loc[2](ix, iy, k) -= att * scale * sg.sen_rho_loc(ix, iy, k, iper);
                         }
                     }
                 }
-                if (IP.inversion().rho_scaling) {
-                    sg.ker_loc[2] = sg.ker_loc[0] * RHO_SCALING;
+            }
+            if (IP.inversion().rho_scaling) {
+                sg.ker_loc[2] = sg.ker_loc[0] * RHO_SCALING;
+            }
+        } else {
+            // vs-only parametrisation: chain rule collapses vp and rho into the vs kernel
+            //   K_vs += adj_s * (sen_vs + sen_vp * d(vp)/d(vs) + sen_rho * d(rho)/d(vp) * d(vp)/d(vs))
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                    const int iglob_x = dcp.loc_I_start() + ix;
+                    const int iglob_y = dcp.loc_J_start() + iy;
+                    const real_t att  = adj_tt(iglob_x, iglob_y);
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        const real_t vs  = mg.vs3d[I2V(iglob_x, iglob_y, k)];
+                        const real_t vp  = mg.vp3d[I2V(iglob_x, iglob_y, k)];
+                        const real_t dab = dalpha_dbeta(vs);   // d(vp)/d(vs)
+                        const real_t dra = drho_dalpha(vp);    // d(rho)/d(vp)
+                        sg.ker_loc[0](ix, iy, k) -= att * (
+                            sg.sen_vs_loc(ix, iy, k, iper)
+                            + sg.sen_vp_loc(ix, iy, k, iper)  * dab
+                            + sg.sen_rho_loc(ix, iy, k, iper) * dra * dab
+                        );
+                        if (IP.inversion().is_kden) {
+                            sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * (
+                                sg.sen_vs_loc(ix, iy, k, iper)
+                                + sg.sen_vp_loc(ix, iy, k, iper)  * dab
+                                + sg.sen_rho_loc(ix, iy, k, iper) * dra * dab
+                            );
+                        }
+                    }
                 }
             }
         }
 
+        // Anisotropic parameter kernels (Gc, Gs)
+        if (IP.inversion().is_anisotropy) {
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                    const int iglob_x = dcp.loc_I_start() + ix;
+                    const int iglob_y = dcp.loc_J_start() + iy;
+                    const real_t r1    = sg.r1_loc(ix, iy, iper);
+                    const real_t r2    = sg.r2_loc(ix, iy, iper);
+                    const real_t D     = _1_CR + r1*r1 + r2*r2;
+                    const real_t sqrtD = std::sqrt(D);
+                    const real_t D15   = D * sqrtD;   // D^1.5
+                    const real_t D2    = D * D;
+                    const real_t sv    = sg.svel[sg.surf_idx(iglob_x, iglob_y, iper)];
+                    const real_t att   = adj_tt(iglob_x, iglob_y);
+                    const real_t axi   = adj_xi(iglob_x, iglob_y);
+                    const real_t aeta  = adj_eta(iglob_x, iglob_y);
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        // Gc kernel: term2·r1 + term3·adj_xi + term4·adj_eta
+                        sg.ker_loc[3](ix, iy, k) += (
+                            - att * r1 / D15
+                            + axi  * (_1_CR - r1*r1 + r2*r2) / (sv * D2)
+                            + aeta * (-_2_CR * r1 * r2)       / (sv * D2)
+                        ) * sg.sen_gc_loc(ix, iy, k, iper);
+                        // Gs kernel: term2·r2 + term4·adj_xi + term5·adj_eta
+                        sg.ker_loc[4](ix, iy, k) += (
+                            - att * r2 / D15
+                            + axi  * (-_2_CR * r1 * r2)      / (sv * D2)
+                            + aeta * (_1_CR + r1*r1 - r2*r2) / (sv * D2)
+                        ) * sg.sen_gs_loc(ix, iy, k, iper);
+                    }
+                }
+            }
+        }
     }
+    mpi.barrier();
 }
     
 
@@ -290,7 +376,9 @@ void preproc::run_forward_adjoint(const bool is_calc_adj){
             );
         }
         
-        if (run_mode == FORWARD_ONLY) continue;
-
+        if (run_mode == INVERSION_MODE) {
+            // Combine the local kernel accumulators across ranks to get the global kernel for each period, then apply the sensitivity kernels to get the model parameter kernels.
+            combine_kernels(sg);
+        }
     }
 }
