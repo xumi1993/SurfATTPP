@@ -66,7 +66,9 @@ void accumulate_kernels(
     }
 }
 
-real_t forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
+} // namespace
+
+real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
     auto& IP = InputParams::IP();
     auto& mg = ModelGrid::MG();
     auto& mpi = Parallel::mpi();
@@ -145,7 +147,7 @@ real_t forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
     return chi;
 }
 
-void reset_kernel_accumulators( SurfGrid& sg) {
+void preproc::reset_kernel_accumulators( SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
 
@@ -172,7 +174,7 @@ void reset_kernel_accumulators( SurfGrid& sg) {
     }
 }
 
-void prepare_dispersion_kernel(SurfGrid& sg) {
+void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& logger = ATTLogger::logger();
     auto& mpi = Parallel::mpi();
@@ -190,7 +192,7 @@ void prepare_dispersion_kernel(SurfGrid& sg) {
     mpi.barrier();
 }
 
-void combine_kernels(SurfGrid& sg) {
+void preproc::combine_kernels(SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
     auto& logger = ATTLogger::logger();
@@ -201,8 +203,7 @@ void combine_kernels(SurfGrid& sg) {
     // Resize to hold all parameter slots; default-construct (no storage) first,
     // then allocate only the entries that are actually used.
     logger.Info("Combining traveltime kernels with surface wave kernels...", MODULE_PREPROC);
-    int n_params = (IP.inversion().is_anisotropy) ? N_KER_ANI : N_KER_ISO;
-    sg.ker_loc.assign(n_params, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
+    sg.ker_loc.assign(5, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
 
     // vs kernel — always allocated (index 0)
     sg.ker_loc[0] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
@@ -339,45 +340,3 @@ void combine_kernels(SurfGrid& sg) {
 }
     
 
-} // namespace
-
-
-void preproc::run_forward_adjoint(const bool is_calc_adj){
-    auto& IP = InputParams::IP();
-    auto& logger = ATTLogger::logger();
-
-    for (surfType tp : {surfType::PH, surfType::GR}) {
-        if (!IP.data().vel_type[static_cast<size_t>(tp)]) continue;
-        auto &sg = (tp == surfType::PH) ? SurfGrid::SG_ph() : SurfGrid::SG_gr();
-        auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
-
-        logger.Info(std::format("Running forward and adjoint calculations for {} data", surfTypeStr[static_cast<size_t>(tp)]), MODULE_PREPROC);
-        // Reset kernel accumulators before processing this type of data
-        reset_kernel_accumulators(sg);
-
-        // Compute surface wave dispersion from the 3D S-wave velocity model.
-        sg.fwdsurf();
-
-        // Compute the dispersion kernel (sensitivity of travel times to
-        //   velocity perturbations at each surface grid point) for this type of data.
-        prepare_dispersion_kernel(sg);
-
-        // calculate travel time for each source-receiver pair and period, and store in sr.events_local
-        real_t chi = forward_for_event(sr, sg, is_calc_adj);
-
-        // gather synthetic travel times to the main rank for output and inversion steps
-        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data) {
-            logger.Info("Gathering forward-modeled travel times to the main rank for output...", MODULE_PREPROC);
-            sr.gather_syn_tt();
-            sr.write(
-                std::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, 
-                surfTypeStr[static_cast<size_t>(tp)]), true
-            );
-        }
-        
-        if (run_mode == INVERSION_MODE) {
-            // Combine the local kernel accumulators across ranks to get the global kernel for each period, then apply the sensitivity kernels to get the model parameter kernels.
-            combine_kernels(sg);
-        }
-    }
-}

@@ -169,6 +169,10 @@ void ModelGrid::allocate_model_grids() {
     mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vp3d, win_vp_);
     mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vs3d, win_vs_);
     mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], rho3d, win_rho_);
+    if (IP.inversion().is_anisotropy) {
+        mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gc3d, win_gc_);
+        mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gs3d, win_gs_);
+    }
     if (run_mode == INVERSION_MODE) {
         vs3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         vp3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
@@ -205,26 +209,93 @@ void ModelGrid::build_1d_model_inversion() {
     vs1d = inv1d->inv1d(zgrids, vs1d);
 }
 
-// Read the "vs" dataset from the HDF5 file specified in init_model_path.
-// Validates that the stored grid dimensions match the current model grid.
-std::vector<real_t> ModelGrid::load_3d_model() {
+// Read vs (required) and optionally vp, rho, gc, gs from the HDF5 file.
+// For any field absent in the file, empirical scaling is applied as fallback.
+// Writes directly into the shared-memory arrays vp3d/vs3d/rho3d/gc3d/gs3d.
+void ModelGrid::load_3d_model() {
     const auto &IP = InputParams::IP();
-    std::vector<real_t> model3d;
+    auto &logger = ATTLogger::logger();
     H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
     hsize_t nx = 0, ny = 0, nz = 0;
+    const hsize_t expect_n = static_cast<hsize_t>(n_xyz[0] * n_xyz[1] * n_xyz[2]);
 
-    try {
-        model3d = f.read_volume<real_t>("vs", nx, ny, nz);
-        // Ensure the file's grid dimensions are consistent with n_xyz (i,j,k order)
+    auto check_dims = [&](const std::string &name) {
         if (nx != static_cast<hsize_t>(n_xyz[0]) ||
             ny != static_cast<hsize_t>(n_xyz[1]) ||
             nz != static_cast<hsize_t>(n_xyz[2])) {
-            throw std::runtime_error("ModelGrid: invalid shape of 3D model in HDF5 file");
+            throw std::runtime_error(std::format(
+                "ModelGrid: dataset '{}' shape ({},{},{}) != grid ({},{},{})",
+                name, nx, ny, nz, n_xyz[0], n_xyz[1], n_xyz[2]));
+        }
+    };
+
+    try {
+        // --- vs (required) ---
+        {
+            auto d = f.read_volume<real_t>("vs", nx, ny, nz);
+            check_dims("vs");
+            std::copy(d.begin(), d.end(), vs3d);
+            logger.Info("Loaded 'vs' from HDF5 file.", MODULE_GRID);
+        }
+
+        // --- vp (optional, fallback: empirical vs2vp) ---
+        if (f.exists("vp")) {
+            auto d = f.read_volume<real_t>("vp", nx, ny, nz);
+            check_dims("vp");
+            std::copy(d.begin(), d.end(), vp3d);
+            logger.Info("Loaded 'vp' from HDF5 file.", MODULE_GRID);
+        } else {
+            logger.Info("'vp' not found in HDF5 file, computing from empirical vs2vp.", MODULE_GRID);
+            for (hsize_t i = 0; i < expect_n; ++i)
+                vp3d[i] = vs2vp(vs3d[i]);
+        }
+
+        // --- rho (optional, fallback: empirical vp2rho) ---
+        if (f.exists("rho")) {
+            auto d = f.read_volume<real_t>("rho", nx, ny, nz);
+            check_dims("rho");
+            std::copy(d.begin(), d.end(), rho3d);
+            logger.Info("Loaded 'rho' from HDF5 file.", MODULE_GRID);
+        } else {
+            logger.Info("'rho' not found in HDF5 file, computing from empirical vp2rho.", MODULE_GRID);
+            for (hsize_t i = 0; i < expect_n; ++i)
+                rho3d[i] = vp2rho(vp3d[i]);
+        }
+
+        // --- gc / gs (optional, only if is_anisotropy) ---
+        if (IP.inversion().is_anisotropy) {
+            if (f.exists("gc")) {
+                auto d = f.read_volume<real_t>("gc", nx, ny, nz);
+                check_dims("gc");
+                std::copy(d.begin(), d.end(), gc3d);
+                logger.Info("Loaded 'gc' from HDF5 file.", MODULE_GRID);
+            } else {
+                logger.Info("'gc' not found in HDF5 file, initialising to zero.", MODULE_GRID);
+                std::fill(gc3d, gc3d + expect_n, _0_CR);
+            }
+            if (f.exists("gs")) {
+                auto d = f.read_volume<real_t>("gs", nx, ny, nz);
+                check_dims("gs");
+                std::copy(d.begin(), d.end(), gs3d);
+                logger.Info("Loaded 'gs' from HDF5 file.", MODULE_GRID);
+            } else {
+                logger.Info("'gs' not found in HDF5 file, initialising to zero.", MODULE_GRID);
+                std::fill(gs3d, gs3d + expect_n, _0_CR);
+            }
         }
     } catch (const std::exception &e) {
-        throw std::runtime_error(std::string("ModelGrid: failed to load 3D model from HDF5 file: ") + e.what());
+        throw std::runtime_error(
+            std::string("ModelGrid: failed to load 3D model from HDF5 file: ") + e.what());
     }
-    return model3d;
+
+    // Compute depth-averaged vs1d from the loaded vs3d
+    vs1d.setZero(ngrid_k);
+    for (int k = 0; k < ngrid_k; ++k) {
+        for (int j = 0; j < ngrid_j; ++j)
+            for (int i = 0; i < ngrid_i; ++i)
+                vs1d(k) += vs3d[I2V(i, j, k)];
+        vs1d(k) /= (ngrid_i * ngrid_j);
+    }
 }
 
 // Allocate MPI shared-memory windows for vp3d/vs3d/rho3d, populate the arrays
@@ -261,20 +332,7 @@ void ModelGrid::build_init_model() {
             MODULE_GRID
         );
         if (mpi.is_main()) {
-            std::vector<real_t> model3d = load_3d_model();
-            std::copy(model3d.begin(), model3d.end(), vs3d);
-            // Derive Vp and density from Vs using empirical scaling relations
-            vs1d.setZero(ngrid_k);
-            for (int k = 0; k < ngrid_k; ++k){
-                for (int j = 0; j < ngrid_j; ++j){
-                    for (int i = 0; i < ngrid_i; ++i){
-                        vs1d(k) += vs3d[I2V(i, j, k)];
-                        vp3d[I2V(i, j, k)] = vs2vp(vs3d[I2V(i, j, k)]);
-                        rho3d[I2V(i, j, k)] = vp2rho(vp3d[I2V(i, j, k)]);
-                    }
-                }
-                vs1d(k) /= (ngrid_i * ngrid_j);
-            }
+            load_3d_model();  // fills vs3d/vp3d/rho3d and optionally gc3d/gs3d
         }
         mpi.barrier();
     } else {
@@ -290,6 +348,10 @@ void ModelGrid::build_init_model() {
                         vp3d[I2V(ix, iy, iz)] = vs2vp(vs1d(iz));
                         vs3d[I2V(ix, iy, iz)] = vs1d(iz);
                         rho3d[I2V(ix, iy, iz)] = vp2rho(vp3d[I2V(ix, iy, iz)]);  // empirical Vp→density scaling
+                        if (IP.inversion().is_anisotropy) {
+                            gc3d[I2V(ix, iy, iz)] = _0_CR;  // start with isotropic model
+                            gs3d[I2V(ix, iy, iz)] = _0_CR;  // start with isotropic model
+                        }
                     }
                 }
             }
@@ -302,9 +364,13 @@ void ModelGrid::build_init_model() {
 
     // Broadcast the model from main rank to all other ranks
     mpi.bcast(vs1d.data(), ngrid_k);
-    mpi.sync_from_main_rank(vp3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
-    mpi.sync_from_main_rank(vs3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    mpi.sync_from_main_rank(vp3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    mpi.sync_from_main_rank(vs3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
     mpi.sync_from_main_rank(rho3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    if (IP.inversion().is_anisotropy) {
+        mpi.sync_from_main_rank(gc3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+        mpi.sync_from_main_rank(gs3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    }
 }
 
 void ModelGrid::add_perturbation(

@@ -10,6 +10,7 @@
 #include "surf_grid.h"
 #include "preproc.h"
 #include "decomposer.h"
+#include "inversion.h"
 
 #include <algorithm>
 
@@ -57,11 +58,13 @@ int main(int argc, char* argv[])
     if (IP.data().vel_type[0]) SurfGrid::SG_ph().build_media();
     if (IP.data().vel_type[1]) SurfGrid::SG_gr().build_media();
 
+    Inversion::init();
+
     // run forward and adjoint calculations
     if (run_mode == FORWARD_ONLY) {
-        preproc::run_forward_adjoint(false);
+        Inversion::INV().run_forward();
     } else {
-        preproc::run_forward_adjoint(true);
+        Inversion::INV().run_inversion();
     }
 
     SrcRec::SR_ph().release_shm();

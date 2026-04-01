@@ -15,8 +15,8 @@ struct DataParams {
     std::string src_rec_file_ph;   // source-receiver file for phase velocity
     std::string src_rec_file_gr;   // source-receiver file for group velocity (optional)
     int         iwave;             // 1 = Love, 2 = Rayleigh
-    std::vector<bool>   vel_type;  // [use_phase, use_group]
-    std::vector<real_t> weights;   // [weight_phase, weight_group]
+    std::vector<bool>   vel_type = {false, false};  // [use_phase, use_group]
+    std::vector<real_t> weights = {_1_CR, _1_CR};   // [weight_phase, weight_group]
 };
 
 struct OutputParams {

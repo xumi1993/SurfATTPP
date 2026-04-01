@@ -31,6 +31,8 @@ Parallel::Parallel() {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
     MPI_Comm_size(MPI_COMM_WORLD, &size_);
 
+    bcast(run_mode);
+
     // Create a shared-memory communicator to identify processes on the same node
     int split_status = MPI_Comm_split_type(comm_, MPI_COMM_TYPE_SHARED, rank_,
                         MPI_INFO_NULL, &node_comm_);

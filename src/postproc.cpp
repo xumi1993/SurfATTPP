@@ -63,8 +63,8 @@ namespace{
                         _2_CR * center
                     );
 
-                    // Z-direction second derivative: ch * (u[k+1] + u[k-1] - 2*u[k]) / dz²
-                    real_t d2u_dz2 = ch * dz2_inv * (
+                    // Z-direction second derivative: cv * (u[k+1] + u[k-1] - 2*u[k]) / dz²
+                    real_t d2u_dz2 = cv * dz2_inv * (
                         dcp.expd_field(ix+ix_start, iy+iy_start, k+1) + 
                         dcp.expd_field(ix+ix_start, iy+iy_start, k-1) - 
                         _2_CR * center
@@ -94,14 +94,14 @@ namespace{
         }
         if (dcp.neighbors_id()[2] == -1) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
-                for (int k = 0; k < dcp.loc_ny(); ++k) {
+                for (int k = 0; k < ngrid_k; ++k) {
                     arr(ix, 0, k) = arr(ix, 1, k);  // Neumann BC at bottom boundary
                 }
             }
         }
         if (dcp.neighbors_id()[3] == -1) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
-                for (int k = 0; k < dcp.loc_ny(); ++k) {
+                for (int k = 0; k < ngrid_k; ++k) {
                     arr(ix, dcp.loc_ny() - 1, k) = arr(ix, dcp.loc_ny() - 2, k);  // Neumann BC at top boundary
                 }
             }
@@ -409,3 +409,54 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::smooth(const Eigen::Tensor<r
         exit(EXIT_FAILURE);
     }
 }
+
+
+// -------------------------------------------------------------------------------
+// ------- namespace postproc functions that are called from inversion.cpp -------
+// -------------------------------------------------------------------------------
+
+void postproc::kernel_precondition(SurfGrid& sg) {
+    auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
+
+    if ( !IP.postproc().is_kden ) return;
+
+    logger.Info("Preconditioning kernels with reference model parameters...", MODULE_POSTPROC);
+    // normalize kernel density by L_inf
+    Eigen::Tensor<real_t, 0, Eigen::RowMajor> L_inf_tensor = sg.ker_den_loc.abs().maximum();
+    real_t L_inf = L_inf_tensor();
+    if (L_inf < VERYTINY) {
+        logger.Warn("Kernel density is too small, skipping preconditioning.", MODULE_POSTPROC);
+        return;
+    }
+    mpi.barrier();
+    mpi.max_all_all_inplace(L_inf);
+
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> ken_den_norm = sg.ker_den_loc / L_inf;
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> hess_inv = (ken_den_norm > VERYTINY).select(
+            ken_den_norm.inverse(),
+            ken_den_norm.constant(_1_CR)
+        );
+
+    // Precondition the kernels by multiplying with the reference model parameters at each surface grid point
+    int nker = sg.ker_loc.size();
+    for (int iparam = 0; iparam < nker; ++iparam) {
+        if (sg.ker_loc[iparam].size() == 0) continue;  // skip if no kernels for this parameter
+        sg.ker_loc[iparam] = sg.ker_loc[iparam] * hess_inv;
+    }
+}
+
+std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> postproc::kernel_smooth(const SurfGrid& sg) {
+    auto &logger = ATTLogger::logger();
+    auto &PP = PostProc::PP();
+
+    logger.Info("Smoothing kernels...", MODULE_POSTPROC);
+    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> ker_loc_smooth(sg.ker_loc.size());
+    for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
+        if (sg.ker_loc[iparam].size() == 0) continue;
+        ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);
+    }
+    return ker_loc_smooth;
+}
+

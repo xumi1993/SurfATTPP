@@ -141,6 +141,11 @@ public:
     void sum_all_all_inplace(T &recv) {
         MPI_Allreduce(MPI_IN_PLACE, &recv, 1, mpi_type_of<T>(), MPI_SUM, comm_);
     }
+    // max scalar allreduce in-place
+    template<typename T>
+    void max_all_all_inplace(T &recv) {
+        MPI_Allreduce(MPI_IN_PLACE, &recv, 1, mpi_type_of<T>(), MPI_MAX, comm_);
+    }
 
     // nD arrays: allreduce
     template<typename T>

@@ -12,6 +12,12 @@
 #include <stdexcept>
 #include <vector>
 
+namespace postproc {
+    void kernel_precondition(SurfGrid& sg);
+
+    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> kernel_smooth(const SurfGrid& sg);
+}
+
 class PostProc {
 public:
     // -----------------------------------------------------------------------

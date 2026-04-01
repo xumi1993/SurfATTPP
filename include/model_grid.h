@@ -40,6 +40,8 @@ public:
     real_t* vp3d;
     real_t* vs3d;
     real_t* rho3d;
+    real_t* gc3d;
+    real_t* gs3d;
 
     Eigen::Tensor<real_t, 3, Eigen::RowMajor> vs3d_loc;  // local subdomain of vs3d for each rank, with halo regions included
     Eigen::Tensor<real_t, 3, Eigen::RowMajor> vp3d_loc;  // local subdomain of vp3d for each rank, with halo regions included
@@ -53,13 +55,15 @@ private:
         return MG;
     }
 
-    MPI_Win win_vp_ = MPI_WIN_NULL;
-    MPI_Win win_vs_ = MPI_WIN_NULL;
+    MPI_Win win_vp_  = MPI_WIN_NULL;
+    MPI_Win win_vs_  = MPI_WIN_NULL;
     MPI_Win win_rho_ = MPI_WIN_NULL;
+    MPI_Win win_gc_  = MPI_WIN_NULL;
+    MPI_Win win_gs_  = MPI_WIN_NULL;
 
     void build_1d_model_linear();
     void build_1d_model_inversion();
-    std::vector<real_t> load_3d_model();
+    void load_3d_model();
     void release_shm();
     void allocate_model_grids();
 };
