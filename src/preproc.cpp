@@ -145,10 +145,9 @@ real_t forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
     return chi;
 }
 
-void reset_kernel_accumulators(SrcRec& sr, SurfGrid& sg) {
+void reset_kernel_accumulators( SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
-    (void)sr;
 
     if (run_mode == FORWARD_ONLY) return;
     // Reset the model perturbation arrays to zero before accumulating kernels.
@@ -354,7 +353,7 @@ void preproc::run_forward_adjoint(const bool is_calc_adj){
 
         logger.Info(std::format("Running forward and adjoint calculations for {} data", surfTypeStr[static_cast<size_t>(tp)]), MODULE_PREPROC);
         // Reset kernel accumulators before processing this type of data
-        reset_kernel_accumulators(sr, sg);
+        reset_kernel_accumulators(sg);
 
         // Compute surface wave dispersion from the 3D S-wave velocity model.
         sg.fwdsurf();
