@@ -25,7 +25,12 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
     int nz = static_cast<int>(zarr.size());
     real_t step_length = IP.inversion().step_length;
 
-    real_t sigma = 0.68 * zarr(zarr.size() - 1) / IP.inversion().n_inv_grid[2];
+    real_t sigma = _0_CR;
+    if (IP.postproc().smooth_method == 0) {
+        sigma = IP.postproc().sigma[1];
+    } else if (IP.postproc().smooth_method == 1) {
+        sigma = 0.68 * (zarr(zarr.size() - 1) - zarr(0)) / IP.postproc().n_inv_grid[2];
+    }
     logger.Info("1D inversion using averaged surface wave data", MODULE_INV1D);
 
     // define model update vector

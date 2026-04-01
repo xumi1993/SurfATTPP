@@ -63,9 +63,6 @@ static void check_inversion() {
     assert_near(inv.vel_range[0], 1.8);
     assert_near(inv.vel_range[1], 4.2);
     assert(inv.init_model_path == "/path/to/init_mod.h5");
-    assert_near(inv.kdensity_coe, 1.0);
-    assert(inv.ncomponents == 5);
-    assert((inv.n_inv_grid == std::vector<int>{8, 9, 10}));
     assert(inv.niter        == 40);
     assert_near(inv.min_derr, 0.0001);
     assert(inv.optim_method  == 2);

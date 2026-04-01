@@ -38,6 +38,18 @@ struct TopoParams {
     real_t      wavelen_factor;
 };
 
+struct PostprocParams {
+    real_t kdensity_coe;
+    bool is_kden;
+    int smooth_method;
+    bool independent_smooth_ani;
+    std::vector<real_t> sigma = {_0_CR, _0_CR};
+    std::vector<real_t> sigma_ani = {_0_CR, _0_CR};
+    int n_inv_components;
+    std::vector<int> n_inv_grid = {0, 0, 0};
+    std::vector<int> n_inv_grid_ani = {0, 0, 0};
+};
+
 struct InversionParams {
     // model parametrisation
     bool is_anisotropy;
@@ -47,11 +59,6 @@ struct InversionParams {
     int                 init_model_type;  // 0 linear, 1 1-D avg, 2 external 3-D
     std::vector<real_t> vel_range;        // [v_min, v_max] km/s
     std::string         init_model_path;  // only used when init_model_type == 2
-    // regularisation
-    real_t kdensity_coe;
-    bool is_kden;
-    int    ncomponents;
-    std::vector<int> n_inv_grid;
     // convergence
     int    niter;
     real_t min_derr;
@@ -103,6 +110,7 @@ public:
     const OutputParams    &output()    const { return output_; }
     const DomainParams    &domain()    const { return domain_; }
     const TopoParams      &topo()      const { return topo_; }
+    const PostprocParams  &postproc()  const { return postproc_; }
     const InversionParams &inversion() const { return inversion_; }
 
     // Generic dot-notation accessor, e.g. get<int>("inversion.niter")
@@ -139,6 +147,7 @@ private:
     OutputParams    output_;
     DomainParams    domain_;
     TopoParams      topo_;
+    PostprocParams  postproc_;
     InversionParams inversion_;
 
     YAML::Node resolve(const std::string &key) const;
@@ -148,10 +157,12 @@ private:
     void load_domain(const YAML::Node &n);
     void load_topo(const YAML::Node &n);
     void load_inversion(const YAML::Node &n);
+    void load_postproc(const YAML::Node &n);
 
     void bcast_data();
     void bcast_output();
     void bcast_domain();
     void bcast_topo();
+    void bcast_postproc();
     void bcast_inversion();
 };

@@ -60,6 +60,41 @@ void InputParams::load_topo(const YAML::Node &n) {
     topo_.wavelen_factor   = req<real_t>(n, "wavelen_factor");
 }
 
+void InputParams::load_postproc(const YAML::Node &n) {
+    postproc_.kdensity_coe = req<real_t>(n, "kdensity_coe");
+    postproc_.is_kden = std::abs(postproc_.kdensity_coe - _0_CR) > 1e-6;
+    postproc_.smooth_method = opt<int>(n, "smooth_method", 0);
+    postproc_.independent_smooth_ani = opt<bool>(n, "independent_smooth_ani", false);
+
+    // Support hierarchical config:
+    // postproc:
+    //   smooth_method: 0/1
+    //   smooth_method_0: {sigma, sigma_ani}
+    //   smooth_method_1: {n_inv_components, n_inv_grid, n_inv_grid_ani}
+    //
+    // Keep backward compatibility with the old flat fields.
+    if (postproc_.smooth_method == 0) {
+        const YAML::Node sm = n["smooth_method_0"];
+        postproc_.sigma = req<std::vector<real_t>>(sm, "sigma");
+        if (postproc_.independent_smooth_ani) {
+            postproc_.sigma_ani = req<std::vector<real_t>>(sm, "sigma_ani");
+        } else {
+            postproc_.sigma_ani = postproc_.sigma;
+        }
+    } else if (postproc_.smooth_method == 1) {
+        const YAML::Node sm = n["smooth_method_1"];
+        postproc_.n_inv_components = req<int>(sm, "n_inv_components");
+        postproc_.n_inv_grid = req<std::vector<int>>(sm, "n_inv_grid");
+        if (postproc_.independent_smooth_ani) {
+            postproc_.n_inv_grid_ani = req<std::vector<int>>(sm, "n_inv_grid_ani");
+        } else {
+            postproc_.n_inv_grid_ani = postproc_.n_inv_grid;
+        }
+    } else {
+         throw std::runtime_error("InputParams: unsupported smooth_method " + std::to_string(postproc_.smooth_method));
+    }
+}
+
 void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.is_anisotropy      = opt<bool>(n, "is_anisotropy", false);
     inversion_.use_alpha_beta_rho = req<bool>(n, "use_alpha_beta_rho");
@@ -68,15 +103,6 @@ void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.init_model_type = req<int>(n, "init_model_type");
     inversion_.vel_range       = req<std::vector<real_t>>(n, "vel_range");
     inversion_.init_model_path = opt<std::string>(n, "init_model_path", "");
-
-    inversion_.kdensity_coe = opt<real_t>(n, "kdensity_coe", 0.0);
-    if (std::abs(inversion_.kdensity_coe - _0_CR) < 1e-6) {
-        inversion_.is_kden = false;
-    } else {
-        inversion_.is_kden = true;
-    }
-    inversion_.ncomponents  = req<int>(n, "ncomponents");
-    inversion_.n_inv_grid   = req<std::vector<int>>(n, "n_inv_grid");
 
     inversion_.niter    = req<int>(n, "niter");
     inversion_.min_derr = req<real_t>(n, "min_derr");
@@ -110,6 +136,7 @@ InputParams::InputParams(const std::string &filepath)
     load_output(require_section("output"));
     load_domain(require_section("domain"));
     load_topo(require_section("topo"));
+    load_postproc(require_section("postproc"));
     load_inversion(require_section("inversion"));
 }
 
@@ -167,6 +194,19 @@ void InputParams::bcast_topo() {
     mpi.bcast(topo_.wavelen_factor);
 }
 
+void InputParams::bcast_postproc() {
+    auto &mpi = Parallel::mpi();
+    mpi.bcast(postproc_.kdensity_coe);
+    mpi.bcast(postproc_.is_kden);
+    mpi.bcast(postproc_.smooth_method);
+    mpi.bcast_vec(postproc_.sigma);
+    mpi.bcast_vec(postproc_.sigma_ani);
+    mpi.bcast(postproc_.n_inv_components);
+    mpi.bcast_vec(postproc_.n_inv_grid);
+    mpi.bcast_vec(postproc_.n_inv_grid_ani);
+    mpi.bcast(postproc_.independent_smooth_ani);
+}
+
 void InputParams::bcast_inversion() {
     auto &mpi = Parallel::mpi();
     mpi.bcast(inversion_.is_anisotropy);
@@ -175,10 +215,6 @@ void InputParams::bcast_inversion() {
     mpi.bcast(inversion_.init_model_type);
     mpi.bcast_vec(inversion_.vel_range);
     mpi.bcast(inversion_.init_model_path);
-    mpi.bcast(inversion_.kdensity_coe);
-    mpi.bcast(inversion_.is_kden);
-    mpi.bcast(inversion_.ncomponents);
-    mpi.bcast_vec(inversion_.n_inv_grid);
     mpi.bcast(inversion_.niter);
     mpi.bcast(inversion_.min_derr);
     mpi.bcast(inversion_.optim_method);
@@ -192,5 +228,6 @@ void InputParams::bcast_all_params() {
     bcast_output();
     bcast_domain();
     bcast_topo();
+    bcast_postproc();
     bcast_inversion();
 }

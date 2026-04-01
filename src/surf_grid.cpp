@@ -49,7 +49,7 @@ SurfGrid::SurfGrid(surfType tp){
                 adj_xi_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
                 adj_eta_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
             }
-            if (!real_t_equal(IP.inversion().kdensity_coe, _0_CR)) {
+            if (IP.postproc().is_kden) {
                 kden_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
             }
         }

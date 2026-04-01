@@ -83,3 +83,4 @@ inline const std::string MODULE_MAIN      = "MAIN";
 inline const std::string MODULE_INV1D     = "INV1D";
 inline const std::string MODULE_TOPO      = "TOPO";
 inline const std::string MODULE_PREPROC   = "PREPROC";
+inline const std::string MODULE_POSTPROC  = "POSTPROC";

@@ -123,7 +123,7 @@ real_t forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
             eikonal::mask_uniform_grid(mg.xgrids, mg.ygrids, adj_field, evlo, evla);
             
             // If density kernel is needed, compute and accumulate it as well.
-            if (!real_t_equal(IP.inversion().kdensity_coe, _0_CR)) {
+            if (IP.postproc().is_kden) {
                 Eigen::VectorX<real_t> adjoint_source_kden =
                     -weight_rec.array() * Eigen::VectorX<real_t>::Ones(n_rec).array();
                 Eigen::MatrixX<real_t> kden_field = eikonal::FSM_O1_JSE_lonlat_2d(
@@ -153,7 +153,7 @@ void reset_kernel_accumulators( SurfGrid& sg) {
     // Reset the model perturbation arrays to zero before accumulating kernels.
     for (int iper = 0; iper < sg.nperiod; ++iper) {
         sg.adj_s_local[iper].setZero();
-        if ( !real_t_equal(IP.inversion().kdensity_coe, _0_CR) ) {
+        if (IP.postproc().is_kden) {
             sg.kden_s_local[iper].setZero();
         }
         if (IP.inversion().is_anisotropy) {
@@ -221,7 +221,7 @@ void combine_kernels(SurfGrid& sg) {
         sg.ker_loc[4] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[4].setZero();
     }
-    if (IP.inversion().is_kden){
+    if (IP.postproc().is_kden){
         sg.ker_den_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_den_loc.setZero();
     }
@@ -234,7 +234,7 @@ void combine_kernels(SurfGrid& sg) {
         Eigen::MatrixX<real_t> adj_tt = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
         Eigen::MatrixX<real_t> adj_den, adj_xi, adj_eta;
         mpi.sum_all_all(sg.adj_s_local[iper].data(), adj_tt.data(), ngrid_i * ngrid_j);
-        if ( IP.inversion().is_kden ) {
+        if ( IP.postproc().is_kden ) {
             adj_den = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
             mpi.sum_all_all(sg.kden_s_local[iper].data(), adj_den.data(), ngrid_i * ngrid_j);
         }
@@ -259,7 +259,7 @@ void combine_kernels(SurfGrid& sg) {
                     for (int k = 0; k < ngrid_k; ++k) {
                         sg.ker_loc[0](ix, iy, k) -= att * scale * sg.sen_vs_loc(ix, iy, k, iper);
                         sg.ker_loc[1](ix, iy, k) -= att * scale * sg.sen_vp_loc(ix, iy, k, iper);
-                        if (IP.inversion().is_kden) {
+                        if (IP.postproc().is_kden) {
                             sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * scale * sg.sen_vs_loc(ix, iy, k, iper);
                         }
                         if (!IP.inversion().rho_scaling) {
@@ -289,7 +289,7 @@ void combine_kernels(SurfGrid& sg) {
                             + sg.sen_vp_loc(ix, iy, k, iper)  * dab
                             + sg.sen_rho_loc(ix, iy, k, iper) * dra * dab
                         );
-                        if (IP.inversion().is_kden) {
+                        if (IP.postproc().is_kden) {
                             sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * (
                                 sg.sen_vs_loc(ix, iy, k, iper)
                                 + sg.sen_vp_loc(ix, iy, k, iper)  * dab
