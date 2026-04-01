@@ -51,10 +51,21 @@ public:
     
     Eigen::Tensor<real_t, 4, Eigen::RowMajor> sen_vp_loc, sen_vs_loc, sen_rho_loc;  // sensitivity kernels for vp, vs, rho with shape (ngrid_i, ngrid_j, ngrid_k, nperiod)
     Eigen::Tensor<real_t, 4, Eigen::RowMajor> sen_gc_loc, sen_gs_loc;  // sensitivity kernels for anisotropy parameters (if applicable)
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> r1_loc, r2_loc;  // anisotropy r1/r2 on local subdomain, shape (loc_nx, loc_ny, nperiod)
+
+    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> ker_loc;
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> ker_den_loc;
 
     void build_media();
     void fwdsurf();
     void compute_dispersion_kernel();
+    void correct_depth_with_topo();
+    void prepare_aniso_media();
+
+    inline int surf_idx(const int ix, const int iy, const int iper) {
+        return ((ix * ngrid_j) + iy) * nperiod + iper;
+    }
+
 
 private:
     MPI_Win win_svel_ = MPI_WIN_NULL;

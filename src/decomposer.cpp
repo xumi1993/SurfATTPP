@@ -345,6 +345,94 @@ void Decomposer::prepare_expanded_field(real_t* arr) {
 
 }
 
+Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::collect_data(real_t* buf_loc) {
+    auto& mpi = Parallel::mpi();
+
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_all;
+
+    if (mpi.is_main()) {
+        // allocate memory for the global field
+        buf_all = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k);
+        buf_all.setZero();
+        
+        // copy local field to the global field
+        for (int i = 0; i < loc_nx_; i++) {
+            for (int j = 0; j < loc_ny_; j++) {
+                for (int k = 0; k < ngrid_k; k++) {
+                    buf_all(i+loc_I_start_, j+loc_J_start_, k) = buf_loc[I2V_loc(i, j, k)];
+                }
+            }
+        }
+
+        // receive data from other ranks and copy to the global field
+        for (int i_proc = 1; i_proc < size_; i_proc++) {
+            int nx_recv = glob_I[i_proc][1] - glob_I[i_proc][0] + 1;
+            int ny_recv = glob_J[i_proc][1] - glob_J[i_proc][0] + 1;
+            int n_grid_points = nx_recv * ny_recv * ngrid_k;
+
+            // receive data from rank i_proc
+            Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_recv(nx_recv, ny_recv, ngrid_k);
+            mpi.recv(buf_recv.data(), n_grid_points, i_proc);
+
+            // copy received data to the global field
+            for (int i = 0; i < nx_recv; i++) {
+                for (int j = 0; j < ny_recv; j++) {
+                    for (int k = 0; k < ngrid_k; k++) {
+                        buf_all(i + glob_I[i_proc][0], j + glob_J[i_proc][0], k) = buf_recv(i, j, k);
+                    }
+                }
+            }
+            
+        }
+    } else {
+        int n_grid_points = loc_nx_ * loc_ny_ * ngrid_k;
+        mpi.send(buf_loc, n_grid_points, 0);
+    }
+    mpi.barrier();
+    return buf_all;
+}
+
+Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::distribute_data(real_t* buf) {
+    auto& mpi = Parallel::mpi();
+
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_loc(loc_nx_, loc_ny_, ngrid_k);
+    buf_loc.setZero();
+
+    if (mpi.is_main()) {
+        // copy local field to the global field
+        for (int i = 0; i < loc_nx_; i++) {
+            for (int j = 0; j < loc_ny_; j++) {
+                for (int k = 0; k < ngrid_k; k++) {
+                    buf_loc(i, j, k) = buf[I2V(i+loc_I_start_, j+loc_J_start_, k)];
+                }
+            }
+        }
+
+        // send data to other ranks
+        for (int i_proc = 1; i_proc < size_; i_proc++) {
+            int nx_send = glob_I[i_proc][1] - glob_I[i_proc][0] + 1;
+            int ny_send = glob_J[i_proc][1] - glob_J[i_proc][0] + 1;
+            int n_grid_points = nx_send * ny_send * ngrid_k;
+
+            // copy data to be sent to a buffer
+            Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_send(nx_send, ny_send, ngrid_k);
+            for (int i = 0; i < nx_send; i++) {
+                for (int j = 0; j < ny_send; j++) {
+                    for (int k = 0; k < ngrid_k; k++) {
+                        buf_send(i, j, k) = buf[I2V(i + glob_I[i_proc][0], j + glob_J[i_proc][0], k)];
+                    }
+                }
+            }
+            // send data to rank i_proc
+            mpi.send(buf_send.data(), n_grid_points, i_proc);
+        }
+    } else {
+        int n_grid_points = loc_nx_ * loc_ny_ * ngrid_k;
+        mpi.recv(buf_loc.data(), n_grid_points, 0);
+    }
+    return buf_loc;
+}
+
 std::pair<int, int> Decomposer::close_factors(int nx, int ny, int num) {
     int f1o, f2o;
     if (num <= 0 || ny == 0) {

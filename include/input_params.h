@@ -49,6 +49,7 @@ struct InversionParams {
     std::string         init_model_path;  // only used when init_model_type == 2
     // regularisation
     real_t kdensity_coe;
+    bool is_kden;
     int    ncomponents;
     std::vector<int> n_inv_grid;
     // convergence

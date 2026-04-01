@@ -19,14 +19,50 @@ extract_period_ij(const real_t* buf, int np, int iper) {
 void accumulate_kernels(
     SurfGrid& sg, const int iper,
     const Eigen::MatrixX<real_t>& adj_field,
-    const Eigen::MatrixX<real_t>* kden_field = nullptr
+    const Eigen::MatrixX<real_t>* kden_field = nullptr,
+    const Eigen::MatrixX<real_t>* tfield = nullptr
 ) {
+    auto& IP = InputParams::IP();
+    auto& mg = ModelGrid::MG();
+
     auto svel_ij = extract_period_ij(sg.svel, sg.nperiod, iper);
     const auto inv_svel3 = svel_ij.array().pow(-_3_CR);
 
     sg.adj_s_local[iper].array() += adj_field.array() * inv_svel3;
     if (kden_field != nullptr ) {
         sg.kden_s_local[iper].array() += kden_field->array() * inv_svel3;
+    }
+
+    // If anisotropy is considered and the travel time field (tfield) is available, compute the adjoint sources for the anisotropy parameters xi and eta.
+    if (IP.inversion().is_anisotropy && tfield != nullptr) {
+        Eigen::MatrixX<real_t> Tx, Ty;
+        gradient_2_geo(*tfield, mg.xgrids, mg.ygrids, Tx, Ty);
+
+        auto a_ij = extract_period_ij(sg.a, sg.nperiod, iper);
+        auto b_ij = extract_period_ij(sg.b, sg.nperiod, iper);
+        auto c_ij = extract_period_ij(sg.c, sg.nperiod, iper);
+
+        auto Tx2 = Tx.array().square();
+        auto Ty2 = Ty.array().square();
+        auto TxTy = (Tx.array() * Ty.array());
+        auto a2 = a_ij.array().square();
+        auto b2 = b_ij.array().square();
+        auto c2 = c_ij.array().square();
+        auto ac = (a_ij.array() * c_ij.array());
+        auto bc = (b_ij.array() * c_ij.array());
+        auto ab = (a_ij.array() * b_ij.array());
+
+        // adj_xi: adjtable * (Tx*(Tx*(-a²+c²) + Ty*(ac - bc))
+        //                   + Ty*(Tx*(ac - bc) + Ty*(-c²+b²)))
+        sg.adj_xi_local[iper].array() += adj_field.array() * (
+            Tx2 * (-a2 + c2) + _2_CR * TxTy * (ac - bc) + Ty2 * (-c2 + b2)
+        );
+
+        // adj_eta: adjtable * (Tx*(2*ac*Tx - (ab+c²)*Ty)
+        //                    + Ty*(-(ab+c²)*Tx + 2*bc*Ty))
+        sg.adj_eta_local[iper].array() += adj_field.array() * (
+            _2_CR * ac * Tx2 - _2_CR * (ab + c2) * TxTy + _2_CR * bc * Ty2
+        );
     }
 }
 
@@ -96,10 +132,10 @@ real_t forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_adj) {
                     tfield, stlo_rec, stla_rec, adjoint_source_kden
                 );
                 eikonal::mask_uniform_grid(mg.xgrids, mg.ygrids, adj_field, evlo, evla);
-                accumulate_kernels(sg, iper, adj_field, &kden_field);
+                accumulate_kernels(sg, iper, adj_field, &kden_field, &tfield);
             } else {
                 // Accumulate kernels for this event into the local accumulators in sg.
-                accumulate_kernels(sg, iper, adj_field);
+                accumulate_kernels(sg, iper, adj_field, nullptr, &tfield);
             }
             chi += 0.5 * (weight_rec.array() * (ttsyn - tt_rec).array().square()).sum();
         }
@@ -121,6 +157,10 @@ void reset_kernel_accumulators(SrcRec& sr, SurfGrid& sg) {
         if ( !real_t_equal(IP.inversion().kdensity_coe, _0_CR) ) {
             sg.kden_s_local[iper].setZero();
         }
+        if (IP.inversion().is_anisotropy) {
+            sg.adj_xi_local[iper].setZero();
+            sg.adj_eta_local[iper].setZero();
+        }
     }
     if (mpi.is_main()){
         sg.sen_vp_loc.setZero();
@@ -133,6 +173,23 @@ void reset_kernel_accumulators(SrcRec& sr, SurfGrid& sg) {
     }
 }
 
+void prepare_dispersion_kernel(SurfGrid& sg) {
+    auto& IP = InputParams::IP();
+    auto& logger = ATTLogger::logger();
+
+    logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
+    sg.compute_dispersion_kernel();
+    
+    if (IP.topo().is_consider_topo) {
+        sg.correct_depth_with_topo();
+    }
+
+    if (IP.inversion().is_anisotropy) {
+        sg.prepare_aniso_media();
+    }
+
+}
+
 void combine_kernels(SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
@@ -140,47 +197,57 @@ void combine_kernels(SurfGrid& sg) {
     auto& dcp = Decomposer::DCP();
     auto& mg = ModelGrid::MG();
 
-    Eigen::MatrixX<real_t> k_tt, k_den, k_xi, keta;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> k_alpha, k_beta, k_rho, k_gc, k_gs;
-    k_beta = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-    k_alpha = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-    k_rho = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-    k_beta.setZero();
-    k_alpha.setZero();
-    k_rho.setZero();
-    if (IP.inversion().is_anisotropy) {
-        k_gc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        k_gs = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        k_gc.setZero();
-        k_gs.setZero();
+
+    // initialize the model perturbation arrays to zero before accumulating kernels.
+    int n_params = (IP.inversion().is_anisotropy) ? N_KER_ANI : N_KER_ISO;
+    for (int i = 0; i < n_params; ++i){
+        sg.ker_loc.emplace_back(Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k));
+        sg.ker_loc.back().setZero();
+    }
+    if (IP.inversion().is_kden){
+        sg.ker_den_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_den_loc.setZero();
     }
 
+    // Combine the local kernel accumulators across ranks to get the global kernel for each period, then apply the sensitivity kernels to get the model parameter kernels.
     for (int iper = 0; iper < sg.nperiod; ++iper) {
         // Combine the local kernel accumulators across ranks to get the global kernel for this period.
-        Eigen::MatrixX<real_t> k_tt = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
-        mpi.sum_all_all(sg.adj_s_local[iper].data(), k_tt.data(), ngrid_i * ngrid_j);
-        if ( !real_t_equal(IP.inversion().kdensity_coe, _0_CR) ) {
-            Eigen::MatrixX<real_t> k_den = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
-            mpi.sum_all_all(sg.kden_s_local[iper].data(), k_den.data(), ngrid_i * ngrid_j);
+
+        // reduce adj_s_local to the main rank
+        Eigen::MatrixX<real_t> adj_tt = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+        Eigen::MatrixX<real_t> adj_den, adj_xi, adj_eta;
+        mpi.sum_all_all(sg.adj_s_local[iper].data(), adj_tt.data(), ngrid_i * ngrid_j);
+        if ( IP.inversion().is_kden ) {
+            adj_den = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            mpi.sum_all_all(sg.kden_s_local[iper].data(), adj_den.data(), ngrid_i * ngrid_j);
         }
         if (IP.inversion().is_anisotropy) {
-            Eigen::MatrixX<real_t> k_xi = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
-            Eigen::MatrixX<real_t> k_eta = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            adj_xi = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
+            adj_eta = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
             //TODO: sum anisotropy kernels across ranks if needed
         } else {
-            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
-                for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
-                    for (int k = 0; k < ngrid_k; ++k) {
-                        int iglob_x = dcp.loc_I_start() + ix;
-                        int iglob_y = dcp.loc_J_start() + iy;
-                        int idx_global = I2V(iglob_x, iglob_y, iper);
-                        k_alpha(ix, iy, k) += k_tt(iglob_x, iglob_y) * sg.svel[idx_global];
-                        k_beta(ix, iy, k) += k_tt(iglob_x, iglob_y);
-                        k_rho(ix, iy, k) += k_den(iglob_x, iglob_y);
+            if (IP.inversion().use_alpha_beta_rho) {
+            
+                for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                    for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                        for (int k = 0; k < ngrid_k; ++k) {
+                            int iglob_x = dcp.loc_I_start() + ix;
+                            int iglob_y = dcp.loc_J_start() + iy;
+                            sg.ker_loc[0](ix, iy, k) -= adj_tt(iglob_x, iglob_y) * sg.sen_vs_loc(ix, iy, k, iper);
+                            sg.ker_loc[1](ix, iy, k) -= adj_tt(iglob_x, iglob_y) * sg.sen_vp_loc(ix, iy, k, iper);
+                            if (IP.inversion().is_kden) {
+                                sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * sg.sen_vs_loc(ix, iy, k, iper);
+                            }
+                            if (!IP.inversion().rho_scaling) {
+                                sg.ker_loc[2](ix, iy, k) -= adj_tt(iglob_x, iglob_y) * sg.sen_rho_loc(ix, iy, k, iper);
+                            }
+                        }
                     }
                 }
+                if (IP.inversion().rho_scaling) {
+                    sg.ker_loc[2] = sg.ker_loc[0] * RHO_SCALING;
+                }
             }
-
         }
 
     }
@@ -206,6 +273,10 @@ void preproc::run_forward_adjoint(const bool is_calc_adj){
         // Compute surface wave dispersion from the 3D S-wave velocity model.
         sg.fwdsurf();
 
+        // Compute the dispersion kernel (sensitivity of travel times to
+        //   velocity perturbations at each surface grid point) for this type of data.
+        prepare_dispersion_kernel(sg);
+
         // calculate travel time for each source-receiver pair and period, and store in sr.events_local
         real_t chi = forward_for_event(sr, sg, is_calc_adj);
 
@@ -220,9 +291,6 @@ void preproc::run_forward_adjoint(const bool is_calc_adj){
         }
         
         if (run_mode == FORWARD_ONLY) continue;
-
-        // compute dispersion kernel
-        sg.compute_dispersion_kernel();
 
     }
 }

@@ -69,7 +69,12 @@ void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.vel_range       = req<std::vector<real_t>>(n, "vel_range");
     inversion_.init_model_path = opt<std::string>(n, "init_model_path", "");
 
-    inversion_.kdensity_coe = req<real_t>(n, "kdensity_coe");
+    inversion_.kdensity_coe = opt<real_t>(n, "kdensity_coe", 0.0);
+    if (std::abs(inversion_.kdensity_coe - _0_CR) < 1e-6) {
+        inversion_.is_kden = false;
+    } else {
+        inversion_.is_kden = true;
+    }
     inversion_.ncomponents  = req<int>(n, "ncomponents");
     inversion_.n_inv_grid   = req<std::vector<int>>(n, "n_inv_grid");
 
@@ -171,6 +176,7 @@ void InputParams::bcast_inversion() {
     mpi.bcast_vec(inversion_.vel_range);
     mpi.bcast(inversion_.init_model_path);
     mpi.bcast(inversion_.kdensity_coe);
+    mpi.bcast(inversion_.is_kden);
     mpi.bcast(inversion_.ncomponents);
     mpi.bcast_vec(inversion_.n_inv_grid);
     mpi.bcast(inversion_.niter);

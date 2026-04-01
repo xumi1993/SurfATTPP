@@ -372,6 +372,53 @@ inline Eigen::MatrixX<real_t> interp2d(
 }
 
 // ---------------------------------------------------------------------------
+// interp1d
+//
+// Linear interpolation of a 1-D field y defined on grid xgrid at query
+// points xq.
+//
+// Parameters:
+//   xgrid – 1-D x-axis nodes, strictly increasing, length nx
+//   y     – field values, length nx
+//   xq    – query x-coordinates, length nq
+//
+// Returns:
+//   yq    – interpolated values at xq(k), length nq.
+//           Points outside the grid extent return NaN.
+// ---------------------------------------------------------------------------
+inline Eigen::VectorX<real_t> interp1d(
+    const Eigen::VectorX<real_t>& xgrid,
+    const Eigen::VectorX<real_t>& y,
+    const Eigen::VectorX<real_t>& xq)
+{
+    const int nx = static_cast<int>(xgrid.size());
+    const int nq = static_cast<int>(xq.size());
+    const real_t* px = xgrid.data();
+
+    Eigen::VectorX<real_t> yq(nq);
+
+    for (int k = 0; k < nq; ++k) {
+        const real_t qx = xq(k);
+
+        if (qx < xgrid(0) || qx > xgrid(nx - 1)) {
+            yq(k) = std::numeric_limits<real_t>::quiet_NaN();
+            continue;
+        }
+
+        int i = static_cast<int>(
+            std::lower_bound(px, px + nx, qx) - px);
+        if (i == nx) --i;
+        if (i > 0 && xgrid(i) > qx) --i;
+        i = std::clamp(i, 0, nx - 2);
+
+        const real_t x1 = xgrid(i), x2 = xgrid(i + 1);
+        const real_t t = (qx - x1) / (x2 - x1);
+        yq(k) = (1 - t) * y(i) + t * y(i + 1);
+    }
+    return yq;
+}
+
+// ---------------------------------------------------------------------------
 // gaussian_smooth_geo_2
 //
 // 2-D Gaussian smoothing on a geographic (lon/lat) grid.

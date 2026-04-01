@@ -19,6 +19,8 @@ public:
     Decomposer(const Decomposer&) = delete;
     Decomposer& operator=(const Decomposer&) = delete;
     void prepare_expanded_field(real_t* arr);
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> collect_data(real_t* buf_loc);
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> distribute_data(real_t* buf);
 
     int rank() const { return rank_; }
     int size() const { return size_; }

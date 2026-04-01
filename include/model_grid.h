@@ -6,6 +6,7 @@
 #include "logger.h"
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <unsupported/Eigen/CXX11/Tensor>
 #include <vector>
 
 class ModelGrid {
@@ -40,6 +41,12 @@ public:
     real_t* vs3d;
     real_t* rho3d;
 
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vs3d_loc;  // local subdomain of vs3d for each rank, with halo regions included
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vp3d_loc;  // local subdomain of vp3d for each rank, with halo regions included
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> rho3d_loc;  // local subdomain of rho3d for each rank, with halo regions included
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> gc3d_loc;  // local anisotropy Gc parameter (cosine component), shape (loc_nx, loc_ny, ngrid_k)
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> gs3d_loc;  // local anisotropy Gs parameter (sine component), shape (loc_nx, loc_ny, ngrid_k)
+
 private:
     static std::unique_ptr<ModelGrid> &get_instance_ptr() {
         static std::unique_ptr<ModelGrid> MG;
@@ -54,4 +61,5 @@ private:
     void build_1d_model_inversion();
     std::vector<real_t> load_3d_model();
     void release_shm();
+    void allocate_model_grids();
 };

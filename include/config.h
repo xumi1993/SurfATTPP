@@ -62,8 +62,11 @@ constexpr int IFLSPH = 1;
 constexpr int IMODE = 1;
 constexpr int FORWARD_ONLY = 0;
 constexpr int INVERSION_MODE = 1;
+constexpr int N_KER_ISO = 3;  // number of isotropic kernel types (vp, vs, rho)
+constexpr int N_KER_ANI = 5;  // number of anisotropic kernel types (gc, gs)
 enum class surfType { PH = 0, GR = 1 };
 inline std::vector<std::string> surfTypeStr = {"PH", "GR"};
+constexpr real_t RHO_SCALING = 0.33;
 
 // ---------------------------------------------------------------------------
 // global variables

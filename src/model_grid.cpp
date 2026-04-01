@@ -5,6 +5,7 @@
 #include "h5io.h"
 #include "minpack.hpp"
 #include "utils.h"
+#include "decomposer.h"
 
 #include <array>
 #include <cmath>
@@ -157,6 +158,33 @@ ModelGrid::ModelGrid() {
         std::format("Latitude range: {:.3f} to {:.3f}", ybeg, yend),
         MODULE_GRID
     );
+    allocate_model_grids();
+}
+
+void ModelGrid::allocate_model_grids() {
+    auto &mpi = Parallel::mpi();
+    auto &dcp = Decomposer::DCP();
+    auto &IP = InputParams::IP();
+
+    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vp3d, win_vp_);
+    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vs3d, win_vs_);
+    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], rho3d, win_rho_);
+    if (run_mode == INVERSION_MODE) {
+        vs3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        vp3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        rho3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        vs3d_loc.setZero();
+        vp3d_loc.setZero();
+        rho3d_loc.setZero();
+        if (IP.inversion().is_anisotropy) {
+            // Allocate local sensitivity kernels for anisotropy parameters if needed
+            // (not shown here, but would be similar to vs3d_loc/vp3d_loc/rho3d_loc)
+            gc3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+            gs3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+            gc3d_loc.setZero();
+            gs3d_loc.setZero();
+        }
+    }
 }
 
 // Build a linearly-interpolated 1-D Vs profile spanning [vel_range[0], vel_range[1]]
@@ -210,11 +238,6 @@ void ModelGrid::build_init_model() {
     const auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
     auto &logger = ATTLogger::logger();
-    
-    // Allocate node-local shared memory (all ranks on the same node share these buffers)
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vp3d, win_vp_);
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vs3d, win_vs_);
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], rho3d, win_rho_);
 
     if (IP.inversion().init_model_type == 0) {
         // Build a simple linear Vs gradient
