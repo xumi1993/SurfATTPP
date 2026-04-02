@@ -52,6 +52,7 @@ private:
     void store_model();
     void store_gradient();
     bool check_convergence();
+    void model_update();
 
     Tensor3r model_update_;
     std::vector<Tensor3r> gradient_;

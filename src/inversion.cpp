@@ -7,12 +7,23 @@
 Inversion::Inversion() {
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
 
     // initialize gradient
     if (run_mode == INVERSION_MODE) {
         // initialize HDF5 file for storing model and gradient history (used by LBFGS)
         db_fname = std::format("{}/{}", IP.output().output_path, INIT_MODEL_FNAME);
-        H5IO f(db_fname, H5IO::TRUNC);
+
+        if (mpi.is_main()) {
+            try {
+                H5IO f(db_fname, H5IO::TRUNC);
+            } catch (const std::exception &e) {
+                logger.Error(std::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
+                logger.Error("Check if the output path exists and is writable, or delete the existing file.", MODULE_INV);
+                exit(EXIT_FAILURE);
+            }
+        }
 
         // Create empty datasets for model and gradient history. These will be resized and filled during the inversion iterations.
         is_active_param[0] = true; // vs is always active
@@ -281,6 +292,15 @@ void Inversion::steepest_descent() {
         alpha_ *= IP.inversion().maxshrink;
         logger.Info(std::format("Reducing step length to {:.6e}", alpha_), MODULE_INV);
     }
+    model_update();
+    mg.collect_model_loc();  // gather the updated local model back to the global model
+}
+
+void Inversion::model_update() {
+    auto &IP = InputParams::IP();
+    auto &mg = ModelGrid::MG();
+    auto &mpi = Parallel::mpi();
+
     mg.vs3d_loc = mg.vs3d_loc * (1 - alpha_ * gradient_[0]);
     if (IP.inversion().use_alpha_beta_rho) {
         mg.vp3d_loc = mg.vp3d_loc * (1 - alpha_ * gradient_[1]);
@@ -294,5 +314,5 @@ void Inversion::steepest_descent() {
         mg.gc3d_loc = mg.gc3d_loc  - alpha_ * gradient_[3];
         mg.gs3d_loc = mg.gs3d_loc  - alpha_ * gradient_[4];
     }
-    mg.collect_model_loc();  // gather the updated local model back to the global model
+    mpi.barrier();
 }
