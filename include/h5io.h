@@ -127,6 +127,20 @@ public:
         return Rm;  // implicitly converts to ColMajor if assigned to MatrixX*
     }
 
+    // ---- 3-D Eigen Tensor or TensorMap (RowMajor, written as ni × nj × nk volume) ------
+    template<typename TensorLike>
+    void write_tensor(const std::string &name, const TensorLike &t) {
+        using T = typename TensorLike::Scalar;
+        ensure_not_readonly();
+        remove_if_exists(name);
+        hsize_t dims[3] = {static_cast<hsize_t>(t.dimension(0)),
+                           static_cast<hsize_t>(t.dimension(1)),
+                           static_cast<hsize_t>(t.dimension(2))};
+        H5::DataSpace sp(3, dims);
+        H5::DataSet   ds = file_.createDataSet(name, h5_type_of<T>(), sp);
+        ds.write(t.data(), h5_type_of<T>());
+    }
+
     // ---- 3-D volume (flat array, dims: ni × nj × nk, row-major on disk) ---
     // data must have exactly ni*nj*nk elements.
     template<typename T>

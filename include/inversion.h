@@ -48,11 +48,13 @@ private:
     void run_forward_adjoint(const bool is_calc_adj);
     void init_iteration();
     void steepest_descent();
+    void grad_normalization();
+    void store_model();
+    void store_gradient();
 
     Eigen::Tensor<real_t, 3, Eigen::RowMajor> model_update_;
     std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> gradient_;
     Eigen::Tensor<real_t, 3, Eigen::RowMajor> search_direction_;
-    real_t grad_l_inf();
 
     std::vector<real_t> misfit_ = std::vector<real_t>(InputParams::IP().inversion().niter, _0_CR);
     int    iter_ = 0;

@@ -70,6 +70,8 @@ constexpr int N_KER_ANI = 5;  // number of anisotropic kernel types (gc, gs)
 enum class surfType { PH = 0, GR = 1 };
 inline std::vector<std::string> surfTypeStr = {"PH", "GR"};
 constexpr real_t RHO_SCALING = 0.33;
+constexpr int OPTIM_SD = 0;
+constexpr int OPTIM_LBFGS = 1;
 
 // ---------------------------------------------------------------------------
 // global variables
