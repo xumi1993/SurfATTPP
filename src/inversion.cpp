@@ -20,10 +20,10 @@ Inversion::Inversion() {
         is_active_param[2] = IP.inversion().use_alpha_beta_rho; // rho active if use_alpha_beta_rho is true
         is_active_param[3] = IP.inversion().is_anisotropy; // gc active if is_anisotropy is true
         is_active_param[4] = IP.inversion().is_anisotropy; // gs active if is_anisotropy is true
-        gradient_.assign(NPARAMS, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
+        gradient_.assign(NPARAMS, Tensor3r());
         for (int p = 0; p < NPARAMS; ++p) {
             if (is_active_param[p]) {
-                gradient_[p] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+                gradient_[p] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
             }
         }
 
@@ -188,7 +188,7 @@ void Inversion::store_model() {
     const std::string sfx = std::format("_{:03d}", iter_);
 
     // Use TensorMap to wrap the raw global pointer without copying
-    using TMap = Eigen::TensorMap<Eigen::Tensor<real_t, 3, Eigen::RowMajor>>;
+    using TMap = Eigen::TensorMap<Tensor3r>;
     f.write_tensor("model_vs" + sfx, TMap(mg.vs3d,  ngrid_i, ngrid_j, ngrid_k));
     if (IP.inversion().use_alpha_beta_rho) {
         f.write_tensor("model_vp"  + sfx, TMap(mg.vp3d,  ngrid_i, ngrid_j, ngrid_k));
@@ -207,7 +207,7 @@ void Inversion::store_gradient() {
     auto &mpi = Parallel::mpi();
 
     // All ranks participate in the gatherdient_.s
-    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> grad_all(NPARAMS);
+    std::vector<Tensor3r> grad_all(NPARAMS);
     for (int i = 0; i < NPARAMS; ++i) {
         if (is_active_param[i]) 
             grad_all[i] = dcp.collect_data(gradient_[i].data());

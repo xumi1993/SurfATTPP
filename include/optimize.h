@@ -26,8 +26,8 @@ namespace optimize {
 //
 // All MPI ranks must call this function collectively.
 
-std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> lbfgs_direction(
-    const std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> &gradient,
+std::vector<Tensor3r> lbfgs_direction(
+    const std::vector<Tensor3r> &gradient,
     int iter, const std::string &db_fname);
 
 } // namespace optimize

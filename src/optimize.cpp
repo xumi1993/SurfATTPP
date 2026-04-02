@@ -12,7 +12,7 @@ namespace optimize {
 // ---------------------------------------------------------------------------
 // Helper types
 // ---------------------------------------------------------------------------
-using FieldVec = std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>>;
+using FieldVec = std::vector<Tensor3r>;
 
 // Element-wise dot product summed over all active parameters.
 static real_t field_dot(const FieldVec &a, const FieldVec &b) {
@@ -46,7 +46,7 @@ FieldVec lbfgs_direction(int iter) {
     // (distribute_data reads only from main rank's buffer).
     FieldVec dir_global(NPARAMS);
     for (int p = 0; p < NPARAMS; ++p) {
-        dir_global[p] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k);
+        dir_global[p] = Tensor3r(ngrid_i, ngrid_j, ngrid_k);
         dir_global[p].setZero();
     }
 

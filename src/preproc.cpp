@@ -203,27 +203,27 @@ void preproc::combine_kernels(SurfGrid& sg) {
     // Resize to hold all parameter slots; default-construct (no storage) first,
     // then allocate only the entries that are actually used.
     logger.Info("Combining traveltime kernels with surface wave kernels...", MODULE_PREPROC);
-    sg.ker_loc.assign(NPARAMS, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
+    sg.ker_loc.assign(NPARAMS, Tensor3r());
 
     // vs kernel — always allocated (index 0)
-    sg.ker_loc[0] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    sg.ker_loc[0] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     sg.ker_loc[0].setZero();
     if (IP.inversion().use_alpha_beta_rho) {
         // vp (1) and rho (2) — only when parametrised independently
-        sg.ker_loc[1] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[1] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[1].setZero();
-        sg.ker_loc[2] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[2] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[2].setZero();
     }
     if (IP.inversion().is_anisotropy) {
         // Gc (3) and Gs (4)
-        sg.ker_loc[3] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[3] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[3].setZero();
-        sg.ker_loc[4] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_loc[4] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[4].setZero();
     }
     if (IP.postproc().is_kden){
-        sg.ker_den_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        sg.ker_den_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_den_loc.setZero();
     }
 

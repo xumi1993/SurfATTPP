@@ -15,7 +15,7 @@
 namespace postproc {
     void kernel_precondition(SurfGrid& sg);
 
-    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> kernel_smooth(const SurfGrid& sg);
+    std::vector<Tensor3r> kernel_smooth(const SurfGrid& sg);
 }
 
 class PostProc {
@@ -48,21 +48,21 @@ public:
         //   n_inv : {ninvx, ninvy, ninvz}  (0 → use ModelGrid size)
         //   nset_ : number of staggered sets (n_inv_components)
         void init(const std::vector<int> &n_inv, int nset_);
-        std::vector<real_t> fwd2inv(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf);
-        Eigen::Tensor<real_t, 3, Eigen::RowMajor> inv2fwd(const real_t *buf);
+        std::vector<real_t> fwd2inv(const Tensor3r &buf);
+        Tensor3r inv2fwd(const real_t *buf);
         inline int I2V_INV_GRIDS(const int A, const int B, const int C, const int D) {
             return (A*n_inv_K*n_inv_J*nset + B*n_inv_K*nset + C*nset + D);  // 4D to 1D index
         }
     };
 
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf);
+    Tensor3r smooth(const Tensor3r &buf);
     InvGrid inv_grid;      // isotropic inversion grid
     InvGrid inv_grid_ani;  // anisotropy inversion grid
 
 private:
     PostProc(const PostProc &)            = delete;
     PostProc &operator=(const PostProc &) = delete;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> pde_smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf);
+    Tensor3r pde_smooth(const Tensor3r &buf);
    
 
 };

@@ -44,11 +44,11 @@ public:
     real_t* gc3d;
     real_t* gs3d;
 
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vs3d_loc;  // local subdomain of vs3d for each rank, with halo regions included
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vp3d_loc;  // local subdomain of vp3d for each rank, with halo regions included
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> rho3d_loc;  // local subdomain of rho3d for each rank, with halo regions included
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> gc3d_loc;  // local anisotropy Gc parameter (cosine component), shape (loc_nx, loc_ny, ngrid_k)
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> gs3d_loc;  // local anisotropy Gs parameter (sine component), shape (loc_nx, loc_ny, ngrid_k)
+    Tensor3r vs3d_loc;  // local subdomain of vs3d for each rank, with halo regions included
+    Tensor3r vp3d_loc;  // local subdomain of vp3d for each rank, with halo regions included
+    Tensor3r rho3d_loc;  // local subdomain of rho3d for each rank, with halo regions included
+    Tensor3r gc3d_loc;  // local anisotropy Gc parameter (cosine component), shape (loc_nx, loc_ny, ngrid_k)
+    Tensor3r gs3d_loc;  // local anisotropy Gs parameter (sine component), shape (loc_nx, loc_ny, ngrid_k)
 
 private:
     static std::unique_ptr<ModelGrid> &get_instance_ptr() {

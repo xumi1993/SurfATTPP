@@ -4,10 +4,10 @@
 #include "utils.h"
 
 namespace{
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> compute_laplacian_3d_standard(const real_t ch, const real_t cv) {
+    Tensor3r compute_laplacian_3d_standard(const real_t ch, const real_t cv) {
         auto &dcp = Decomposer::DCP();
 
-        Eigen::Tensor<real_t, 3, Eigen::RowMajor> lap(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        Tensor3r lap(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         lap.setZero();
 
         int ix_start, iy_start;
@@ -76,7 +76,7 @@ namespace{
         return lap;
     }
 
-    void apply_boundary_conditions(Eigen::Tensor<real_t, 3, Eigen::RowMajor> &arr) {
+    void apply_boundary_conditions(Tensor3r &arr) {
         auto &dcp = Decomposer::DCP();
         if (dcp.neighbors_id()[0] == -1) {
             for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
@@ -175,7 +175,7 @@ PostProc::PostProc() {
     }
 }
 
-std::vector<real_t> PostProc::InvGrid::fwd2inv(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf) {
+std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
     const auto &mg = ModelGrid::MG();
     const auto &dcp = Decomposer::DCP();
     auto &logger = ATTLogger::logger();
@@ -264,7 +264,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Eigen::Tensor<real_t, 3, Ei
     return arr_inv;
 }
 
-Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::InvGrid::inv2fwd(const real_t *buf) {
+Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
     const auto &mg = ModelGrid::MG();
     const auto &dcp = Decomposer::DCP();
 
@@ -273,7 +273,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::InvGrid::inv2fwd(const real_
     int ninvy = n_inv_J + 2;
     int ninvz = n_inv_K + 2;
     real_t wx, wy, wz, wt;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> arr_fwd(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    Tensor3r arr_fwd(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     arr_fwd.setZero(); 
 
     for (int igrid = 0; igrid < nset; ++igrid) {
@@ -342,7 +342,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::InvGrid::inv2fwd(const real_
     return arr_fwd;
 }
 
-Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::pde_smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf) {
+Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
     auto &logger = ATTLogger::logger();
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
@@ -355,7 +355,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::pde_smooth(const Eigen::Tens
         logger.Error("Invalid sigma values for PDE-based smoothing. All sigma values must be positive.", MODULE_POSTPROC);
         exit(EXIT_FAILURE);
     }
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> smoothed_buf(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    Tensor3r smoothed_buf(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     smoothed_buf = buf;  // initialize smoothed_buf with the input buf
 
     // Determine diffusion coefficients
@@ -383,7 +383,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::pde_smooth(const Eigen::Tens
         dcp.prepare_expanded_field(smoothed_buf.data());
 
         // Compute Laplacian using selected stencil
-        Eigen::Tensor<real_t, 3, Eigen::RowMajor> lap = compute_laplacian_3d_standard(ch, cv);
+        Tensor3r lap = compute_laplacian_3d_standard(ch, cv);
 
         // update smoothed_buf
         smoothed_buf = smoothed_buf + dt * lap;
@@ -396,7 +396,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::pde_smooth(const Eigen::Tens
     return smoothed_buf;
 }
 
-Eigen::Tensor<real_t, 3, Eigen::RowMajor> PostProc::smooth(const Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf) {
+Tensor3r PostProc::smooth(const Tensor3r &buf) {
     auto &IP = InputParams::IP();
     if (IP.postproc().smooth_method == 0) {
         return pde_smooth(buf);
@@ -433,8 +433,8 @@ void postproc::kernel_precondition(SurfGrid& sg) {
     mpi.barrier();
     mpi.max_all_all_inplace(L_inf);
 
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> ken_den_norm = sg.ker_den_loc / L_inf;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> hess_inv = (ken_den_norm > VERYTINY).select(
+    Tensor3r ken_den_norm = sg.ker_den_loc / L_inf;
+    Tensor3r hess_inv = (ken_den_norm > VERYTINY).select(
             ken_den_norm.inverse(),
             ken_den_norm.constant(_1_CR)
         );
@@ -447,12 +447,12 @@ void postproc::kernel_precondition(SurfGrid& sg) {
     }
 }
 
-std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> postproc::kernel_smooth(const SurfGrid& sg) {
+std::vector<Tensor3r> postproc::kernel_smooth(const SurfGrid& sg) {
     auto &logger = ATTLogger::logger();
     auto &PP = PostProc::PP();
 
     logger.Info("Smoothing kernels...", MODULE_POSTPROC);
-    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> ker_loc_smooth(sg.ker_loc.size());
+    std::vector<Tensor3r> ker_loc_smooth(sg.ker_loc.size());
     for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;
         ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);

@@ -185,17 +185,17 @@ void ModelGrid::allocate_model_grids() {
         mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gs3d, win_gs_);
     }
     if (run_mode == INVERSION_MODE) {
-        vs3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        vp3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        rho3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        vs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        vp3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        rho3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         vs3d_loc.setZero();
         vp3d_loc.setZero();
         rho3d_loc.setZero();
         if (IP.inversion().is_anisotropy) {
             // Allocate local sensitivity kernels for anisotropy parameters if needed
             // (not shown here, but would be similar to vs3d_loc/vp3d_loc/rho3d_loc)
-            gc3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-            gs3d_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+            gc3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+            gs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
             gc3d_loc.setZero();
             gs3d_loc.setZero();
         }
@@ -470,10 +470,10 @@ void ModelGrid::collect_model_loc() {
     auto &IP = InputParams::IP();
 
     int nelem = ngrid_i * ngrid_j * ngrid_k;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vs_tmp = dcp.collect_data(vs3d_loc.data());
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vp_tmp = dcp.collect_data(vp3d_loc.data());
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> rho_tmp = dcp.collect_data(rho3d_loc.data());
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> gc_tmp, gs_tmp;
+    Tensor3r vs_tmp = dcp.collect_data(vs3d_loc.data());
+    Tensor3r vp_tmp = dcp.collect_data(vp3d_loc.data());
+    Tensor3r rho_tmp = dcp.collect_data(rho3d_loc.data());
+    Tensor3r gc_tmp, gs_tmp;
     if (IP.inversion().is_anisotropy) {
         gc_tmp = dcp.collect_data(gc3d_loc.data());
         gs_tmp = dcp.collect_data(gs3d_loc.data());

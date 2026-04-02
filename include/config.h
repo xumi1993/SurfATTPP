@@ -16,6 +16,11 @@
 
 #include <string>
 #include <vector>
+#include <unsupported/Eigen/CXX11/Tensor>
+
+// Convenience alias for the most common 3-D field type
+using Tensor3r = Eigen::Tensor<real_t, 3, Eigen::RowMajor>;
+using Tensor4r = Eigen::Tensor<real_t, 4, Eigen::RowMajor>;
 
 // Convenience constant sized to the active precision
 #include <limits>

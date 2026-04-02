@@ -19,23 +19,23 @@ public:
     Decomposer(const Decomposer&) = delete;
     Decomposer& operator=(const Decomposer&) = delete;
     void prepare_expanded_field(real_t* arr);
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> collect_data(real_t* buf_loc);
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> distribute_data(real_t* buf);
+    Tensor3r collect_data(real_t* buf_loc);
+    Tensor3r distribute_data(real_t* buf);
 
-    int rank() const { return rank_; }
-    int size() const { return size_; }
-    int loc_I_start() const { return loc_I_start_; }
-    int loc_I_end() const { return loc_I_end_; }
-    int loc_J_start() const { return loc_J_start_; }
-    int loc_J_end() const { return loc_J_end_; }
-    int loc_nx() const { return loc_nx_; }
-    int loc_ny() const { return loc_ny_; }
-    int loc_nx_expd() const { return loc_nx_expd_; }
-    int loc_ny_expd() const { return loc_ny_expd_; }
+    int rank()              const { return rank_; }
+    int size()              const { return size_; }
+    int loc_I_start()       const { return loc_I_start_; }
+    int loc_I_end()         const { return loc_I_end_; }
+    int loc_J_start()       const { return loc_J_start_; }
+    int loc_J_end()         const { return loc_J_end_; }
+    int loc_nx()            const { return loc_nx_; }
+    int loc_ny()            const { return loc_ny_; }
+    int loc_nx_expd()       const { return loc_nx_expd_; }
+    int loc_ny_expd()       const { return loc_ny_expd_; }
     std::vector<int> neighbors_id() const { return neighbors_id_; }
     std::vector<std::vector<int>> glob_I;
     std::vector<std::vector<int>> glob_J;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> expd_field;
+    Tensor3r expd_field;
     Eigen::VectorX<real_t> x_loc_expd, y_loc_expd;
 
 private:
