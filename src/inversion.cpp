@@ -131,7 +131,7 @@ bool Inversion::check_convergence() {
             }
         }
     }
-    mpi.bcast_all(break_flag);
+    mpi.bcast(break_flag);
     return break_flag;
 }
 
