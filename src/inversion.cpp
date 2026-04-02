@@ -11,7 +11,7 @@ Inversion::Inversion() {
     // initialize gradient
     if (run_mode == INVERSION_MODE) {
         // initialize HDF5 file for storing model and gradient history (used by LBFGS)
-        db_fname = std::format("{}/model_iter.h5", IP.output().output_path);
+        db_fname = std::format("{}/{}", IP.output().output_path, INIT_MODEL_FNAME);
         H5IO f(db_fname, H5IO::TRUNC);
 
         // Create empty datasets for model and gradient history. These will be resized and filled during the inversion iterations.
@@ -41,6 +41,7 @@ void Inversion::run_forward() {
 void Inversion::run_inversion() {
     auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
+    auto &mg = ModelGrid::MG();
     auto &logger = ATTLogger::logger();
     logger.Info(std::format("Starting inversion iteration {}...", iter_), MODULE_INV);
     
@@ -73,6 +74,7 @@ void Inversion::run_inversion() {
 
         mpi.barrier();
     }
+    mg.write(std::format("{}/{}", IP.output().output_path, FINAL_MODEL_FNAME));
 }
 
 void Inversion::init_iteration() {
