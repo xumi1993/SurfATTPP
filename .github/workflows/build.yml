@@ -25,7 +25,10 @@ jobs:
 
       - name: Configure CMake
         working-directory: build
-        run: FC=gfortran CC=clang CXX=clang++ cmake -DCMAKE_BUILD_TYPE=Release ..
+        run: |
+          FC=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -V | tail -1)
+          echo "Using Fortran compiler: $FC"
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_Fortran_COMPILER="$FC" ..
 
       - name: Build
         working-directory: build
