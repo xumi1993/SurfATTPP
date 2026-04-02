@@ -40,6 +40,7 @@ void Inversion::run_forward() {
 
 void Inversion::run_inversion() {
     auto &IP = InputParams::IP();
+    auto &mpi = Parallel::mpi();
     auto &logger = ATTLogger::logger();
     logger.Info(std::format("Starting inversion iteration {}...", iter_), MODULE_INV);
     
@@ -66,6 +67,11 @@ void Inversion::run_inversion() {
             logger.Error("Unsupported optimization method specified in input parameters.", MODULE_INV);
             exit(EXIT_FAILURE);
         }
+
+        // Check for convergence based on misfit reduction
+        if (check_convergence()) break;
+
+        mpi.barrier();
     }
 }
 
@@ -95,6 +101,39 @@ void Inversion::init_iteration() {
     mpi.barrier();
 }
 
+bool Inversion::check_convergence() {
+    auto &mpi = Parallel::mpi();
+    auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+
+    bool break_flag = false;
+    if (mpi.is_main()) {
+        if ( iter_ > BREAK_ITER ) {
+            real_t sum_misfit_prev = _0_CR;
+            real_t sum_misfit_curr = _0_CR;
+
+            for (int i = 0; i <= BREAK_ITER; ++i) {
+                sum_misfit_prev += misfit_[iter_ - 1 - i];
+                sum_misfit_curr += misfit_[iter_ - i];
+            }
+            sum_misfit_prev /= BREAK_ITER;
+            sum_misfit_curr /= BREAK_ITER;
+            real_t misfit_reduction = (sum_misfit_prev - sum_misfit_curr) / sum_misfit_prev;
+            if (misfit_reduction < 0) {
+                logger.Info(std::format("Misfit increased in the last {} iterations.", BREAK_ITER), MODULE_INV);
+                break_flag = true;
+            } else if (misfit_reduction < IP.inversion().min_derr) {
+                logger.Info(std::format("Convergence achieved with misfit reduction of {:.2e} in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
+                break_flag = true;
+            } else {
+                logger.Info(std::format("Misfit reduction of {:.2e} in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
+                break_flag = false;
+            }
+        }
+    }
+    mpi.bcast_all(break_flag);
+    return break_flag;
+}
 
 void Inversion::run_forward_adjoint(const bool is_calc_adj){
     auto& IP = InputParams::IP();
