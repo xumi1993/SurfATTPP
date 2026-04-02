@@ -1,6 +1,7 @@
 #include "inversion.h"
 #include "logger.h"
 #include "config.h"
+#include "utils.h"
 
 Inversion::Inversion() {
     auto &dcp = Decomposer::DCP();
@@ -18,6 +19,7 @@ Inversion::Inversion() {
             gradient_[3] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
             gradient_[4] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         }
+        alpha_ = IP.inversion().step_length;
     }
 };
 
@@ -91,6 +93,8 @@ void Inversion::run_forward_adjoint(const bool is_calc_adj){
         }
         
         if (run_mode == INVERSION_MODE) {
+            misfit_[iter_] += chi * IP.data().weights[itype];
+
             // Combine the local kernel accumulators across ranks to get the global kernel for each period, then apply the sensitivity kernels to get the model parameter kernels.
             preproc::combine_kernels(sg);
 
@@ -100,13 +104,61 @@ void Inversion::run_forward_adjoint(const bool is_calc_adj){
             // smooth the kernels if needed
             auto ker_smooth = postproc::kernel_smooth(sg);
 
-            for (int ipara = 0; ipara < gradient_.size(); ++ipara) {
+            for (size_t ipara = 0; ipara < gradient_.size(); ++ipara) {
                 // Accumulate the smoothed kernel into the gradient for this parameter
                 if (gradient_[ipara].size() > 0) {
-                    gradient_[ipara] = gradient_[ipara] + ker_smooth[ipara] * IP.data().weights[itype];
+                    gradient_[ipara] = gradient_[ipara] + ker_smooth[ipara] * IP.data().weights[itype] / chi;
                 }
             }
         }
         mpi.barrier();
     }
+}
+
+real_t Inversion::grad_l_inf() {
+    auto& mpi = Parallel::mpi();
+
+    real_t local_max = _0_CR;
+    for (auto& grad : gradient_) {
+        if (grad.size() > 0) {
+            Eigen::Tensor<real_t, 0, Eigen::RowMajor> max_tensor = grad.abs().maximum();
+            local_max = std::max(local_max, max_tensor());
+        }
+    }
+
+    real_t global_max;
+    mpi.max_all_all(local_max, global_max);
+    return global_max;
+}
+
+void Inversion::steepest_descent() {
+    auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+    auto &mg = ModelGrid::MG();
+
+    real_t l_inf = grad_l_inf();
+    if (iter_ > 0 && misfit_[iter_] >= misfit_[iter_ - 1]) {
+        // If misfit increased, reduce step size and revert to previous model
+        // (not implemented yet: would need to store previous model and restore it here)
+        logger.Info(
+            std::format("Misfit increased from {:.6f} to {:.6f}", misfit_[iter_-1], misfit_[iter_]),
+            MODULE_INV
+        );
+        alpha_ *= IP.inversion().maxshrink;
+        logger.Info(std::format("Reducing step length to {:.6e}", alpha_), MODULE_INV);
+    }
+    mg.vs3d_loc = mg.vs3d_loc * (1 - alpha_ * gradient_[0] / l_inf);
+    if (IP.inversion().use_alpha_beta_rho) {
+        mg.vp3d_loc = mg.vp3d_loc * (1 - alpha_ * gradient_[1] / l_inf);
+        mg.rho3d_loc = mg.rho3d_loc * (1 - alpha_ * gradient_[2] / l_inf);
+    } else {
+        // Empirical scaling: vs → vp → rho via Brocher (2005)
+        mg.vp3d_loc  = vs2vp(mg.vs3d_loc);
+        mg.rho3d_loc = vp2rho(mg.vp3d_loc);
+    }
+    if (IP.inversion().is_anisotropy) {
+        mg.gc3d_loc = mg.gc3d_loc  - alpha_ * gradient_[3] / l_inf;
+        mg.gs3d_loc = mg.gs3d_loc  - alpha_ * gradient_[4] / l_inf;
+    }
+    mg.collect_model_loc();  // gather the updated local model back to the global model
 }

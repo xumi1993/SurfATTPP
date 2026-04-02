@@ -45,6 +45,7 @@ void InputParams::load_output(const YAML::Node &n) {
     output_.output_path   = opt<std::string>(n, "output_path", "OUTPUT_FILES/");
     output_.output_in_process_data = opt<bool>(n, "output_in_process_data", false);
     output_.output_initial_model = opt<bool>(n, "output_initial_model", false);
+    output_.output_in_process_model = opt<bool>(n, "output_in_process_model", false);
     output_.log_level     = opt<int>(n, "log_level", 1);
 }
 
@@ -177,6 +178,7 @@ void InputParams::bcast_output() {
     mpi.bcast(output_.output_path);
     mpi.bcast(output_.output_in_process_data);
     mpi.bcast(output_.output_initial_model);
+    mpi.bcast(output_.output_in_process_model);
     mpi.bcast(output_.log_level);
 }
 

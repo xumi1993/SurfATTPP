@@ -23,6 +23,7 @@ struct OutputParams {
     std::string output_path;
     bool output_in_process_data;
     bool output_initial_model;
+    bool output_in_process_model;
     int log_level;      // 0 debug, 1 verbose
 };
 

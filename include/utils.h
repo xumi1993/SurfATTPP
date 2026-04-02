@@ -4,6 +4,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <unsupported/Eigen/CXX11/Tensor>
 #include <cmath>
 #include <filesystem>
 
@@ -152,7 +153,6 @@ inline Eigen::Matrix<T, Eigen::Dynamic, 1> vs2vp(
             0.2683*vs.array().cube() - 0.0251*vs.array().pow(4)).matrix();
 }
 
-
 // d(rho)/d(vp): derivative of vp2rho w.r.t. vp (scalar)
 inline real_t drho_dalpha(real_t vp) {
     return 1.6612 - 2*0.4721*vp + 3*0.0671*vp*vp - 4*0.0043*vp*vp*vp + 5*0.000106*vp*vp*vp*vp;
@@ -190,6 +190,27 @@ inline Eigen::Matrix<T, Eigen::Dynamic, 1> vp2rho(
     return (1.6612*vp.array() - 0.4721*vp.array().square() + 
             0.0671*vp.array().cube() - 0.0043*vp.array().pow(4) + 
             0.000106*vp.array().pow(5)).matrix();
+}
+
+// Tensor overloads (Brocher 2005) for 3-D model fields
+template<int Rank, int Options>
+inline Eigen::Tensor<real_t, Rank, Options>
+vs2vp(const Eigen::Tensor<real_t, Rank, Options> &vs) {
+    return vs.constant(0.9409)
+         + vs.constant(2.0947) * vs
+         - vs.constant(0.8206) * vs * vs
+         + vs.constant(0.2683) * vs * vs * vs
+         - vs.constant(0.0251) * vs * vs * vs * vs;
+}
+
+template<int Rank, int Options>
+inline Eigen::Tensor<real_t, Rank, Options>
+vp2rho(const Eigen::Tensor<real_t, Rank, Options> &vp) {
+    return vp.constant(1.6612) * vp
+         - vp.constant(0.4721) * vp * vp
+         + vp.constant(0.0671) * vp * vp * vp
+         - vp.constant(0.0043) * vp * vp * vp * vp
+         + vp.constant(0.000106) * vp * vp * vp * vp * vp;
 }
 
 // Gaussian smoothing along depth axis z with standard deviation sigma.

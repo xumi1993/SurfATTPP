@@ -42,7 +42,6 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
         // Compute predicted dispersion curve and misfit
         update_total.setZero();
         real_t misfit_total = _0_CR;
-        // for (int itype = 0; itype < 2; ++itype) {
         for (auto tp : {surfType::PH, surfType::GR}) {
             int itype = static_cast<int>(tp);
             if (!IP.data().vel_type[itype]) continue;

@@ -97,22 +97,12 @@ void Decomposer::decompose_impl() {
 }
 
 void Decomposer::subdomain_allocation() {
-    auto& mg = ModelGrid::MG();
     auto& mpi = Parallel::mpi();
 
     expd_field = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(loc_nx_expd_, loc_ny_expd_, ngrid_k);
     expd_field.setZero();
     x_loc_expd = Eigen::VectorX<real_t>::Zero(loc_nx_expd_);
     y_loc_expd = Eigen::VectorX<real_t>::Zero(loc_ny_expd_);
-    int i_shift = (neighbors_id_[0] != -1) ? -1 : 0;
-    int j_shift = (neighbors_id_[2] != -1) ? -1 : 0;
-    for (int i = 0; i < loc_nx_expd_; i++) {
-        x_loc_expd(i) = mg.xgrids(loc_I_start_) + (i + i_shift) * dgrid_i;
-    }
-
-    for (int j = 0; j < loc_ny_expd_; j++) {
-        y_loc_expd(j) = mg.ygrids(loc_J_start_) + (j + j_shift) * dgrid_j;
-    }
 
     // allocate memory for MPI requests
     mpi_send_reqs.resize(8);

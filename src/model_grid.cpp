@@ -119,6 +119,7 @@ namespace {
 ModelGrid::ModelGrid() {
     const auto &dom = InputParams::IP().domain();
     auto &logger = ATTLogger::logger();
+    auto &dcp = Decomposer::DCP();
 
     // Grid spacing in lon, lat, and depth directions
     dgrid_i = dom.interval[0];
@@ -145,6 +146,16 @@ ModelGrid::ModelGrid() {
     xgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[0], xbeg, xend);
     ygrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[1], ybeg, yend);
     zgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[2], dom.depth[0], dom.depth[1]);
+
+    int i_shift = (dcp.neighbors_id()[0] != -1) ? -1 : 0;
+    int j_shift = (dcp.neighbors_id()[2] != -1) ? -1 : 0;
+    for (int i = 0; i < dcp.loc_nx_expd(); i++) {
+        dcp.x_loc_expd(i) = xgrids(dcp.loc_I_start()) + (i + i_shift) * dgrid_i;
+    }
+
+    for (int j = 0; j < dcp.loc_ny_expd(); j++) {
+        dcp.y_loc_expd(j) = ygrids(dcp.loc_J_start()) + (j + j_shift) * dgrid_j;
+    }
 
     logger.Info(
         std::format("Model grids: nx,ny,nz: {}, {}, {},", n_xyz[0], n_xyz[1], n_xyz[2]),
@@ -451,6 +462,40 @@ void ModelGrid::add_perturbation(
     mpi.sync_from_main_rank(vs3d, nelem);
     mpi.sync_from_main_rank(vp3d, nelem);
     mpi.sync_from_main_rank(rho3d, nelem);
+}
+
+void ModelGrid::collect_model_loc() {
+    auto &mpi = Parallel::mpi();
+    auto &dcp = Decomposer::DCP();
+    auto &IP = InputParams::IP();
+
+    int nelem = ngrid_i * ngrid_j * ngrid_k;
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vs_tmp = dcp.collect_data(vs3d_loc.data());
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> vp_tmp = dcp.collect_data(vp3d_loc.data());
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> rho_tmp = dcp.collect_data(rho3d_loc.data());
+    Eigen::Tensor<real_t, 3, Eigen::RowMajor> gc_tmp, gs_tmp;
+    if (IP.inversion().is_anisotropy) {
+        gc_tmp = dcp.collect_data(gc3d_loc.data());
+        gs_tmp = dcp.collect_data(gs3d_loc.data());
+    }
+    if (mpi.is_main()) {
+        std::copy(vs_tmp.data(), vs_tmp.data() + nelem, vs3d);
+        std::copy(vp_tmp.data(), vp_tmp.data() + nelem, vp3d);
+        std::copy(rho_tmp.data(), rho_tmp.data() + nelem, rho3d);
+         if (IP.inversion().is_anisotropy) {
+            std::copy(gc_tmp.data(), gc_tmp.data() + nelem, gc3d);
+            std::copy(gs_tmp.data(), gs_tmp.data() + nelem, gs3d);
+        }
+    }
+    mpi.barrier();
+    mpi.sync_from_main_rank(vs3d, nelem);
+    mpi.sync_from_main_rank(vp3d, nelem);
+    mpi.sync_from_main_rank(rho3d, nelem);
+    if (IP.inversion().is_anisotropy) {
+        mpi.sync_from_main_rank(gc3d, nelem);
+        mpi.sync_from_main_rank(gs3d, nelem);
+    }
+   
 }
 
 void ModelGrid::write(const std::string &subname) {
