@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies with Homebrew
         run: |
           brew update
-          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog gfortran
+          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog gcc
 
       - name: Create build directory
         run: mkdir -p build
@@ -66,7 +66,6 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
-          miniforge-variant: Mambaforge
 
       - name: Install dependencies with Mamba
         shell: bash -l {0}
