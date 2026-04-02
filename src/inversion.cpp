@@ -9,6 +9,8 @@ Inversion::Inversion() {
 
     // initialize gradient
     if (run_mode == INVERSION_MODE) {
+        db_fname = std::format("{}/model_iter.h5", IP.output().output_path);
+
         gradient_.assign(5, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
         gradient_[0] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         if (IP.inversion().use_alpha_beta_rho) {

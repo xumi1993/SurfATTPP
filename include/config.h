@@ -34,6 +34,7 @@ inline real_t dgrid_i, dgrid_j, dgrid_k;  // grid spacing in km, set by DomainPa
 // ---------------------------------------------------------------------------
 const std::string LOG_FNAME = "surfatt_runtime.log";
 inline std::string input_file;  // set by parse_options()
+inline std::string db_fname;    // set by inversion constructor
 
 // Constants
 constexpr real_t PI      = 3.14159265358979323846264338327950288;
