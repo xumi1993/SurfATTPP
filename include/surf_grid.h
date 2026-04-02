@@ -49,12 +49,12 @@ public:
     std::vector<Eigen::MatrixX<real_t>> adj_eta_local;  // length nperiod, each is a matrix of eta on the surface grid
     std::vector<Eigen::MatrixX<real_t>> kden_s_local;    // length nperiod, each is a vector of a on the surface grid
     
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> sen_vp_loc, sen_vs_loc, sen_rho_loc;  // sensitivity kernels for vp, vs, rho with shape (ngrid_i, ngrid_j, ngrid_k, nperiod)
-    Eigen::Tensor<real_t, 4, Eigen::RowMajor> sen_gc_loc, sen_gs_loc;  // sensitivity kernels for anisotropy parameters (if applicable)
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> r1_loc, r2_loc;  // anisotropy r1/r2 on local subdomain, shape (loc_nx, loc_ny, nperiod)
+    Tensor4r sen_vp_loc, sen_vs_loc, sen_rho_loc;  // sensitivity kernels for vp, vs, rho with shape (ngrid_i, ngrid_j, ngrid_k, nperiod)
+    Tensor4r sen_gc_loc, sen_gs_loc;  // sensitivity kernels for anisotropy parameters (if applicable)
+    Tensor3r r1_loc, r2_loc;  // anisotropy r1/r2 on local subdomain, shape (loc_nx, loc_ny, nperiod)
 
-    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> ker_loc;
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> ker_den_loc;
+    std::vector<Tensor3r> ker_loc;
+    Tensor3r ker_den_loc;
 
     void build_media();
     void fwdsurf();

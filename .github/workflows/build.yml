@@ -18,18 +18,17 @@ jobs:
       - name: Install dependencies with Homebrew
         run: |
           brew update
-          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog
+          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog gcc
 
       - name: Create build directory
         run: mkdir -p build
 
       - name: Configure CMake
         working-directory: build
-        run: cmake -DCMAKE_BUILD_TYPE=Release ..
-        env:
-          CC: clang
-          CXX: clang++
-          FC: gfortran
+        run: |
+          FC=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -V | tail -1)
+          echo "Using Fortran compiler: $FC"
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_Fortran_COMPILER="$FC" ..
 
       - name: Build
         working-directory: build
@@ -53,28 +52,27 @@ jobs:
       image: ubuntu:${{ matrix.ubuntu-version }}
 
     steps:
+      - name: Install Git
+        run: |
+          apt-get update
+          apt-get install -y git curl
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          apt-get install -y \
-            git \
-            curl
 
       - name: Setup Mamba
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
-          miniforge-variant: Mambaforge
+          activate-environment: build-env
 
       - name: Install dependencies with Mamba
         shell: bash -l {0}
         run: |
           mamba install -y -c conda-forge \
             cmake \
+            make \
             openmpi \
             hdf5 \
             eigen \
@@ -85,6 +83,7 @@ jobs:
             spdlog
 
       - name: Create build directory
+        shell: bash -l {0}
         run: mkdir -p build
 
       - name: Configure CMake

@@ -99,7 +99,7 @@ void Decomposer::decompose_impl() {
 void Decomposer::subdomain_allocation() {
     auto& mpi = Parallel::mpi();
 
-    expd_field = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(loc_nx_expd_, loc_ny_expd_, ngrid_k);
+    expd_field = Tensor3r(loc_nx_expd_, loc_ny_expd_, ngrid_k);
     expd_field.setZero();
     x_loc_expd = Eigen::VectorX<real_t>::Zero(loc_nx_expd_);
     y_loc_expd = Eigen::VectorX<real_t>::Zero(loc_ny_expd_);
@@ -335,14 +335,14 @@ void Decomposer::prepare_expanded_field(real_t* arr) {
 
 }
 
-Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::collect_data(real_t* buf_loc) {
+Tensor3r Decomposer::collect_data(real_t* buf_loc) {
     auto& mpi = Parallel::mpi();
 
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_all;
+    Tensor3r buf_all;
 
     if (mpi.is_main()) {
         // allocate memory for the global field
-        buf_all = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(ngrid_i, ngrid_j, ngrid_k);
+        buf_all = Tensor3r(ngrid_i, ngrid_j, ngrid_k);
         buf_all.setZero();
         
         // copy local field to the global field
@@ -361,7 +361,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::collect_data(real_t* buf_l
             int n_grid_points = nx_recv * ny_recv * ngrid_k;
 
             // receive data from rank i_proc
-            Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_recv(nx_recv, ny_recv, ngrid_k);
+            Tensor3r buf_recv(nx_recv, ny_recv, ngrid_k);
             mpi.recv(buf_recv.data(), n_grid_points, i_proc);
 
             // copy received data to the global field
@@ -382,10 +382,10 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::collect_data(real_t* buf_l
     return buf_all;
 }
 
-Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::distribute_data(real_t* buf) {
+Tensor3r Decomposer::distribute_data(real_t* buf) {
     auto& mpi = Parallel::mpi();
 
-    Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_loc(loc_nx_, loc_ny_, ngrid_k);
+    Tensor3r buf_loc(loc_nx_, loc_ny_, ngrid_k);
     buf_loc.setZero();
 
     if (mpi.is_main()) {
@@ -405,7 +405,7 @@ Eigen::Tensor<real_t, 3, Eigen::RowMajor> Decomposer::distribute_data(real_t* bu
             int n_grid_points = nx_send * ny_send * ngrid_k;
 
             // copy data to be sent to a buffer
-            Eigen::Tensor<real_t, 3, Eigen::RowMajor> buf_send(nx_send, ny_send, ngrid_k);
+            Tensor3r buf_send(nx_send, ny_send, ngrid_k);
             for (int i = 0; i < nx_send; i++) {
                 for (int j = 0; j < ny_send; j++) {
                     for (int k = 0; k < ngrid_k; k++) {

@@ -54,14 +54,14 @@ SurfGrid::SurfGrid(surfType tp){
             }
         }
 
-        sen_vp_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-        sen_vs_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-        sen_rho_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_vp_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_vs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_rho_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
         if (InputParams::IP().inversion().is_anisotropy) {
-            sen_gc_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-            sen_gs_loc = Eigen::Tensor<real_t, 4, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-            r1_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), nperiod);
-            r2_loc = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), nperiod);
+            sen_gc_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+            sen_gs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+            r1_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod);
+            r2_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod);
             r1_loc.setZero();
             r2_loc.setZero();
         }

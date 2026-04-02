@@ -4,6 +4,7 @@
 
 #include <H5Cpp.h>
 #include <Eigen/Core>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 #include <string>
 #include <vector>
@@ -125,6 +126,31 @@ public:
         Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Rm(dims[0], dims[1]);
         ds.read(Rm.data(), h5_type_of<T>());
         return Rm;  // implicitly converts to ColMajor if assigned to MatrixX*
+    }
+
+    // ---- 3-D Eigen Tensor or TensorMap (RowMajor, written as ni × nj × nk volume) ------
+    template<typename TensorLike>
+    void write_tensor(const std::string &name, const TensorLike &t) {
+        using T = typename TensorLike::Scalar;
+        ensure_not_readonly();
+        remove_if_exists(name);
+        hsize_t dims[3] = {static_cast<hsize_t>(t.dimension(0)),
+                           static_cast<hsize_t>(t.dimension(1)),
+                           static_cast<hsize_t>(t.dimension(2))};
+        H5::DataSpace sp(3, dims);
+        H5::DataSet   ds = file_.createDataSet(name, h5_type_of<T>(), sp);
+        ds.write(t.data(), h5_type_of<T>());
+    }
+
+    template<typename T>
+    Eigen::Tensor<T, 3, Eigen::RowMajor> read_tensor(const std::string &name) const {
+        hsize_t ni = 0, nj = 0, nk = 0;
+        auto data = read_volume<T>(name, ni, nj, nk);
+        Eigen::Tensor<T, 3, Eigen::RowMajor> t(static_cast<int>(ni),
+                                                static_cast<int>(nj),
+                                                static_cast<int>(nk));
+        std::copy(data.begin(), data.end(), t.data());
+        return t;
     }
 
     // ---- 3-D volume (flat array, dims: ni × nj × nk, row-major on disk) ---

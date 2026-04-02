@@ -16,6 +16,11 @@
 
 #include <string>
 #include <vector>
+#include <unsupported/Eigen/CXX11/Tensor>
+
+// Convenience alias for the most common 3-D field type
+using Tensor3r = Eigen::Tensor<real_t, 3, Eigen::RowMajor>;
+using Tensor4r = Eigen::Tensor<real_t, 4, Eigen::RowMajor>;
 
 // Convenience constant sized to the active precision
 #include <limits>
@@ -34,6 +39,7 @@ inline real_t dgrid_i, dgrid_j, dgrid_k;  // grid spacing in km, set by DomainPa
 // ---------------------------------------------------------------------------
 const std::string LOG_FNAME = "surfatt_runtime.log";
 inline std::string input_file;  // set by parse_options()
+inline std::string db_fname;    // set by inversion constructor
 
 // Constants
 constexpr real_t PI      = 3.14159265358979323846264338327950288;
@@ -69,6 +75,12 @@ constexpr int N_KER_ANI = 5;  // number of anisotropic kernel types (gc, gs)
 enum class surfType { PH = 0, GR = 1 };
 inline std::vector<std::string> surfTypeStr = {"PH", "GR"};
 constexpr real_t RHO_SCALING = 0.33;
+constexpr int OPTIM_SD = 0;
+constexpr int OPTIM_LBFGS = 1;
+constexpr int MAX_LBFGS_STORE = 5;
+constexpr int NPARAMS = 5; // vs, vp, rho, gc, gs
+inline const std::array<const char *, NPARAMS> pnames = {"vs", "vp", "rho", "gc", "gs"};
+inline std::vector<bool> is_active_param = std::vector<bool>(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
 
 // ---------------------------------------------------------------------------
 // global variables
