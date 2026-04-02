@@ -112,7 +112,10 @@ void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.step_length   = req<real_t>(n, "step_length");
     inversion_.maxshrink     = req<real_t>(n, "maxshrink");
     inversion_.max_sub_niter = req<int>(n, "max_sub_niter");
-    inversion_.c1 = opt<real_t>(n, "c1", 1e-4);
+    // Strong Wolfe line-search parameters. Keep YAML fallbacks consistent with
+    // the defaults defined in InversionParams so behavior does not depend on
+    // whether the key is omitted from the input file.
+    inversion_.c1 = opt<real_t>(n, "c1", 0.1);
     inversion_.c2 = opt<real_t>(n, "c2", 0.9);
 }
 
