@@ -213,5 +213,8 @@ endforeach()
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-enable_testing()
-add_subdirectory(tests)
+option(BUILD_TESTS "Build test executables" OFF)
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

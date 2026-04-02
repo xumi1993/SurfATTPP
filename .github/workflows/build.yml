@@ -1,0 +1,106 @@
+name: Build on macOS and Linux
+
+on:
+  push:
+    branches: [ devel ]
+  pull_request:
+    branches: [ main, devel ]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies with Homebrew
+        run: |
+          brew update
+          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog
+
+      - name: Create build directory
+        run: mkdir -p build
+
+      - name: Configure CMake
+        working-directory: build
+        run: cmake -DCMAKE_BUILD_TYPE=Release ..
+        env:
+          CC: clang
+          CXX: clang++
+          FC: gfortran
+
+      - name: Build
+        working-directory: build
+        run: make -j$(sysctl -n hw.ncpu)
+
+    #   - name: Run tests
+    #     working-directory: build
+    #     run: |
+    #       cmake -DBUILD_TESTS=ON ..
+    #       make -j$(sysctl -n hw.ncpu)
+    #       ctest --output-on-failure
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - ubuntu-version: 22.04
+
+    container:
+      image: ubuntu:${{ matrix.ubuntu-version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            git \
+            curl
+
+      - name: Setup Mamba
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          miniforge-variant: Mambaforge
+
+      - name: Install dependencies with Mamba
+        shell: bash -l {0}
+        run: |
+          mamba install -y -c conda-forge \
+            cmake \
+            openmpi \
+            hdf5 \
+            eigen \
+            yaml-cpp \
+            fortran-compiler \
+            cxx-compiler \
+            zlib \
+            spdlog
+
+      - name: Create build directory
+        run: mkdir -p build
+
+      - name: Configure CMake
+        shell: bash -l {0}
+        working-directory: build
+        run: cmake -DCMAKE_BUILD_TYPE=Release ..
+
+      - name: Build
+        shell: bash -l {0}
+        working-directory: build
+        run: make -j$(nproc)
+
+    #   - name: Run tests
+    #     shell: bash -l {0}
+    #     working-directory: build
+    #     run: |
+    #       cmake -DBUILD_TESTS=ON ..
+    #       make -j$(nproc)
+    #       ctest --output-on-failure
