@@ -52,7 +52,7 @@ private:
     void store_model();
     void store_gradient();
     bool check_convergence();
-    void model_update(FieldVec &grads);
+    void model_update(FieldVec &dir);
     bool line_search();
 
     Tensor3r model_update_;

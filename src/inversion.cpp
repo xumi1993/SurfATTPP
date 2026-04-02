@@ -84,7 +84,7 @@ void Inversion::run_inversion() {
         if ( IP.inversion().optim_method == OPTIM_SD ) {
             steepest_descent();
         } else if (IP.inversion().optim_method == OPTIM_LBFGS) {
-            logger.Info("Other optimization methods not implemented yet, defaulting to steepest descent.", MODULE_INV);
+            logger.Info("Using L-BFGS optimization with line search.", MODULE_INV);
             while (true) {
                 if ( !line_search() ) break;
                 iter_start_ = iter_;
@@ -332,7 +332,13 @@ void Inversion::steepest_descent() {
         alpha_ *= IP.inversion().maxshrink;
         logger.Info(std::format("Reducing step length to {:.6e}", alpha_), MODULE_INV);
     }
-    model_update(gradient_);
+    // Negate the gradient to obtain the steepest-descent direction, then update
+    // the model using model += alpha * direction.
+    FieldVec descent(NPARAMS);
+    for (int p = 0; p < NPARAMS; ++p) {
+        if (is_active_param[p]) descent[p] = -gradient_[p];
+    }
+    model_update(descent);
     mg.collect_model_loc();  // gather the updated local model back to the global model
 }
 
@@ -345,10 +351,12 @@ bool Inversion::line_search() {
 
     logger.Info("Optimization with L-BFGS method", MODULE_INV);
 
-    FieldVec search_dir;
+    FieldVec search_dir(NPARAMS);
     if (iter_ == iter_start_) {
-        // First iteration: use steepest descent direction
-        search_dir = gradient_;
+        // First iteration: use steepest-descent direction = -gradient
+        for (int p = 0; p < NPARAMS; ++p) {
+            if (is_active_param[p]) search_dir[p] = -gradient_[p];
+        }
     } else {
         // Compute L-BFGS search direction based on current and previous gradients and model updates
         search_dir = optimize::lbfgs_direction(iter_);
@@ -412,23 +420,25 @@ bool Inversion::line_search() {
     return restart_flag;
 }
 
-void Inversion::model_update(FieldVec &grads) {
+void Inversion::model_update(FieldVec &dir) {
     auto &IP = InputParams::IP();
     auto &mg = ModelGrid::MG();
     auto &mpi = Parallel::mpi();
 
-    mg.vs3d_loc = mg.vs3d_loc * (1 - alpha_ * grads[0]);
+    // dir is a descent direction; apply model += alpha * dir.
+    // For vs/vp/rho the update is multiplicative (log-space additive): model *= (1 + alpha * dir).
+    mg.vs3d_loc = mg.vs3d_loc * (1 + alpha_ * dir[0]);
     if (IP.inversion().use_alpha_beta_rho) {
-        mg.vp3d_loc = mg.vp3d_loc * (1 - alpha_ * grads[1]);
-        mg.rho3d_loc = mg.rho3d_loc * (1 - alpha_ * grads[2]);
+        mg.vp3d_loc = mg.vp3d_loc * (1 + alpha_ * dir[1]);
+        mg.rho3d_loc = mg.rho3d_loc * (1 + alpha_ * dir[2]);
     } else {
         // Empirical scaling: vs → vp → rho via Brocher (2005)
         mg.vp3d_loc  = vs2vp(mg.vs3d_loc);
         mg.rho3d_loc = vp2rho(mg.vp3d_loc);
     }
     if (IP.inversion().is_anisotropy) {
-        mg.gc3d_loc = mg.gc3d_loc  - alpha_ * grads[3];
-        mg.gs3d_loc = mg.gs3d_loc  - alpha_ * grads[4];
+        mg.gc3d_loc = mg.gc3d_loc + alpha_ * dir[3];
+        mg.gs3d_loc = mg.gs3d_loc + alpha_ * dir[4];
     }
     mpi.barrier();
 }
