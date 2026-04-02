@@ -30,11 +30,25 @@ void Inversion::run_forward() {
 }
 
 void Inversion::run_inversion() {
-    auto& logger = ATTLogger::logger();
+    auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
     logger.Info(std::format("Starting inversion iteration {}...", iter_), MODULE_INV);
-    run_forward_adjoint(true);
-    // TODO: update_model();
-    ++iter_;
+    
+    for ( iter_ = 0; iter_ < IP.inversion().niter; ++iter_ ) {
+        // Initialize the iteration: distribute the current model to local subdomains, reset model update and search direction
+        init_iteration();
+
+        // Run forward and adjoint calculations to compute the gradient
+        run_forward_adjoint(true);
+
+        // Update the model using the computed gradient
+        if ( IP.inversion().optim_method == 0 ) {
+            steepest_descent();
+        } else {
+            logger.Info("Other optimization methods not implemented yet, defaulting to steepest descent.", MODULE_INV);
+            steepest_descent();
+        }
+    }
 }
 
 void Inversion::init_iteration() {
