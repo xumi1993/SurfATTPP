@@ -21,6 +21,7 @@
 // Convenience alias for the most common 3-D field type
 using Tensor3r = Eigen::Tensor<real_t, 3, Eigen::RowMajor>;
 using Tensor4r = Eigen::Tensor<real_t, 4, Eigen::RowMajor>;
+using FieldVec = std::vector<Tensor3r>;
 
 // Convenience constant sized to the active precision
 #include <limits>
@@ -84,6 +85,8 @@ constexpr int NPARAMS = 5; // vs, vp, rho, gc, gs
 inline const std::array<const char *, NPARAMS> pnames = {"vs", "vp", "rho", "gc", "gs"};
 inline std::vector<bool> is_active_param = std::vector<bool>(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
 constexpr int BREAK_ITER = 5;  // convergence tolerance for relative misfit reduction
+constexpr real_t MAX_DESC_ANGLE = 92; // maximum allowable descent angle for L-BFGS restart logic
+
 
 // ---------------------------------------------------------------------------
 // global variables

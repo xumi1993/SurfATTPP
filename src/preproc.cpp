@@ -281,8 +281,8 @@ void preproc::combine_kernels(SurfGrid& sg) {
                     const int iglob_y = dcp.loc_J_start() + iy;
                     const real_t att  = adj_tt(iglob_x, iglob_y);
                     for (int k = 0; k < ngrid_k; ++k) {
-                        const real_t vs  = mg.vs3d[I2V(iglob_x, iglob_y, k)];
-                        const real_t vp  = mg.vp3d[I2V(iglob_x, iglob_y, k)];
+                        const real_t vs  = mg.vs3d_loc(ix, iy, k);
+                        const real_t vp  = mg.vp3d_loc(ix, iy, k);
                         const real_t dab = dalpha_dbeta(vs);   // d(vp)/d(vs)
                         const real_t dra = drho_dalpha(vp);    // d(rho)/d(vp)
                         sg.ker_loc[0](ix, iy, k) -= att * (

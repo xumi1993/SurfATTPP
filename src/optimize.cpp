@@ -3,6 +3,8 @@
 #include "decomposer.h"
 #include "parallel.h"
 #include "h5io.h"
+#include "logger.h"
+#include "input_params.h"
 
 #include <algorithm>
 #include <format>
@@ -12,7 +14,6 @@ namespace optimize {
 // ---------------------------------------------------------------------------
 // Helper types
 // ---------------------------------------------------------------------------
-using FieldVec = std::vector<Tensor3r>;
 
 // Element-wise dot product summed over all active parameters.
 static real_t field_dot(const FieldVec &a, const FieldVec &b) {
@@ -24,6 +25,109 @@ static real_t field_dot(const FieldVec &a, const FieldVec &b) {
         }
     }
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// calc_descent_angle
+// ---------------------------------------------------------------------------
+real_t calc_descent_angle(const FieldVec &direction, const FieldVec &gradient) {
+    auto &mpi = Parallel::mpi();
+
+    // Compute local contributions.
+    real_t local_dot   = -field_dot(gradient, direction); // -g · d
+    real_t local_gnorm =  field_dot(gradient, gradient);
+    real_t local_dnorm =  field_dot(direction, direction);
+
+    // Reduce across all MPI ranks.
+    real_t global_dot, global_gnorm, global_dnorm;
+    mpi.sum_all_all(local_dot,   global_dot);
+    mpi.sum_all_all(local_gnorm, global_gnorm);
+    mpi.sum_all_all(local_dnorm, global_dnorm);
+    global_gnorm = std::sqrt(global_gnorm);
+    global_dnorm = std::sqrt(global_dnorm);
+
+    // Guard against zero norms.
+    if (global_gnorm < REAL_EPS || global_dnorm < REAL_EPS)
+        return static_cast<real_t>(90.0);
+
+    real_t cos_angle = global_dot / (global_gnorm * global_dnorm);
+    // Clamp to [-1, 1] to avoid NaN from acos due to floating-point errors.
+    cos_angle = std::max(_M_1_CR, std::min(_1_CR, cos_angle));
+    return std::acos(cos_angle) * RAD2DEG;
+}
+
+// ---------------------------------------------------------------------------
+// field_dot_global  — MPI-reduced inner product (internal)
+// ---------------------------------------------------------------------------
+static real_t field_dot_global(const FieldVec &a, const FieldVec &b) {
+    auto &mpi = Parallel::mpi();
+    real_t local = field_dot(a, b);
+    real_t global;
+    mpi.sum_all_all(local, global);
+    return global;
+}
+
+// ---------------------------------------------------------------------------
+// wolfe_condition
+// ---------------------------------------------------------------------------
+WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
+                            const FieldVec &direction,
+                            real_t alpha, real_t &alpha_L, real_t &alpha_R,
+                            real_t f0, real_t f1,
+                            int subiter) {
+    auto &logger = ATTLogger::logger();
+    auto &IP     = InputParams::IP();
+    const real_t c1            = IP.inversion().c1;
+    const real_t c2            = IP.inversion().c2;
+    const int    max_sub_niter = IP.inversion().max_sub_niter;
+
+    // q  = grad(x) · d  (must be < 0 for a descent direction)
+    // q1 = grad(x + alpha*d) · d
+    const real_t q  = field_dot_global(gradient, direction);
+    const real_t q1 = field_dot_global(ker_next,  direction);
+
+    const bool cond_armijo    = f1 <= f0 + alpha * c1 * q;
+    const bool cond_curvature = q1 >= c2 * q;
+
+    logger.Info(std::format("  f0={:.6e}  f1={:.6e}  f0+c1*alpha*q={:.6e}",
+        f0, f1, f0 + alpha * c1 * q), MODULE_OPTIM);
+    logger.Info(std::format("  q(grad·dir)={:.6e}  q1(grad'·dir)={:.6e}  c2*q={:.6e}",
+        q, q1, c2 * q), MODULE_OPTIM);
+    logger.Info(std::format("  Armijo: {}  Curvature: {}", cond_armijo, cond_curvature), MODULE_OPTIM);
+
+    WolfeResult res;
+
+    if (cond_armijo && cond_curvature) {
+        res.status     = WolfeResult::Status::ACCEPT;
+        res.next_alpha = alpha;
+        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6e} -> {:.6e}, alpha={:.6e}",
+            f0, f1, alpha), MODULE_OPTIM);
+
+    } else if (!cond_armijo) {
+        // Step too large: shrink upper bracket.
+        alpha_R        = alpha;
+        res.next_alpha = (alpha_L + alpha_R) * _0_5_CR;
+        res.status     = WolfeResult::Status::TRY;
+        logger.Info(std::format("Armijo not satisfied (step too large). Next alpha={:.6e}",
+            res.next_alpha), MODULE_OPTIM);
+
+    } else {
+        // Armijo ok but curvature not: step too small, widen.
+        alpha_L        = alpha;
+        res.next_alpha = (alpha_R > _0_CR) ? (alpha_L + alpha_R) * _0_5_CR
+                                           : alpha * _2_CR;
+        res.status     = WolfeResult::Status::TRY;
+        logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6e}",
+            res.next_alpha), MODULE_OPTIM);
+    }
+
+    if (res.status == WolfeResult::Status::TRY && subiter == max_sub_niter - 1) {
+        res.status     = WolfeResult::Status::FAIL;
+        res.next_alpha = alpha;
+        logger.Info("Wolfe condition: maximum sub-iterations reached without convergence.", MODULE_OPTIM);
+    }
+
+    return res;
 }
 
 // ---------------------------------------------------------------------------

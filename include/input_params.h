@@ -68,6 +68,8 @@ struct InversionParams {
     real_t step_length;
     real_t maxshrink;
     int    max_sub_niter;
+    real_t c1 = 0.1;  // Armijo (sufficient decrease) coefficient
+    real_t c2 = 0.9;   // curvature (Wolfe) coefficient
 };
 
 // ---------------------------------------------------------------------------

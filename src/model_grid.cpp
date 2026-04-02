@@ -6,6 +6,7 @@
 #include "minpack.hpp"
 #include "utils.h"
 #include "decomposer.h"
+#include "postproc.h"
 
 #include <array>
 #include <cmath>

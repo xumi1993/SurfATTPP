@@ -112,6 +112,8 @@ void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.step_length   = req<real_t>(n, "step_length");
     inversion_.maxshrink     = req<real_t>(n, "maxshrink");
     inversion_.max_sub_niter = req<int>(n, "max_sub_niter");
+    inversion_.c1 = opt<real_t>(n, "c1", 1e-4);
+    inversion_.c2 = opt<real_t>(n, "c2", 0.9);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +225,8 @@ void InputParams::bcast_inversion() {
     mpi.bcast(inversion_.step_length);
     mpi.bcast(inversion_.maxshrink);
     mpi.bcast(inversion_.max_sub_niter);
+    mpi.bcast(inversion_.c1);
+    mpi.bcast(inversion_.c2);
 }
 
 void InputParams::bcast_all_params() {

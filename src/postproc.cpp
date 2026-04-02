@@ -447,12 +447,12 @@ void postproc::kernel_precondition(SurfGrid& sg) {
     }
 }
 
-std::vector<Tensor3r> postproc::kernel_smooth(const SurfGrid& sg) {
+FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
     auto &logger = ATTLogger::logger();
     auto &PP = PostProc::PP();
 
     logger.Info("Smoothing kernels...", MODULE_POSTPROC);
-    std::vector<Tensor3r> ker_loc_smooth(sg.ker_loc.size());
+    FieldVec ker_loc_smooth(sg.ker_loc.size());
     for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;
         ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);

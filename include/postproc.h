@@ -15,7 +15,7 @@
 namespace postproc {
     void kernel_precondition(SurfGrid& sg);
 
-    std::vector<Tensor3r> kernel_smooth(const SurfGrid& sg);
+    FieldVec kernel_smooth(const SurfGrid& sg);
 }
 
 class PostProc {
