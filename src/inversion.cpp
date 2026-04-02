@@ -10,19 +10,24 @@ Inversion::Inversion() {
 
     // initialize gradient
     if (run_mode == INVERSION_MODE) {
+        // initialize HDF5 file for storing model and gradient history (used by LBFGS)
         db_fname = std::format("{}/model_iter.h5", IP.output().output_path);
         H5IO f(db_fname, H5IO::TRUNC);
 
-        gradient_.assign(5, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
-        gradient_[0] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        if (IP.inversion().use_alpha_beta_rho) {
-            gradient_[1] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-            gradient_[2] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        // Create empty datasets for model and gradient history. These will be resized and filled during the inversion iterations.
+        is_active_param[0] = true; // vs is always active
+        is_active_param[1] = IP.inversion().use_alpha_beta_rho; // vp active if use_alpha_beta_rho is true
+        is_active_param[2] = IP.inversion().use_alpha_beta_rho; // rho active if use_alpha_beta_rho is true
+        is_active_param[3] = IP.inversion().is_anisotropy; // gc active if is_anisotropy is true
+        is_active_param[4] = IP.inversion().is_anisotropy; // gs active if is_anisotropy is true
+        gradient_.assign(NPARAMS, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
+        for (int p = 0; p < NPARAMS; ++p) {
+            if (is_active_param[p]) {
+                gradient_[p] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+            }
         }
-        if (IP.inversion().is_anisotropy) {
-            gradient_[3] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-            gradient_[4] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        }
+
+        // Set the initial step length for the optimization. This can be tuned or made adaptive in the future.
         alpha_ = IP.inversion().step_length;
     }
 };
@@ -84,8 +89,8 @@ void Inversion::init_iteration() {
     }
 
     // Initialize model update and search direction to zero
-    for (auto& grad : gradient_) {
-        if (grad.size() > 0) grad.setZero();
+    for (int ipara = 0; ipara < NPARAMS; ++ipara) {
+        if (is_active_param[ipara]) gradient_[ipara].setZero();
     }
     mpi.barrier();
 }
@@ -138,9 +143,9 @@ void Inversion::run_forward_adjoint(const bool is_calc_adj){
             // smooth the kernels if needed
             auto ker_smooth = postproc::kernel_smooth(sg);
 
-            for (size_t ipara = 0; ipara < gradient_.size(); ++ipara) {
+            for (size_t ipara = 0; ipara < NPARAMS; ++ipara) {
                 // Accumulate the smoothed kernel into the gradient for this parameter
-                if (gradient_[ipara].size() > 0) {
+                if (is_active_param[ipara]) {
                     gradient_[ipara] = gradient_[ipara] + ker_smooth[ipara] * IP.data().weights[itype] / chi;
                 }
             }
@@ -153,18 +158,18 @@ void Inversion::grad_normalization() {
     auto& mpi = Parallel::mpi();
 
     real_t local_max = _0_CR;
-    for (auto& grad : gradient_) {
-        if (grad.size() > 0) {
-            Eigen::Tensor<real_t, 0, Eigen::RowMajor> max_tensor = grad.abs().maximum();
+    for (int ipara = 0; ipara < NPARAMS; ++ipara) {
+        if (is_active_param[ipara]) {
+            Eigen::Tensor<real_t, 0, Eigen::RowMajor> max_tensor = gradient_[ipara].abs().maximum();
             local_max = std::max(local_max, max_tensor());
         }
     }
 
     real_t global_max;
     mpi.max_all_all(local_max, global_max);
-    for (auto& grad : gradient_) {
-        if (grad.size() > 0) {
-            grad = grad / global_max;
+    for (int ipara = 0; ipara < NPARAMS; ++ipara) {
+        if (is_active_param[ipara]) {
+            gradient_[ipara] = gradient_[ipara] / global_max;
         }
     }
 }
@@ -201,10 +206,10 @@ void Inversion::store_gradient() {
     auto &dcp = Decomposer::DCP();
     auto &mpi = Parallel::mpi();
 
-    // All ranks participate in the gather
-    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> grad_all(gradient_.size());
-    for (size_t i = 0; i < gradient_.size(); ++i) {
-        if (gradient_[i].size() > 0)
+    // All ranks participate in the gatherdient_.s
+    std::vector<Eigen::Tensor<real_t, 3, Eigen::RowMajor>> grad_all(NPARAMS);
+    for (int i = 0; i < NPARAMS; ++i) {
+        if (is_active_param[i]) 
             grad_all[i] = dcp.collect_data(gradient_[i].data());
     }
 
@@ -214,8 +219,8 @@ void Inversion::store_gradient() {
     const std::string sfx = std::format("_{:03d}", iter_);
 
     const std::array<const char*, 5> grad_names = {"vs", "vp", "rho", "gc", "gs"};
-    for (size_t i = 0; i < grad_all.size(); ++i) {
-        if (grad_all[i].size() > 0)
+    for (int i = 0; i < NPARAMS; ++i) {
+        if (is_active_param[i])
             f.write_tensor(std::string("grad_") + grad_names[i] + sfx, grad_all[i]);
     }
 }

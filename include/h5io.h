@@ -4,6 +4,7 @@
 
 #include <H5Cpp.h>
 #include <Eigen/Core>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 #include <string>
 #include <vector>
@@ -139,6 +140,17 @@ public:
         H5::DataSpace sp(3, dims);
         H5::DataSet   ds = file_.createDataSet(name, h5_type_of<T>(), sp);
         ds.write(t.data(), h5_type_of<T>());
+    }
+
+    template<typename T>
+    Eigen::Tensor<T, 3, Eigen::RowMajor> read_tensor(const std::string &name) const {
+        hsize_t ni = 0, nj = 0, nk = 0;
+        auto data = read_volume<T>(name, ni, nj, nk);
+        Eigen::Tensor<T, 3, Eigen::RowMajor> t(static_cast<int>(ni),
+                                                static_cast<int>(nj),
+                                                static_cast<int>(nk));
+        std::copy(data.begin(), data.end(), t.data());
+        return t;
     }
 
     // ---- 3-D volume (flat array, dims: ni × nj × nk, row-major on disk) ---

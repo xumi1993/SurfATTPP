@@ -203,7 +203,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
     // Resize to hold all parameter slots; default-construct (no storage) first,
     // then allocate only the entries that are actually used.
     logger.Info("Combining traveltime kernels with surface wave kernels...", MODULE_PREPROC);
-    sg.ker_loc.assign(5, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
+    sg.ker_loc.assign(NPARAMS, Eigen::Tensor<real_t, 3, Eigen::RowMajor>());
 
     // vs kernel — always allocated (index 0)
     sg.ker_loc[0] = Eigen::Tensor<real_t, 3, Eigen::RowMajor>(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
