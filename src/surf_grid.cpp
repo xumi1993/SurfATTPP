@@ -66,7 +66,7 @@ SurfGrid::SurfGrid(surfType tp){
             r2_loc.setZero();
         }
     }
-
+    mpi.barrier();
 }
 
 void SurfGrid::build_media_matrix_with_topo() {
@@ -245,7 +245,6 @@ void SurfGrid::compute_dispersion_kernel() {
     }
     mpi.barrier();
 }
-
 
 void SurfGrid::correct_depth_with_topo() {
     auto &dcp = Decomposer::DCP();
