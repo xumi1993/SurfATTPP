@@ -332,13 +332,8 @@ void Inversion::steepest_descent() {
         alpha_ *= IP.inversion().maxshrink;
         logger.Info(std::format("Reducing step length to {:.6e}", alpha_), MODULE_INV);
     }
-    // Negate the gradient to obtain the steepest-descent direction, then update
-    // the model using model += alpha * direction.
-    FieldVec descent(NPARAMS);
-    for (int p = 0; p < NPARAMS; ++p) {
-        if (is_active_param[p]) descent[p] = -gradient_[p];
-    }
-    model_update(descent);
+    // Pass gradient directly; model_update applies model -= alpha * gradient (descent).
+    model_update(gradient_);
     mg.collect_model_loc();  // gather the updated local model back to the global model
 }
 
@@ -353,10 +348,8 @@ bool Inversion::line_search() {
 
     FieldVec search_dir(NPARAMS);
     if (iter_ == iter_start_) {
-        // First iteration: use steepest-descent direction = -gradient
-        for (int p = 0; p < NPARAMS; ++p) {
-            if (is_active_param[p]) search_dir[p] = -gradient_[p];
-        }
+        // First iteration: use gradient as direction (model_update subtracts it)
+        search_dir = gradient_;
     } else {
         // Compute L-BFGS search direction based on current and previous gradients and model updates
         search_dir = optimize::lbfgs_direction(iter_);
@@ -425,20 +418,20 @@ void Inversion::model_update(FieldVec &dir) {
     auto &mg = ModelGrid::MG();
     auto &mpi = Parallel::mpi();
 
-    // dir is a descent direction; apply model += alpha * dir.
-    // For vs/vp/rho the update is multiplicative (log-space additive): model *= (1 + alpha * dir).
-    mg.vs3d_loc = mg.vs3d_loc * (1 + alpha_ * dir[0]);
+    // dir is the gradient direction; apply model -= alpha * dir (gradient descent).
+    // For vs/vp/rho the update is multiplicative (log-space additive): model *= (1 - alpha * dir).
+    mg.vs3d_loc = mg.vs3d_loc * (1 - alpha_ * dir[0]);
     if (IP.inversion().use_alpha_beta_rho) {
-        mg.vp3d_loc = mg.vp3d_loc * (1 + alpha_ * dir[1]);
-        mg.rho3d_loc = mg.rho3d_loc * (1 + alpha_ * dir[2]);
+        mg.vp3d_loc = mg.vp3d_loc * (1 - alpha_ * dir[1]);
+        mg.rho3d_loc = mg.rho3d_loc * (1 - alpha_ * dir[2]);
     } else {
         // Empirical scaling: vs → vp → rho via Brocher (2005)
         mg.vp3d_loc  = vs2vp(mg.vs3d_loc);
         mg.rho3d_loc = vp2rho(mg.vp3d_loc);
     }
     if (IP.inversion().is_anisotropy) {
-        mg.gc3d_loc = mg.gc3d_loc + alpha_ * dir[3];
-        mg.gs3d_loc = mg.gs3d_loc + alpha_ * dir[4];
+        mg.gc3d_loc = mg.gc3d_loc - alpha_ * dir[3];
+        mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
     }
     mpi.barrier();
 }

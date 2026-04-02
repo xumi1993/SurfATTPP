@@ -228,7 +228,7 @@ FieldVec lbfgs_direction(int iter) {
         // ---- Search direction = -H_k g_k ------------------------------------
         for (int p = 0; p < NPARAMS; ++p)
             if (is_active_param[p])
-                dir_global[p] = -r[p];
+                dir_global[p] = r[p];
     }
 
     // Distribute the global direction from main rank to all ranks.
