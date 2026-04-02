@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies with Homebrew
         run: |
           brew update
-          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog
+          brew install cmake open-mpi hdf5 eigen yaml-cpp spdlog gfortran
 
       - name: Create build directory
         run: mkdir -p build
@@ -53,16 +53,14 @@ jobs:
       image: ubuntu:${{ matrix.ubuntu-version }}
 
     steps:
+      - name: Install Git
+        run: |
+          apt-get update
+          apt-get install -y git curl
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          apt-get install -y \
-            git \
-            curl
 
       - name: Setup Mamba
         uses: conda-incubator/setup-miniconda@v3
