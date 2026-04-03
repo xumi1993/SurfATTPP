@@ -119,35 +119,54 @@ namespace {
 ModelGrid::ModelGrid() {
     const auto &dom = InputParams::IP().domain();
     auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
 
-    // Grid spacing in lon, lat, and depth directions
-    dgrid_i = dom.interval[0];
-    dgrid_j = dom.interval[1];
-    dgrid_k = dom.interval[2];
+    real_t xbeg, xend, ybeg, yend;
+    if (dom.grid_method == 0) {
+        // Grid spacing in lon, lat, and depth directions
+        dgrid_i = dom.interval[0];
+        dgrid_j = dom.interval[1];
+        dgrid_k = dom.interval[2];
 
-    // Expand the station bounding box by num_grid_margin cells on each side
-    real_t lon_min, lon_max, lat_min, lat_max;
-    get_domain_min_max(lon_min, lon_max, lat_min, lat_max);
-    real_t xbeg = lon_min - dom.num_grid_margin * dgrid_i;
-    real_t xend = lon_max + dom.num_grid_margin * dgrid_i;
-    real_t ybeg = lat_min - dom.num_grid_margin * dgrid_j;
-    real_t yend = lat_max + dom.num_grid_margin * dgrid_j;
+        // Expand the station bounding box by num_grid_margin cells on each side
+        real_t lon_min, lon_max, lat_min, lat_max;
+        get_domain_min_max(lon_min, lon_max, lat_min, lat_max);
+        xbeg = lon_min - dom.num_grid_margin * dgrid_i;
+        xend = lon_max + dom.num_grid_margin * dgrid_i;
+        ybeg = lat_min - dom.num_grid_margin * dgrid_j;
+        yend = lat_max + dom.num_grid_margin * dgrid_j;
 
-    // Number of grid nodes (inclusive on both ends)
-    n_xyz[0] = static_cast<int>((xend - xbeg) / dgrid_i) + 1;
-    n_xyz[1] = static_cast<int>((yend - ybeg) / dgrid_j) + 1;
-    n_xyz[2] = static_cast<int>((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1;
-    // Expose grid sizes through the I2V macro variables
-    ngrid_i = n_xyz[0];
-    ngrid_j = n_xyz[1];
-    ngrid_k = n_xyz[2];
+        // Number of grid nodes (inclusive on both ends)
+        n_xyz[0] = static_cast<int>((xend - xbeg) / dgrid_i) + 1;
+        n_xyz[1] = static_cast<int>((yend - ybeg) / dgrid_j) + 1;
+        n_xyz[2] = static_cast<int>((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1;
+        // Expose grid sizes through the I2V macro variables
+        ngrid_i = n_xyz[0];
+        ngrid_j = n_xyz[1];
+        ngrid_k = n_xyz[2];
+    } else if (dom.grid_method == 1) {
+        // Grid dimensions and bounding box are directly specified in the config
+        n_xyz[0] = dom.n_grid[0];
+        n_xyz[1] = dom.n_grid[1];
+        n_xyz[2] = dom.n_grid[2];
+        ngrid_i = n_xyz[0];
+        ngrid_j = n_xyz[1];
+        ngrid_k = n_xyz[2];
+        xbeg = dom.lon_min_max[0];
+        xend = dom.lon_min_max[1];
+        ybeg = dom.lat_min_max[0];
+        yend = dom.lat_min_max[1];
+    } else {
+        logger.Error(std::format("Unsupported grid_method {}", dom.grid_method), MODULE_GRID);
+        mpi.abort(EXIT_FAILURE);
+    }
 
     xgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[0], xbeg, xend);
     ygrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[1], ybeg, yend);
     zgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[2], dom.depth[0], dom.depth[1]);
 
     logger.Info(
-        std::format("Model grids: nx,ny,nz: {}, {}, {},", n_xyz[0], n_xyz[1], n_xyz[2]),
+        std::format("Model grids: nx,ny,nz: {}, {}, {}", n_xyz[0], n_xyz[1], n_xyz[2]),
         MODULE_GRID
     );
     logger.Info(
@@ -215,6 +234,7 @@ void ModelGrid::build_1d_model_inversion() {
 void ModelGrid::load_3d_model() {
     const auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
     H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
     hsize_t nx = 0, ny = 0, nz = 0;
     const hsize_t expect_n = static_cast<hsize_t>(n_xyz[0] * n_xyz[1] * n_xyz[2]);
@@ -284,8 +304,11 @@ void ModelGrid::load_3d_model() {
             }
         }
     } catch (const std::exception &e) {
-        throw std::runtime_error(
-            std::string("ModelGrid: failed to load 3D model from HDF5 file: ") + e.what());
+        logger.Error(std::format(
+            "ModelGrid: failed to load 3D model from HDF5 file '{}': {}",
+            IP.inversion().init_model_path, e.what()
+        ), MODULE_GRID);
+        mpi.abort(EXIT_FAILURE);
     }
 
     // Compute depth-averaged vs1d from the loaded vs3d
@@ -364,7 +387,10 @@ void ModelGrid::build_init_model() {
         mpi.barrier();
     }
 
-    // Broadcast the model from main rank to all other ranks
+    // Broadcast the model from main rank to all other ranks.
+    // For init_model_type 2 only the main rank has vs1d populated, so all
+    // non-main ranks must resize it before the bcast to avoid a null-ptr crash.
+    if (!mpi.is_main()) vs1d.resize(ngrid_k);
     mpi.bcast(vs1d.data(), ngrid_k);
     mpi.sync_from_main_rank(vp3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
     mpi.sync_from_main_rank(vs3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);

@@ -14,6 +14,7 @@ SurfGrid::SurfGrid(surfType tp){
     SurfGrid::nperiod = sr.periods_info.nperiod;
     Eigen::VectorX<real_t> periods = sr.periods_info.periods;
     SurfGrid::itype = static_cast<int>(tp);
+    type_name_ = surfTypeStr[itype];
     auto& IP = InputParams::IP();
     auto& dcp = Decomposer::DCP();
 
@@ -156,7 +157,7 @@ void SurfGrid::build_media() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    logger.Info("Building media matrix for Eikonal solver...", MODULE_GRID);
+    logger.Info(std::format("Building media matrix for {}...", type_name()), MODULE_GRID);
     int n_elem = ngrid_i * ngrid_j * nperiod;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
@@ -186,7 +187,10 @@ void SurfGrid::fwdsurf(){
     auto &sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
-    logger.Info("Computing surface wave dispersion from 3d S-wave velocity model...", MODULE_GRID);
+    logger.Info(std::format(
+        "Computing {} velocity dispersion from 3d velocity model...", type_name()),
+        MODULE_GRID
+    );
 
     const int n_elem = ngrid_i * ngrid_j * nperiod;
     std::vector<real_t> tmp_svel(n_elem, _0_CR);

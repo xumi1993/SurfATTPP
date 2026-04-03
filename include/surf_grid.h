@@ -65,6 +65,7 @@ public:
     inline int surf_idx(const int ix, const int iy, const int iper) {
         return ((ix * ngrid_j) + iy) * nperiod + iper;
     }
+    inline std::string type_name() const { return type_name_; }
 
 
 private:
@@ -77,6 +78,8 @@ private:
     MPI_Win win_m12_  = MPI_WIN_NULL;
     MPI_Win win_m22_  = MPI_WIN_NULL;
     MPI_Win win_ref_t_ = MPI_WIN_NULL;
+
+    std::string type_name_;
 
     explicit SurfGrid(surfType tp);
     void release_shm();

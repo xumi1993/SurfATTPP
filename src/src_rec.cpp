@@ -35,10 +35,10 @@ void SrcRec::load(const std::string& filepath)
         try {
             doc = rapidcsv::Document(filepath, rapidcsv::LabelParams(0, -1));
         } catch (const std::ios_base::failure &e) {
-            throw std::runtime_error(
-                "SrcRec::load: cannot open '" + filepath + "': " + e.what()
-                + "\n  Check that the file exists and the path in input_params is correct."
-            );
+            logger.Error(std::format(
+                "SrcRec::load: failed to open file {}: {}", filepath, e.what()
+            ), MODULE_SRCREC);
+            mpi.abort(EXIT_FAILURE);
         }
         n_obs = static_cast<int>(doc.GetRowCount());
 

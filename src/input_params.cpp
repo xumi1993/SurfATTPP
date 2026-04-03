@@ -50,9 +50,22 @@ void InputParams::load_output(const YAML::Node &n) {
 }
 
 void InputParams::load_domain(const YAML::Node &n) {
-    domain_.depth           = req<std::vector<real_t>>(n, "depth");
-    domain_.interval        = req<std::vector<real_t>>(n, "interval");
-    domain_.num_grid_margin = req<int>(n, "num_grid_margin");
+    domain_.grid_method     = opt<int>(n, "grid_method", 0);
+    domain_.depth           = req<std::vector<real_t>>(n, "depth_min_max");
+    if (domain_.grid_method == 0) {
+        YAML::Node ng = n["grid_method_0"];
+        // Require depth/interval, compute n_xyz from them
+        domain_.interval        = req<std::vector<real_t>>(ng, "interval");
+        domain_.num_grid_margin = opt<int>(ng, "num_grid_margin", 5);
+    } else if (domain_.grid_method == 1) {
+        YAML::Node ng = n["grid_method_1"];
+        // Require lat/lon min/max and number of points
+        domain_.n_grid          = req<std::vector<int>>(ng, "n_grid");
+        domain_.lat_min_max     = req<std::vector<real_t>>(ng, "lat_min_max");
+        domain_.lon_min_max     = req<std::vector<real_t>>(ng, "lon_min_max");
+    } else {
+        throw std::runtime_error("InputParams: unsupported grid_method " + std::to_string(domain_.grid_method));
+    }
 }
 
 void InputParams::load_topo(const YAML::Node &n) {
@@ -189,9 +202,13 @@ void InputParams::bcast_output() {
 
 void InputParams::bcast_domain() {
     auto &mpi = Parallel::mpi();
+    mpi.bcast(domain_.grid_method);
     mpi.bcast_vec(domain_.depth);
     mpi.bcast_vec(domain_.interval);
     mpi.bcast(domain_.num_grid_margin);
+    mpi.bcast_vec(domain_.lat_min_max);
+    mpi.bcast_vec(domain_.lon_min_max);
+    mpi.bcast_vec(domain_.n_grid);
 }
 
 void InputParams::bcast_topo() {
