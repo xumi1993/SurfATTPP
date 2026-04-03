@@ -23,6 +23,8 @@ public:
     void Error(const std::string&, const std::string&);
     void shutdown();
 
+    ~ATTLogger() { shutdown(); }
+
 private:
     explicit ATTLogger(const std::string &logger_file, int log_level, bool console_only);
 

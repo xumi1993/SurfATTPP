@@ -14,6 +14,8 @@
     using real2_t = long double;
 #endif
 
+#include "version.h"
+
 #include <string>
 #include <vector>
 #include <unsupported/Eigen/CXX11/Tensor>
@@ -105,3 +107,10 @@ inline const std::string MODULE_TOPO      = "TOPO";
 inline const std::string MODULE_PREPROC   = "PREPROC";
 inline const std::string MODULE_POSTPROC  = "POSTPROC";
 inline const std::string MODULE_INV       = "INVERSION";
+inline std::string get_version_number() {
+    return std::string(
+        std::to_string(PROJECT_VERSION_MAJOR) + "." +
+        std::to_string(PROJECT_VERSION_MINOR) + "." +
+        std::to_string(PROJECT_VERSION_PATCH)
+    );
+}

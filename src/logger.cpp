@@ -8,6 +8,12 @@
 void ATTLogger::init(const std::string &logger_file, int log_level, bool console_only) {
     get_instance_ptr() =
         std::unique_ptr<ATTLogger>(new ATTLogger(logger_file, log_level, console_only));
+    get_instance_ptr() -> Info(
+        "------------------------------------------------------", MODULE_MAIN);
+    get_instance_ptr() -> Info(
+        std::format("----------  SurfATT {}, commit: {}.  ---------", get_version_number(), GIT_COMMIT), MODULE_MAIN);
+    get_instance_ptr() -> Info(
+        "------------------------------------------------------", MODULE_MAIN);
 }
 
 ATTLogger &ATTLogger::logger() {
@@ -76,5 +82,8 @@ void ATTLogger::Error(const std::string &msg, const std::string &module_name) {
 }
 
 void ATTLogger::shutdown() {
+    Info("------------------------------------------------------", MODULE_MAIN);
+    Info("------------  SurfATT Calculation Down.  -------------", MODULE_MAIN);
+    Info("------------------------------------------------------", MODULE_MAIN);
     spdlog::shutdown();
 }
