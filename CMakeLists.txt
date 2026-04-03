@@ -59,6 +59,14 @@ endif()
 # Dependencies
 # ---------------------------------------------------------------------------
 option(USE_EXTERNAL_LIBS OFF "Use system-installed libraries instead of bundled submodules")
+option(SURFATT_ENABLE_CUDA "Enable CUDA acceleration (not currently supported)" OFF)
+
+if(SURFATT_ENABLE_CUDA)
+  message(FATAL_ERROR
+    "CUDA acceleration is not supported in the current SurfATT version. "
+    "Please keep SURFATT_ENABLE_CUDA=OFF and use MPI-based CPU parallelism.")
+endif()
+message(STATUS "CUDA acceleration: not supported in current SurfATT version (CPU+MPI only)")
 
 # MPI (required)
 find_package(MPI REQUIRED)
