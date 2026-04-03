@@ -2,7 +2,7 @@
 
 [![Language](https://img.shields.io/badge/-C++-00599C?logo=cplusplus&logoColor=white)](https://github.com/topics/cpp)
 [![License](https://img.shields.io/github/license/xumi1993/seispy)]()
-[![Build SurfATT](https://github.com/xumi1993/SurfATT-iso/actions/workflows/build.yml/badge.svg)](https://github.com/xumi1993/SurfATT-iso/actions/workflows/build.yml)
+[![Build SurfATT](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml/badge.svg)](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml)
 
 This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time **T**omography written in modern C++20 with highlights:
 
@@ -25,13 +25,15 @@ This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time *
 
 ## Dependencies
 
-| Library | Version | Role |
-|---------|---------|------|
-| MPI | — | Parallelism (required) |
-| HDF5 | ≥ 1.10 | Model I/O (required) |
-| Eigen | ≥ 3.4 | Linear algebra (required) |
-| yaml-cpp | ≥ 0.7 | Parameter file parsing (bundled) |
-| spdlog | ≥ 1.10 | Logging (bundled) |
+| Library | Minimum Version | Recommended Version | Role |
+|---------|----------------|---------------------|------|
+| CMake | ≥ 3.18 | ≥ 3.25 | Build system (required) |
+| C++ compiler | GCC ≥ 13 / Clang ≥ 14 | GCC ≥ 14 / Clang ≥ 17 | C++20  (required) |
+| MPI | ≥ 3.0 | Open MPI ≥ 4.0 | Parallelism with shared-memory windows (required) |
+| HDF5 | ≥ 1.10 | ≥ 1.14 | Model I/O (required) |
+| Eigen3 | ≥ 3.4 | ≥ 3.4.0 | Linear algebra (required) |
+| yaml-cpp | ≥ 0.6 | ≥ 0.8 | Parameter file parsing (bundled fallback) |
+| spdlog | ≥ 1.5 | ≥ 1.15 | Logging (bundled fallback) |
 
 ## Installation
 
