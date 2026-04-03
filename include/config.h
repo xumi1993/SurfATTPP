@@ -83,7 +83,7 @@ constexpr int OPTIM_LBFGS = 1;
 constexpr int MAX_LBFGS_STORE = 5;
 constexpr int NPARAMS = 5; // vs, vp, rho, gc, gs
 inline const std::array<const char *, NPARAMS> pnames = {"vs", "vp", "rho", "gc", "gs"};
-inline std::vector<bool> is_active_param = std::vector<bool>(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
+inline std::vector<bool> is_active_param(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
 constexpr int BREAK_ITER = 5;  // convergence tolerance for relative misfit reduction
 constexpr real_t MAX_DESC_ANGLE = 92; // maximum allowable descent angle for L-BFGS restart logic
 
