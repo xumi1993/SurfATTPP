@@ -43,26 +43,33 @@ SurfGrid::SurfGrid(surfType tp){
     }
     mpi.barrier();
 
-    if (run_mode == INVERSION_MODE) {
-        for (int iper = 0; iper < nperiod; ++iper) {
-            adj_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
-            if (IP.inversion().is_anisotropy) {
-                adj_xi_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
-                adj_eta_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
-            }
-            if (IP.postproc().is_kden) {
-                kden_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
+    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+        if (run_mode == INVERSION_MODE) {
+            for (int iper = 0; iper < nperiod; ++iper) {
+                adj_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
+                if (IP.inversion().is_anisotropy) {
+                    adj_xi_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
+                    adj_eta_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
+                }
+                if (IP.postproc().is_kden) {
+                    kden_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
+                }
             }
         }
 
         sen_vp_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
         sen_vs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
         sen_rho_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_vp_loc.setZero();
+        sen_vs_loc.setZero();
+        sen_rho_loc.setZero();
         if (InputParams::IP().inversion().is_anisotropy) {
             sen_gc_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
             sen_gs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
             r1_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod);
             r2_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod);
+            sen_gc_loc.setZero();
+            sen_gs_loc.setZero();
             r1_loc.setZero();
             r2_loc.setZero();
         }
@@ -277,7 +284,7 @@ void SurfGrid::compute_dispersion_kernel() {
             vs_block = kernels.sen_vs.transpose();
             vp_block = kernels.sen_vp.transpose();
             rho_block = kernels.sen_rho.transpose();
-            if (is_aniso) {
+            if (IP.inversion().is_anisotropy) {
                 Eigen::Map<MatRM> gc_block(sen_gc_loc.data() + id0, ngrid_k, nperiod);
                 Eigen::Map<MatRM> gs_block(sen_gs_loc.data() + id0, ngrid_k, nperiod);
                 gc_block = kernels.sen_gc.transpose();
@@ -338,7 +345,7 @@ void SurfGrid::prepare_aniso_media() {
     auto& dcp  = Decomposer::DCP();
     auto& logger = ATTLogger::logger();
 
-    logger.Info("Preparing anisotropic media for eikonal solver...", MODULE_GRID);
+    logger.Info("Building anisotropic media for 2D eikonal solver...", MODULE_GRID);
 
     r1_loc.setZero();
     r2_loc.setZero();
@@ -391,35 +398,29 @@ void SurfGrid::prepare_aniso_media() {
     //   m11 = a^2*(1+2*xi) - 4*a*c*eta + c^2*(1-2*xi) + (a+b-1)*(1-a)
     //   m12 = -a*c*(1+2*xi) + 2*c^2*eta + 2*a*b*eta - b*c*(1-2*xi) + (a+b-1)*c
     //   m22 = c^2*(1+2*xi) - 4*b*c*eta + b^2*(1-2*xi) + (a+b-1)*(1-b)
-    std::vector<real_t> tmp_m11(n_elem), tmp_m12(n_elem), tmp_m22(n_elem);
-    for (int ix = 0; ix < ngrid_i; ++ix) {
-        for (int iy = 0; iy < ngrid_j; ++iy) {
-            for (int iper = 0; iper < nperiod; ++iper) {
-                const int idx  = surf_idx(ix, iy, iper);
-                const real_t r1  = full_r1[idx];
-                const real_t r2  = full_r2[idx];
-                const real_t den = _1_CR + r1*r1 + r2*r2;
-                const real_t xi  = r1 / den;
-                const real_t eta = r2 / den;
-                const real_t a_  = a[idx];
-                const real_t b_  = b[idx];
-                const real_t c_  = c[idx];
-                tmp_m11[idx] = a_*a_*(_1_CR + _2_CR*xi) - _4_CR*a_*c_*eta
-                             + c_*c_*(_1_CR - _2_CR*xi) + (a_ + b_ - _1_CR)*(_1_CR - a_);
-                tmp_m12[idx] = -a_*c_*(_1_CR + _2_CR*xi) + _2_CR*c_*c_*eta
-                             + _2_CR*a_*b_*eta - b_*c_*(_1_CR - _2_CR*xi)
-                             + (a_ + b_ - _1_CR)*c_;
-                tmp_m22[idx] = c_*c_*(_1_CR + _2_CR*xi) - _4_CR*b_*c_*eta
-                             + b_*b_*(_1_CR - _2_CR*xi) + (a_ + b_ - _1_CR)*(_1_CR - b_);
+    if (mpi.is_node_main()) {
+        for (int ix = 0; ix < ngrid_i; ++ix) {
+            for (int iy = 0; iy < ngrid_j; ++iy) {
+                for (int iper = 0; iper < nperiod; ++iper) {
+                    const int idx  = surf_idx(ix, iy, iper);
+                    const real_t r1  = full_r1[idx];
+                    const real_t r2  = full_r2[idx];
+                    const real_t den = _1_CR + r1*r1 + r2*r2;
+                    const real_t xi  = r1 / den;
+                    const real_t eta = r2 / den;
+                    const real_t a_  = a[idx];
+                    const real_t b_  = b[idx];
+                    const real_t c_  = c[idx];
+                    m11[idx] = a_*a_*(_1_CR + _2_CR*xi) - _4_CR*a_*c_*eta
+                                + c_*c_*(_1_CR - _2_CR*xi) + (a_ + b_ - _1_CR)*(_1_CR - a_);
+                    m12[idx] = -a_*c_*(_1_CR + _2_CR*xi) + _2_CR*c_*c_*eta
+                                + _2_CR*a_*b_*eta - b_*c_*(_1_CR - _2_CR*xi)
+                                + (a_ + b_ - _1_CR)*c_;
+                    m22[idx] = c_*c_*(_1_CR + _2_CR*xi) - _4_CR*b_*c_*eta
+                                + b_*b_*(_1_CR - _2_CR*xi) + (a_ + b_ - _1_CR)*(_1_CR - b_);
+                }
             }
         }
-    }
-
-    // Write results into shared-memory arrays (node main only).
-    if (mpi.is_node_main()) {
-        std::copy(tmp_m11.begin(), tmp_m11.end(), m11);
-        std::copy(tmp_m12.begin(), tmp_m12.end(), m12);
-        std::copy(tmp_m22.begin(), tmp_m22.end(), m22);
     }
     mpi.barrier();
 }

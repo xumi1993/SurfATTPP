@@ -149,21 +149,21 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
 
 void preproc::reset_kernel_accumulators( SurfGrid& sg) {
     auto& IP = InputParams::IP();
-    auto& mpi = Parallel::mpi();
 
-    if (run_mode == FORWARD_ONLY) return;
-    // Reset the model perturbation arrays to zero before accumulating kernels.
-    for (int iper = 0; iper < sg.nperiod; ++iper) {
-        sg.adj_s_local[iper].setZero();
-        if (IP.postproc().is_kden) {
-            sg.kden_s_local[iper].setZero();
+    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+        // Reset the model perturbation arrays to zero before accumulating kernels.
+        if (run_mode == INVERSION_MODE) {
+            for (int iper = 0; iper < sg.nperiod; ++iper) {
+                sg.adj_s_local[iper].setZero();
+                if (IP.postproc().is_kden) {
+                    sg.kden_s_local[iper].setZero();
+                }
+                if (IP.inversion().is_anisotropy) {
+                    sg.adj_xi_local[iper].setZero();
+                    sg.adj_eta_local[iper].setZero();
+                }
+            }
         }
-        if (IP.inversion().is_anisotropy) {
-            sg.adj_xi_local[iper].setZero();
-            sg.adj_eta_local[iper].setZero();
-        }
-    }
-    if (mpi.is_main()){
         sg.sen_vp_loc.setZero();
         sg.sen_vs_loc.setZero();
         sg.sen_rho_loc.setZero();
