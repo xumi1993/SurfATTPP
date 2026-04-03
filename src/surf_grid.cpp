@@ -66,7 +66,7 @@ SurfGrid::SurfGrid(surfType tp){
             r2_loc.setZero();
         }
     }
-
+    mpi.barrier();
 }
 
 void SurfGrid::build_media_matrix_with_topo() {
@@ -131,10 +131,19 @@ void SurfGrid::build_media_matrix_with_topo() {
         }
     }
 
-    mpi.sum_all_all(tmp_angle.data(), topo_angle, n_elem);
-    mpi.sum_all_all(tmp_a.data(), a, n_elem);
-    mpi.sum_all_all(tmp_b.data(), b, n_elem);
-    mpi.sum_all_all(tmp_c.data(), c, n_elem);
+    // Same fix: reduce to private buffers first, then have node_main write to shared memory.
+    std::vector<real_t> full_angle(n_elem), full_a(n_elem), full_b(n_elem), full_c(n_elem);
+    mpi.sum_all_all(tmp_angle.data(), full_angle.data(), n_elem);
+    mpi.sum_all_all(tmp_a.data(),     full_a.data(),     n_elem);
+    mpi.sum_all_all(tmp_b.data(),     full_b.data(),     n_elem);
+    mpi.sum_all_all(tmp_c.data(),     full_c.data(),     n_elem);
+    if (mpi.is_node_main()) {
+        std::copy(full_angle.begin(), full_angle.end(), topo_angle);
+        std::copy(full_a.begin(),     full_a.end(),     a);
+        std::copy(full_b.begin(),     full_b.end(),     b);
+        std::copy(full_c.begin(),     full_c.end(),     c);
+    }
+    mpi.barrier();
     mpi.sync_from_main_rank(topo_angle, n_elem);
     mpi.sync_from_main_rank(a, n_elem);
     mpi.sync_from_main_rank(b, n_elem);
@@ -147,7 +156,7 @@ void SurfGrid::build_media() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    logger.Info("Building anisotropic media matrix for each period...", MODULE_GRID);
+    logger.Info("Building media matrix for Eikonal solver...", MODULE_GRID);
     int n_elem = ngrid_i * ngrid_j * nperiod;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
@@ -165,6 +174,7 @@ void SurfGrid::build_media() {
         std::copy(b, b + n_elem, m22);
         std::transform(c, c + n_elem, m12, [](auto x) { return -x; });
     }
+    mpi.barrier();
 }
 
 void SurfGrid::fwdsurf(){
@@ -172,33 +182,50 @@ void SurfGrid::fwdsurf(){
     auto &logger = ATTLogger::logger();
     auto &IP = InputParams::IP();
     auto &mg = ModelGrid::MG();
+    auto &dcp = Decomposer::DCP();
     auto &sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
     logger.Info("Computing surface wave dispersion from 3d S-wave velocity model...", MODULE_GRID);
 
-    int n_elem = ngrid_i * ngrid_j * nperiod;
-    std::vector<real_t> tmp_svel = std::vector<real_t>(n_elem, _0_CR);
-    for (int ix = 0; ix < ngrid_i; ++ix) {
-        for (int iy = 0; iy < ngrid_j; ++iy) {
-            int loc_rank = mpi.select_rank_for_src(ix * ngrid_j + iy);
-            logger.Debug(std::format("Rank:{}, Computing dispersion for grid point ({}, {})", loc_rank, ix, iy), MODULE_GRID, false);
-            if (mpi.rank() == loc_rank) {
-                Eigen::VectorX<real_t> vs1d = extract_1d_from_3d(mg.vs3d, ix, iy, ngrid_k);
-                auto req = surfker::build_disp_req(mg.zgrids, vs1d, periods,
-                                        IFLSPH, IP.data().iwave, IMODE, itype);
-                Eigen::VectorX<real_t> svel_point = surfker::surfdisp(req);
-                for (int iper = 0; iper < nperiod; ++iper) {
-                    const int idx = surf_idx(ix, iy, iper);
-                    tmp_svel[idx] = svel_point(iper);
+    const int n_elem = ngrid_i * ngrid_j * nperiod;
+    std::vector<real_t> tmp_svel(n_elem, _0_CR);
+    for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+        for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+            const int ix_glob = dcp.loc_I_start() + ix;
+            const int iy_glob = dcp.loc_J_start() + iy;
+            Eigen::VectorX<real_t> vs1d(ngrid_k);
+            Eigen::VectorX<real_t> vp1d(ngrid_k);
+            Eigen::VectorX<real_t> rho1d(ngrid_k);
+            for (int k = 0; k < ngrid_k; ++k){
+                vs1d(k) = mg.vs3d_loc(ix, iy, k);
+                if ( IP.inversion().use_alpha_beta_rho ){
+                    vp1d(k) = mg.vp3d_loc(ix, iy, k);
+                    rho1d(k) = mg.rho3d_loc(ix, iy, k);
+                } else {
+                    vp1d(k) = vs2vp(vs1d(k));
+                    rho1d(k) = vp2rho(vp1d(k));
                 }
+            }
+            auto req = surfker::build_disp_req(mg.zgrids, vs1d, vp1d, rho1d, periods,
+                                        IFLSPH, IP.data().iwave, IMODE, itype);
+            Eigen::VectorX<real_t> svel_point = surfker::surfdisp(req);
+            for (int iper = 0; iper < nperiod; ++iper) {
+                const int idx = surf_idx(ix_glob, iy_glob, iper);
+                tmp_svel[idx] = svel_point(iper);
             }
         }
     }
+    // Reduce into a private buffer first to avoid the shared-memory double-write
+    // problem: svel is MPI shared memory; all node-local ranks point to the same
+    // physical address, so MPI_Allreduce writing directly to svel would accumulate
+    // the result nranks times instead of once.
+    std::vector<real_t> svel_full(n_elem, _0_CR);
+    mpi.sum_all_all(tmp_svel.data(), svel_full.data(), n_elem);
+    if (mpi.is_node_main()) {
+        std::copy(svel_full.begin(), svel_full.end(), svel);
+    }
     mpi.barrier();
-    mpi.sum_all(tmp_svel.data(), svel, n_elem);
-    mpi.sync_from_main_rank(svel, n_elem);
-
 }
 
 void SurfGrid::compute_dispersion_kernel() {
@@ -209,6 +236,7 @@ void SurfGrid::compute_dispersion_kernel() {
     auto& logger = ATTLogger::logger();
     auto& dcp = Decomposer::DCP();
 
+    const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
     const bool is_aniso = IP.inversion().is_anisotropy;
     logger.Info(
         is_aniso ? "Computing anisotropic kernels on each surface grid point..."
@@ -220,10 +248,20 @@ void SurfGrid::compute_dispersion_kernel() {
 
     for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
         for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
-            int ix_glob = dcp.loc_I_start() + ix;
-            int iy_glob = dcp.loc_J_start() + iy;
-            Eigen::VectorX<real_t> vs1d = extract_1d_from_3d(mg.vs3d, ix_glob, iy_glob, ngrid_k);
-            auto req = surfker::build_disp_req(mg.zgrids, vs1d, sr.periods_info.periods,
+            Eigen::VectorX<real_t> vs1d(ngrid_k);
+            Eigen::VectorX<real_t> vp1d(ngrid_k);
+            Eigen::VectorX<real_t> rho1d(ngrid_k);
+            for (int k = 0; k < ngrid_k; ++k){
+                vs1d(k) = mg.vs3d_loc(ix, iy, k);
+                if (IP.inversion().use_alpha_beta_rho) {
+                    vp1d(k) = mg.vp3d_loc(ix, iy, k);
+                    rho1d(k) = mg.rho3d_loc(ix, iy, k);
+                } else {
+                    vp1d(k) = vs2vp(vs1d(k));
+                    rho1d(k) = vp2rho(vp1d(k));
+                }
+            }
+            auto req = surfker::build_disp_req(mg.zgrids, vs1d, vp1d, rho1d, periods,
                                     IFLSPH, IP.data().iwave, IMODE, itype);
             auto kernels = surfker::depthkernelHTI1d(req);
             
@@ -245,7 +283,6 @@ void SurfGrid::compute_dispersion_kernel() {
     }
     mpi.barrier();
 }
-
 
 void SurfGrid::correct_depth_with_topo() {
     auto &dcp = Decomposer::DCP();

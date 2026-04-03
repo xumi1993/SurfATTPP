@@ -75,7 +75,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
     auto& logger = ATTLogger::logger();
 
     real_t chi = _0_CR;
-    logger.Info("Running forward or/and adjoint calculations for each event...", MODULE_PREPROC);
+    logger.Info("Computing forward or/and adjoint calculations for each event...", MODULE_PREPROC);
     for (auto& evt : sr.events_local) {
         real_t evla = evt.second.evla;
         real_t evlo = evt.second.evlo;
@@ -281,8 +281,8 @@ void preproc::combine_kernels(SurfGrid& sg) {
                     const int iglob_y = dcp.loc_J_start() + iy;
                     const real_t att  = adj_tt(iglob_x, iglob_y);
                     for (int k = 0; k < ngrid_k; ++k) {
-                        const real_t vs  = mg.vs3d[I2V(iglob_x, iglob_y, k)];
-                        const real_t vp  = mg.vp3d[I2V(iglob_x, iglob_y, k)];
+                        const real_t vs  = mg.vs3d_loc(ix, iy, k);
+                        const real_t vp  = mg.vp3d_loc(ix, iy, k);
                         const real_t dab = dalpha_dbeta(vs);   // d(vp)/d(vs)
                         const real_t dra = drho_dalpha(vp);    // d(rho)/d(vp)
                         sg.ker_loc[0](ix, iy, k) -= att * (

@@ -45,18 +45,23 @@ private:
         return instance;
     }
 
-    void run_forward_adjoint(const bool is_calc_adj);
+    real_t run_forward_adjoint(const bool is_calc_adj, const bool in_line_search = false);
     void init_iteration();
     void steepest_descent();
-    void grad_normalization();
+    void grad_normalization(FieldVec &grads);
     void store_model();
     void store_gradient();
+    bool check_convergence();
+    void model_update(FieldVec &dir);
+    bool line_search();
 
     Tensor3r model_update_;
-    std::vector<Tensor3r> gradient_;
+    FieldVec ker_curr_, ker_prev_;
+    FieldVec gradient_;
     Tensor3r search_direction_;
 
     std::vector<real_t> misfit_ = std::vector<real_t>(InputParams::IP().inversion().niter, _0_CR);
     int    iter_ = 0;
-    real_t alpha_;
+    int    iter_start_ = 0;
+    real_t alpha_, alpha_R_, alpha_L_;
 };

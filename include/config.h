@@ -14,6 +14,8 @@
     using real2_t = long double;
 #endif
 
+#include "version.h"
+
 #include <string>
 #include <vector>
 #include <unsupported/Eigen/CXX11/Tensor>
@@ -21,6 +23,7 @@
 // Convenience alias for the most common 3-D field type
 using Tensor3r = Eigen::Tensor<real_t, 3, Eigen::RowMajor>;
 using Tensor4r = Eigen::Tensor<real_t, 4, Eigen::RowMajor>;
+using FieldVec = std::vector<Tensor3r>;
 
 // Convenience constant sized to the active precision
 #include <limits>
@@ -38,6 +41,8 @@ inline real_t dgrid_i, dgrid_j, dgrid_k;  // grid spacing in km, set by DomainPa
 // File paths
 // ---------------------------------------------------------------------------
 const std::string LOG_FNAME = "surfatt_runtime.log";
+const std::string FINAL_MODEL_FNAME = "final_model.h5";
+const std::string INIT_MODEL_FNAME = "initial_model.h5";
 inline std::string input_file;  // set by parse_options()
 inline std::string db_fname;    // set by inversion constructor
 
@@ -80,7 +85,10 @@ constexpr int OPTIM_LBFGS = 1;
 constexpr int MAX_LBFGS_STORE = 5;
 constexpr int NPARAMS = 5; // vs, vp, rho, gc, gs
 inline const std::array<const char *, NPARAMS> pnames = {"vs", "vp", "rho", "gc", "gs"};
-inline std::vector<bool> is_active_param = std::vector<bool>(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
+inline std::vector<bool> is_active_param(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
+constexpr int BREAK_ITER = 5;  // convergence tolerance for relative misfit reduction
+constexpr real_t MAX_DESC_ANGLE = 92; // maximum allowable descent angle for L-BFGS restart logic
+
 
 // ---------------------------------------------------------------------------
 // global variables
@@ -91,7 +99,7 @@ inline int run_mode = INVERSION_MODE;
 // module names
 // ---------------------------------------------------------------------------
 inline const std::string MODULE_SRCREC    = "SRCREC";
-inline const std::string MODULE_GRID      = "SURFGRID";
+inline const std::string MODULE_GRID      = "MODELGRID";
 inline const std::string MODULE_OPTIM     = "OPTIM";
 inline const std::string MODULE_MAIN      = "MAIN";
 inline const std::string MODULE_INV1D     = "INV1D";
@@ -99,3 +107,10 @@ inline const std::string MODULE_TOPO      = "TOPO";
 inline const std::string MODULE_PREPROC   = "PREPROC";
 inline const std::string MODULE_POSTPROC  = "POSTPROC";
 inline const std::string MODULE_INV       = "INVERSION";
+inline std::string get_version_number() {
+    return std::string(
+        std::to_string(PROJECT_VERSION_MAJOR) + "." +
+        std::to_string(PROJECT_VERSION_MINOR) + "." +
+        std::to_string(PROJECT_VERSION_PATCH)
+    );
+}

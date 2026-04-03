@@ -16,6 +16,10 @@ class Decomposer {
 public:
     static Decomposer& DCP();
 
+    void subdomain_allocation(
+        const Eigen::VectorX<real_t> &xgrids, 
+        const Eigen::VectorX<real_t> &ygrids
+    );
     Decomposer(const Decomposer&) = delete;
     Decomposer& operator=(const Decomposer&) = delete;
     void prepare_expanded_field(real_t* arr);
@@ -42,8 +46,6 @@ private:
     Decomposer();
 
     void decompose_impl();
-
-    void subdomain_allocation();
 
     std::pair<int, int> close_factors(int nx, int ny, int num);
     void prepare_boundary_data_to_send(real_t* arr);

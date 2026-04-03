@@ -94,6 +94,53 @@ DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
 
 }  // build_disp_req
 
+DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
+                                const Eigen::VectorX<real_t>& vs,
+                                const Eigen::VectorX<real_t>& vp,
+                                const Eigen::VectorX<real_t>& rho,
+                                const Eigen::VectorX<real_t>& periods_s,
+                                int iflsph, int iwave, int mode, int igr) {
+
+    if (dep.size() != vs.size() || dep.size() != vp.size() || dep.size() != rho.size()) {
+        throw std::runtime_error("build_disp_req: dep, vs, vp, and rho must have the same length");
+    }
+    DispersionRequest req;
+
+    req.iflsph = iflsph;
+    req.iwave = iwave;
+    req.mode = mode;
+    req.igr = igr;
+
+    int mmax = static_cast<int>(vs.size()) + 1;
+    req.depths_km = Eigen::VectorX<real_t>::Zero(mmax);
+    req.thickness_km = Eigen::VectorX<real_t>::Zero(mmax);
+    req.vs_km_s = Eigen::VectorX<real_t>::Zero(mmax);
+    req.vp_km_s = Eigen::VectorX<real_t>::Zero(mmax);
+    req.rho_g_cm3 = Eigen::VectorX<real_t>::Zero(mmax);
+    req.periods_s = periods_s;
+
+    req.depths_km.head(dep.size()) = dep;
+    req.depths_km(mmax - 1) = dep(dep.size() - 1);
+    req.vs_km_s.head(vs.size()) = vs;
+    req.vs_km_s(mmax - 1) = vs(vs.size() - 1);
+    req.vp_km_s.head(vp.size()) = vp;
+    req.vp_km_s(mmax - 1) = vp(vp.size() - 1);
+    req.rho_g_cm3.head(rho.size()) = rho;
+    req.rho_g_cm3(mmax - 1) = rho(rho.size() - 1);
+
+    for (int i = 0; i < dep.size(); ++i) {
+        if (i == dep.size() - 1) {
+            req.thickness_km(i) = req.thickness_km(i - 1);
+        } else {
+            req.thickness_km(i) = dep(i + 1) - dep(i);
+        }
+    }
+    req.thickness_km(mmax - 1) = 0.0;
+
+    return req;
+
+}  // build_disp_req (vp, rho overload)
+
 Eigen::VectorX<real_t> surfdisp(const DispersionRequest& req) {
     validate_request(req);
 

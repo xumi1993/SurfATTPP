@@ -1,5 +1,6 @@
 #include "eikonal_solver.h"
 #include "utils.h"
+#include "logger.h"
 
 #include <cmath>
 #include <algorithm>
@@ -18,13 +19,13 @@ static constexpr real_t TOL     = 1e-4;
 // ---------------------------------------------------------------------------
 // Main solver
 // ---------------------------------------------------------------------------
-Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
-    const Eigen::VectorXd& xx_deg,
-    const Eigen::VectorXd& yy_deg,
-    const Eigen::MatrixXd& spha,
-    const Eigen::MatrixXd& sphb,
-    const Eigen::MatrixXd& sphc,
-    const Eigen::MatrixXd& fun,
+Eigen::MatrixX<real_t> FSM_UW_PS_lonlat_2d(
+    const Eigen::VectorX<real_t>& xx_deg,
+    const Eigen::VectorX<real_t>& yy_deg,
+    const Eigen::MatrixX<real_t>& spha,
+    const Eigen::MatrixX<real_t>& sphb,
+    const Eigen::MatrixX<real_t>& sphc,
+    const Eigen::MatrixX<real_t>& fun,
     real_t x0_deg,
     real_t y0_deg)
 {
@@ -37,8 +38,8 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
     // -----------------------------------------------------------------------
     // 1. Convert to radians
     // -----------------------------------------------------------------------
-    const Eigen::VectorXd xx = xx_deg * DEG2RAD;
-    const Eigen::VectorXd yy = yy_deg * DEG2RAD;
+    const Eigen::VectorX<real_t> xx = xx_deg * DEG2RAD;
+    const Eigen::VectorX<real_t> yy = yy_deg * DEG2RAD;
     const real_t x0 = x0_deg * DEG2RAD;
     const real_t y0 = y0_deg * DEG2RAD;
 
@@ -51,7 +52,7 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
     //    b = sphb / R^2
     //    c = sphc / (R^2 cos lat)
     // -----------------------------------------------------------------------
-    Eigen::MatrixXd a(nx, ny), b(nx, ny), c(nx, ny);
+    Eigen::MatrixX<real_t> a(nx, ny), b(nx, ny), c(nx, ny);
     for (int iy = 0; iy < ny; iy++) {
         const real_t cos_y  = std::cos(yy(iy));
         const real_t cos2_y = cos_y * cos_y;
@@ -72,8 +73,8 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
     idx0 = std::max(0, std::min(idx0, nx - 2));
     idy0 = std::max(0, std::min(idy0, ny - 2));
 
-    const real_t r1 = std::min(1.0, (x0 - xx(idx0)) / dx);
-    const real_t r2 = std::min(1.0, (y0 - yy(idy0)) / dy);
+    const real_t r1 = std::min(_1_CR, (x0 - xx(idx0)) / dx);
+    const real_t r2 = std::min(_1_CR, (y0 - yy(idy0)) / dy);
 
     const real_t a0   = bilinear(a,    idx0, idy0, r1, r2);
     const real_t b0   = bilinear(b,    idx0, idy0, r1, r2);
@@ -87,8 +88,8 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
     //    T0x = ∂T0/∂lon
     //    T0y = ∂T0/∂lat
     // -----------------------------------------------------------------------
-    Eigen::MatrixXd T0(nx, ny), T0x(nx, ny), T0y(nx, ny);
-    Eigen::MatrixXd tau(nx, ny);
+    Eigen::MatrixX<real_t> T0(nx, ny), T0x(nx, ny), T0y(nx, ny);
+    Eigen::MatrixX<real_t> tau(nx, ny);
     // ischange: 0 = fixed near-source cell, 1 = free
     Eigen::MatrixXi ischange = Eigen::MatrixXi::Ones(nx, ny);
 
@@ -97,10 +98,10 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
             const real_t dlon = xx(ix) - x0;
             const real_t tmp  = std::sin(yy(iy)) * std::sin(y0)
                               + std::cos(yy(iy)) * std::cos(y0) * std::cos(dlon);
-            const real_t tmp_c = std::max(-1.0, std::min(1.0, tmp));
+            const real_t tmp_c = std::max(_M_1_CR, std::min(_1_CR, tmp));
             T0(ix, iy) = std::acos(tmp_c) * R_EARTH * fun0;
 
-            const real_t sin_d = std::sqrt(std::max(0.0, 1.0 - tmp_c * tmp_c));
+            const real_t sin_d = std::sqrt(std::max(_0_CR, _1_CR - tmp_c * tmp_c));
             if (sin_d < 1e-14) {
                 T0x(ix, iy) = 0.0;
                 T0y(ix, iy) = 0.0;
@@ -143,7 +144,7 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
     int    ncand = 0;
 
     for (int iter = 0; iter < MAXITER; iter++) {
-        const Eigen::MatrixXd tau_old = tau;
+        const Eigen::MatrixX<real_t> tau_old = tau;
 
         for (int s = 0; s < 4; s++) {
             const int xd = (SX1[s] >= SX0[s]) ? 1 : -1;
@@ -299,6 +300,17 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
 
         if (L1_dif < TOL && Linf_dif < TOL)
             break;
+
+        if (iter == MAXITER - 1) {
+            std::fprintf(stderr,
+                "[eikonal] WARNING: FSM did not converge after %d iterations "
+                "(L1=%.3e, Linf=%.3e). src=(%.4f,%.4f)\n"
+                "  spha: min=%.4f max=%.4f  sphb: min=%.4f max=%.4f  sphc: min=%.4f max=%.4f\n",
+                MAXITER, L1_dif, Linf_dif, x0_deg, y0_deg,
+                spha.minCoeff(), spha.maxCoeff(),
+                sphb.minCoeff(), sphb.maxCoeff(),
+                sphc.minCoeff(), sphc.maxCoeff());
+        }
     }
 
     // T = tau * T0  (element-wise)
@@ -308,16 +320,16 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
 // ---------------------------------------------------------------------------
 // Adjoint field solver
 // ---------------------------------------------------------------------------
-Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
-    const Eigen::VectorXd& xx_deg,
-    const Eigen::VectorXd& yy_deg,
-    const Eigen::MatrixXd& spha,
-    const Eigen::MatrixXd& sphb,
-    const Eigen::MatrixXd& sphc,
-    const Eigen::MatrixXd& T,
-    const Eigen::VectorXd& xrec_deg,
-    const Eigen::VectorXd& yrec_deg,
-    const Eigen::VectorXd& sourceAdj)
+Eigen::MatrixX<real_t> FSM_O1_JSE_lonlat_2d(
+    const Eigen::VectorX<real_t>& xx_deg,
+    const Eigen::VectorX<real_t>& yy_deg,
+    const Eigen::MatrixX<real_t>& spha,
+    const Eigen::MatrixX<real_t>& sphb,
+    const Eigen::MatrixX<real_t>& sphc,
+    const Eigen::MatrixX<real_t>& T,
+    const Eigen::VectorX<real_t>& xrec_deg,
+    const Eigen::VectorX<real_t>& yrec_deg,
+    const Eigen::VectorX<real_t>& sourceAdj)
 {
     const int nx  = static_cast<int>(xx_deg.size());
     const int ny  = static_cast<int>(yy_deg.size());
@@ -329,8 +341,8 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     // -----------------------------------------------------------------------
     // 1. Convert all coordinates to radians
     // -----------------------------------------------------------------------
-    const Eigen::VectorXd xx = xx_deg * DEG2RAD;
-    const Eigen::VectorXd yy = yy_deg * DEG2RAD;
+    const Eigen::VectorX<real_t> xx = xx_deg * DEG2RAD;
+    const Eigen::VectorX<real_t> yy = yy_deg * DEG2RAD;
 
     const real_t dx = xx(1) - xx(0);
     const real_t dy = yy(1) - yy(0);
@@ -339,7 +351,7 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     // 2. Build delta source (bilinear spreading, area-normalized)
     //    Area element at receiver lat: dx*R*cos(lat_rec) * dy*R
     // -----------------------------------------------------------------------
-    Eigen::MatrixXd delta = Eigen::MatrixXd::Zero(nx, ny);
+    Eigen::MatrixX<real_t> delta = Eigen::MatrixX<real_t>::Zero(nx, ny);
 
     for (int ir = 0; ir < nr; ir++) {
         const real_t xrec = xrec_deg(ir) * DEG2RAD;
@@ -350,8 +362,8 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
         idx0 = std::max(0, std::min(idx0, nx - 2));
         idy0 = std::max(0, std::min(idy0, ny - 2));
 
-        const real_t r1 = std::min(1.0, (xrec - xx(idx0)) / dx);
-        const real_t r2 = std::min(1.0, (yrec - yy(idy0)) / dy);
+        const real_t r1 = std::min(_1_CR, (xrec - xx(idx0)) / dx);
+        const real_t r2 = std::min(_1_CR, (yrec - yy(idy0)) / dy);
 
         const real_t area = dx * R_EARTH * std::cos(yrec) * dy * R_EARTH;
         const real_t w    = sourceAdj(ir) / area;
@@ -365,7 +377,7 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     // -----------------------------------------------------------------------
     // 3. Metric-tensor components  a, b, c
     // -----------------------------------------------------------------------
-    Eigen::MatrixXd a(nx, ny), b(nx, ny), c(nx, ny);
+    Eigen::MatrixX<real_t> a(nx, ny), b(nx, ny), c(nx, ny);
     for (int ix = 0; ix < nx; ix++) {
         for (int iy = 0; iy < ny; iy++) {
             const real_t cos_y  = std::cos(yy(iy));
@@ -389,8 +401,8 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     //
     //  xm = (x - |x|)/2 ≤ 0,   xp = (x + |x|)/2 ≥ 0
     // -----------------------------------------------------------------------
-    Eigen::MatrixXd a1m(nx,ny), a1p(nx,ny), a2m(nx,ny), a2p(nx,ny);
-    Eigen::MatrixXd b1m(nx,ny), b1p(nx,ny), b2m(nx,ny), b2p(nx,ny);
+    Eigen::MatrixX<real_t> a1m(nx,ny), a1p(nx,ny), a2m(nx,ny), a2p(nx,ny);
+    Eigen::MatrixX<real_t> b1m(nx,ny), b1p(nx,ny), b2m(nx,ny), b2p(nx,ny);
 
     for (int ix = 1; ix < nx-1; ix++) {
         for (int iy = 1; iy < ny-1; iy++) {
@@ -431,7 +443,7 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     // -----------------------------------------------------------------------
     // 5. Initialise Ta: boundary = 0, interior = 100
     // -----------------------------------------------------------------------
-    Eigen::MatrixXd Ta = Eigen::MatrixXd::Zero(nx, ny);
+    Eigen::MatrixX<real_t> Ta = Eigen::MatrixX<real_t>::Zero(nx, ny);
     for (int ix = 1; ix < nx-1; ix++)
         for (int iy = 1; iy < ny-1; iy++)
             Ta(ix, iy) = 100.0;
@@ -457,7 +469,7 @@ Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
     const int IY1[4] = {ny-2, 1,    ny-2, 1   };
 
     for (int iter = 0; iter < maxiter; iter++) {
-        const Eigen::MatrixXd Ta_old = Ta;
+        const Eigen::MatrixX<real_t> Ta_old = Ta;
 
         for (int s = 0; s < 4; s++) {
             const int xd = (IX1[s] >= IX0[s]) ? 1 : -1;

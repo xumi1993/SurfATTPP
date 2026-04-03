@@ -53,7 +53,7 @@ public:
     Tensor4r sen_gc_loc, sen_gs_loc;  // sensitivity kernels for anisotropy parameters (if applicable)
     Tensor3r r1_loc, r2_loc;  // anisotropy r1/r2 on local subdomain, shape (loc_nx, loc_ny, nperiod)
 
-    std::vector<Tensor3r> ker_loc;
+    FieldVec ker_loc;
     Tensor3r ker_den_loc;
 
     void build_media();

@@ -29,15 +29,15 @@ namespace eikonal {
  * @param y0_deg  Source latitude  [degrees]
  * @return        Travel-time field T     (nx × ny)
  */
-Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
-    const Eigen::VectorXd& xx_deg,
-    const Eigen::VectorXd& yy_deg,
-    const Eigen::MatrixXd& spha,
-    const Eigen::MatrixXd& sphb,
-    const Eigen::MatrixXd& sphc,
-    const Eigen::MatrixXd& fun,
-    double x0_deg,
-    double y0_deg);
+Eigen::MatrixX<real_t> FSM_UW_PS_lonlat_2d(
+    const Eigen::VectorX<real_t>& xx_deg,
+    const Eigen::VectorX<real_t>& yy_deg,
+    const Eigen::MatrixX<real_t>& spha,
+    const Eigen::MatrixX<real_t>& sphb,
+    const Eigen::MatrixX<real_t>& sphc,
+    const Eigen::MatrixX<real_t>& fun,
+    real_t x0_deg,
+    real_t y0_deg);
 
 /**
  * Adjoint (Pn) field solver on a spherical (longitude-latitude) grid.
@@ -71,16 +71,16 @@ Eigen::MatrixXd FSM_UW_PS_lonlat_2d(
  * @param sourceAdj Adjoint source weights (traveltime residuals), length nr
  * @return          Adjoint field Ta  (nx × ny), zero on boundary
  */
-Eigen::MatrixXd FSM_O1_JSE_lonlat_2d(
-    const Eigen::VectorXd& xx_deg,
-    const Eigen::VectorXd& yy_deg,
-    const Eigen::MatrixXd& spha,
-    const Eigen::MatrixXd& sphb,
-    const Eigen::MatrixXd& sphc,
-    const Eigen::MatrixXd& T,
-    const Eigen::VectorXd& xrec_deg,
-    const Eigen::VectorXd& yrec_deg,
-    const Eigen::VectorXd& sourceAdj);
+Eigen::MatrixX<real_t> FSM_O1_JSE_lonlat_2d(
+    const Eigen::VectorX<real_t>& xx_deg,
+    const Eigen::VectorX<real_t>& yy_deg,
+    const Eigen::MatrixX<real_t>& spha,
+    const Eigen::MatrixX<real_t>& sphb,
+    const Eigen::MatrixX<real_t>& sphc,
+    const Eigen::MatrixX<real_t>& T,
+    const Eigen::VectorX<real_t>& xrec_deg,
+    const Eigen::VectorX<real_t>& yrec_deg,
+    const Eigen::VectorX<real_t>& sourceAdj);
 
 void mask_uniform_grid(
     const Eigen::VectorX<real_t>& xx,

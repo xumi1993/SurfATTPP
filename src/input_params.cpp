@@ -62,7 +62,7 @@ void InputParams::load_topo(const YAML::Node &n) {
 }
 
 void InputParams::load_postproc(const YAML::Node &n) {
-    postproc_.kdensity_coe = req<real_t>(n, "kdensity_coe");
+    postproc_.kdensity_coe = opt<real_t>(n, "kdensity_coe", _0_CR);
     postproc_.is_kden = std::abs(postproc_.kdensity_coe - _0_CR) > 1e-6;
     postproc_.smooth_method = opt<int>(n, "smooth_method", 0);
     postproc_.independent_smooth_ani = opt<bool>(n, "independent_smooth_ani", false);
@@ -112,6 +112,11 @@ void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.step_length   = req<real_t>(n, "step_length");
     inversion_.maxshrink     = req<real_t>(n, "maxshrink");
     inversion_.max_sub_niter = req<int>(n, "max_sub_niter");
+    // Strong Wolfe line-search parameters. Keep YAML fallbacks consistent with
+    // the defaults defined in InversionParams so behavior does not depend on
+    // whether the key is omitted from the input file.
+    inversion_.c1 = opt<real_t>(n, "c1", 0.1);
+    inversion_.c2 = opt<real_t>(n, "c2", 0.9);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +228,8 @@ void InputParams::bcast_inversion() {
     mpi.bcast(inversion_.step_length);
     mpi.bcast(inversion_.maxshrink);
     mpi.bcast(inversion_.max_sub_niter);
+    mpi.bcast(inversion_.c1);
+    mpi.bcast(inversion_.c2);
 }
 
 void InputParams::bcast_all_params() {

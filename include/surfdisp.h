@@ -51,4 +51,12 @@ DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
                                 const Eigen::VectorX<real_t>& vs,
                                 const Eigen::VectorX<real_t>& periods_s,
                                 int iflsph=IFLSPH, int iwave=2, int mode=IMODE, int igr=0);
+
+// Overload: explicit Vp (km/s) and density (g/cm³) instead of empirical relations.
+DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
+                                const Eigen::VectorX<real_t>& vs,
+                                const Eigen::VectorX<real_t>& vp,
+                                const Eigen::VectorX<real_t>& rho,
+                                const Eigen::VectorX<real_t>& periods_s,
+                                int iflsph=IFLSPH, int iwave=2, int mode=IMODE, int igr=0);
 }  // namespace surfker
