@@ -1,5 +1,6 @@
 #include "eikonal_solver.h"
 #include "utils.h"
+#include "logger.h"
 
 #include <cmath>
 #include <algorithm>
@@ -299,6 +300,17 @@ Eigen::MatrixX<real_t> FSM_UW_PS_lonlat_2d(
 
         if (L1_dif < TOL && Linf_dif < TOL)
             break;
+
+        if (iter == MAXITER - 1) {
+            std::fprintf(stderr,
+                "[eikonal] WARNING: FSM did not converge after %d iterations "
+                "(L1=%.3e, Linf=%.3e). src=(%.4f,%.4f)\n"
+                "  spha: min=%.4f max=%.4f  sphb: min=%.4f max=%.4f  sphc: min=%.4f max=%.4f\n",
+                MAXITER, L1_dif, Linf_dif, x0_deg, y0_deg,
+                spha.minCoeff(), spha.maxCoeff(),
+                sphb.minCoeff(), sphb.maxCoeff(),
+                sphc.minCoeff(), sphc.maxCoeff());
+        }
     }
 
     // T = tau * T0  (element-wise)

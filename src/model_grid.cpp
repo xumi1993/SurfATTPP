@@ -175,21 +175,19 @@ void ModelGrid::allocate_model_grids() {
         mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gc3d, win_gc_);
         mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gs3d, win_gs_);
     }
-    if (run_mode == INVERSION_MODE) {
-        vs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        vp3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        rho3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-        vs3d_loc.setZero();
-        vp3d_loc.setZero();
-        rho3d_loc.setZero();
-        if (IP.inversion().is_anisotropy) {
-            // Allocate local sensitivity kernels for anisotropy parameters if needed
-            // (not shown here, but would be similar to vs3d_loc/vp3d_loc/rho3d_loc)
-            gc3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-            gs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
-            gc3d_loc.setZero();
-            gs3d_loc.setZero();
-        }
+    // Always allocate local model slices; they are needed by fwdsurf() in both
+    // FORWARD_ONLY and INVERSION_MODE.
+    vs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    vp3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    rho3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+    vs3d_loc.setZero();
+    vp3d_loc.setZero();
+    rho3d_loc.setZero();
+    if (IP.inversion().is_anisotropy) {
+        gc3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        gs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        gc3d_loc.setZero();
+        gs3d_loc.setZero();
     }
 }
 
@@ -357,9 +355,11 @@ void ModelGrid::build_init_model() {
                     }
                 }
             }
-            if (IP.output().output_initial_model) {
-                write(std::string("initial_model.h5"));
-            }
+        }
+        // write() guards itself with is_main() and calls mpi.barrier() internally,
+        // so it must be called by all ranks — not inside if (mpi.is_main()).
+        if (IP.output().output_initial_model) {
+            write(std::string("initial_model.h5"));
         }
         mpi.barrier();
     }

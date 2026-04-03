@@ -131,10 +131,19 @@ void SurfGrid::build_media_matrix_with_topo() {
         }
     }
 
-    mpi.sum_all_all(tmp_angle.data(), topo_angle, n_elem);
-    mpi.sum_all_all(tmp_a.data(), a, n_elem);
-    mpi.sum_all_all(tmp_b.data(), b, n_elem);
-    mpi.sum_all_all(tmp_c.data(), c, n_elem);
+    // Same fix: reduce to private buffers first, then have node_main write to shared memory.
+    std::vector<real_t> full_angle(n_elem), full_a(n_elem), full_b(n_elem), full_c(n_elem);
+    mpi.sum_all_all(tmp_angle.data(), full_angle.data(), n_elem);
+    mpi.sum_all_all(tmp_a.data(),     full_a.data(),     n_elem);
+    mpi.sum_all_all(tmp_b.data(),     full_b.data(),     n_elem);
+    mpi.sum_all_all(tmp_c.data(),     full_c.data(),     n_elem);
+    if (mpi.is_node_main()) {
+        std::copy(full_angle.begin(), full_angle.end(), topo_angle);
+        std::copy(full_a.begin(),     full_a.end(),     a);
+        std::copy(full_b.begin(),     full_b.end(),     b);
+        std::copy(full_c.begin(),     full_c.end(),     c);
+    }
+    mpi.barrier();
     mpi.sync_from_main_rank(topo_angle, n_elem);
     mpi.sync_from_main_rank(a, n_elem);
     mpi.sync_from_main_rank(b, n_elem);
@@ -147,7 +156,7 @@ void SurfGrid::build_media() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    logger.Info("Building anisotropic media matrix for each period...", MODULE_GRID);
+    logger.Info("Building media matrix for Eikonal solver...", MODULE_GRID);
     int n_elem = ngrid_i * ngrid_j * nperiod;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
@@ -165,6 +174,7 @@ void SurfGrid::build_media() {
         std::copy(b, b + n_elem, m22);
         std::transform(c, c + n_elem, m12, [](auto x) { return -x; });
     }
+    mpi.barrier();
 }
 
 void SurfGrid::fwdsurf(){
@@ -206,8 +216,16 @@ void SurfGrid::fwdsurf(){
             }
         }
     }
-    mpi.sum_all_all(tmp_svel.data(), svel, n_elem);
-    mpi.sync_from_main_rank(svel, n_elem);
+    // Reduce into a private buffer first to avoid the shared-memory double-write
+    // problem: svel is MPI shared memory; all node-local ranks point to the same
+    // physical address, so MPI_Allreduce writing directly to svel would accumulate
+    // the result nranks times instead of once.
+    std::vector<real_t> svel_full(n_elem, _0_CR);
+    mpi.sum_all_all(tmp_svel.data(), svel_full.data(), n_elem);
+    if (mpi.is_node_main()) {
+        std::copy(svel_full.begin(), svel_full.end(), svel);
+    }
+    mpi.barrier();
 }
 
 void SurfGrid::compute_dispersion_kernel() {

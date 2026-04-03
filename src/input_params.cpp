@@ -62,7 +62,7 @@ void InputParams::load_topo(const YAML::Node &n) {
 }
 
 void InputParams::load_postproc(const YAML::Node &n) {
-    postproc_.kdensity_coe = req<real_t>(n, "kdensity_coe");
+    postproc_.kdensity_coe = opt<real_t>(n, "kdensity_coe", _0_CR);
     postproc_.is_kden = std::abs(postproc_.kdensity_coe - _0_CR) > 1e-6;
     postproc_.smooth_method = opt<int>(n, "smooth_method", 0);
     postproc_.independent_smooth_ani = opt<bool>(n, "independent_smooth_ani", false);

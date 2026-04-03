@@ -31,7 +31,15 @@ void SrcRec::load(const std::string& filepath)
 
     // 1. Rank 0 reads the CSV
     if (mpi.is_main()) {
-        rapidcsv::Document doc(filepath, rapidcsv::LabelParams(0, -1));
+        rapidcsv::Document doc;
+        try {
+            doc = rapidcsv::Document(filepath, rapidcsv::LabelParams(0, -1));
+        } catch (const std::ios_base::failure &e) {
+            throw std::runtime_error(
+                "SrcRec::load: cannot open '" + filepath + "': " + e.what()
+                + "\n  Check that the file exists and the path in input_params is correct."
+            );
+        }
         n_obs = static_cast<int>(doc.GetRowCount());
 
         v_stla    = doc.GetColumn<real_t>("stla");
@@ -174,7 +182,10 @@ void SrcRec::get_events(){
     // Distribute event records to their target ranks.
     // We broadcast event names (small metadata), then send larger payloads
     // (evla/evlo/receiver-index list) only to the selected destination rank.
-    logger.Info("Distributing event information to all ranks", MODULE_SRCREC);    
+    logger.Info(std::format(
+        "Distributing {} events to {} ranks", nsrc_total, mpi.size()),
+        MODULE_SRCREC
+    );
     for (int i_src = 0; i_src < nsrc_total; i_src++) {
         int dst_rank = mpi.select_rank_for_src(i_src);
         

@@ -40,7 +40,7 @@ inline real_t dgrid_i, dgrid_j, dgrid_k;  // grid spacing in km, set by DomainPa
 // ---------------------------------------------------------------------------
 const std::string LOG_FNAME = "surfatt_runtime.log";
 const std::string FINAL_MODEL_FNAME = "final_model.h5";
-const std::string INIT_MODEL_FNAME = "init_model.h5";
+const std::string INIT_MODEL_FNAME = "initial_model.h5";
 inline std::string input_file;  // set by parse_options()
 inline std::string db_fname;    // set by inversion constructor
 
@@ -97,7 +97,7 @@ inline int run_mode = INVERSION_MODE;
 // module names
 // ---------------------------------------------------------------------------
 inline const std::string MODULE_SRCREC    = "SRCREC";
-inline const std::string MODULE_GRID      = "SURFGRID";
+inline const std::string MODULE_GRID      = "MODELGRID";
 inline const std::string MODULE_OPTIM     = "OPTIM";
 inline const std::string MODULE_MAIN      = "MAIN";
 inline const std::string MODULE_INV1D     = "INV1D";

@@ -5,6 +5,21 @@
 #include "h5io.h"
 #include "optimize.h"
 
+static void distribute_model_para(){
+    auto& mg = ModelGrid::MG();
+    auto& dcp = Decomposer::DCP();
+    auto& IP = InputParams::IP();
+
+    // Distribute the global model to per-rank local slices before fwdsurf().
+    mg.vs3d_loc = dcp.distribute_data(mg.vs3d);
+    mg.vp3d_loc = dcp.distribute_data(mg.vp3d);
+    mg.rho3d_loc = dcp.distribute_data(mg.rho3d);
+    if (IP.inversion().is_anisotropy) {
+        mg.gc3d_loc = dcp.distribute_data(mg.gc3d);
+        mg.gs3d_loc = dcp.distribute_data(mg.gs3d);
+    }
+}
+
 Inversion::Inversion() {
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
@@ -59,6 +74,7 @@ Inversion::Inversion() {
 void Inversion::run_forward() {
     auto& logger = ATTLogger::logger();
     logger.Info("Running forward calculation...", MODULE_INV);
+    distribute_model_para();
     run_forward_adjoint(false);
 }
 
@@ -67,7 +83,7 @@ void Inversion::run_inversion() {
     auto &mpi = Parallel::mpi();
     auto &mg = ModelGrid::MG();
     auto &logger = ATTLogger::logger();
-    logger.Info(std::format("Starting inversion iteration {}...", iter_), MODULE_INV);
+    logger.Info(std::format("Starting inversion {}th iteration ...", iter_), MODULE_INV);
     
     for ( iter_ = 0; iter_ < IP.inversion().niter; ++iter_ ) {
         // Initialize the iteration: distribute the current model to local subdomains, reset model update and search direction
@@ -107,8 +123,6 @@ void Inversion::run_inversion() {
 }
 
 void Inversion::init_iteration() {
-    auto& mg = ModelGrid::MG();
-    auto& dcp = Decomposer::DCP();
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
 
@@ -117,13 +131,8 @@ void Inversion::init_iteration() {
         mpi.barrier();
     }
 
-    mg.vs3d_loc = dcp.distribute_data(mg.vs3d);
-    mg.vp3d_loc = dcp.distribute_data(mg.vp3d);
-    mg.rho3d_loc = dcp.distribute_data(mg.rho3d);
-    if (IP.inversion().is_anisotropy) {
-        mg.gc3d_loc = dcp.distribute_data(mg.gc3d);
-        mg.gs3d_loc = dcp.distribute_data(mg.gs3d);
-    }
+    // Distribute the updated global model to per-rank local slices before fwdsurf().
+    distribute_model_para();
 
     // initialize kernel for current and previous iteration to zero
     if (IP.inversion().optim_method == OPTIM_LBFGS){
@@ -188,7 +197,6 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line
         auto &sg = (tp == surfType::PH) ? SurfGrid::SG_ph() : SurfGrid::SG_gr();
         auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
 
-        logger.Info(std::format("Running forward and adjoint calculations for {} data", surfTypeStr[itype]), MODULE_PREPROC);
         // Reset kernel accumulators before processing this type of data
         preproc::reset_kernel_accumulators(sg);
 
@@ -197,7 +205,10 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line
 
         // Compute the dispersion kernel (sensitivity of travel times to
         //   velocity perturbations at each surface grid point) for this type of data.
-        preproc::prepare_dispersion_kernel(sg);
+        // Kernels are only needed for the adjoint (gradient) calculation.
+        if (is_calc_adj) {
+            preproc::prepare_dispersion_kernel(sg);
+        }
 
         // calculate travel time for each source-receiver pair and period, and store in sr.events_local
         real_t chi = preproc::forward_for_event(sr, sg, is_calc_adj);
