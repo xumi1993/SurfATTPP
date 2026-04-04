@@ -89,3 +89,7 @@ cd examples/00_checkerboard_iso
 bash run_this_example.sh
 ```
 
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on reporting bugs, proposing features, code style, and the pull-request process.
+
