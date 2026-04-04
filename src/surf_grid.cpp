@@ -248,7 +248,6 @@ void SurfGrid::compute_dispersion_kernel() {
     auto& dcp = Decomposer::DCP();
 
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
-    const bool is_aniso = IP.inversion().is_anisotropy;
     logger.Info(
         is_aniso ? "Computing anisotropic kernels on each surface grid point..."
                  : "Computing isotropic kernels on each surface grid point...",
@@ -299,7 +298,6 @@ void SurfGrid::correct_depth_with_topo() {
     auto &dcp = Decomposer::DCP();
     auto &mg = ModelGrid::MG();
     auto &IP = InputParams::IP();
-    const bool is_aniso = IP.inversion().is_anisotropy;
 
     // Tensor layout: (loc_nx, loc_ny, ngrid_k, nperiod), RowMajor
     // For fixed (ix, iy, iper), elements along iz are strided by nperiod.
@@ -330,7 +328,7 @@ void SurfGrid::correct_depth_with_topo() {
                 interp_kernel(sen_vs_loc.data());
                 interp_kernel(sen_vp_loc.data());
                 interp_kernel(sen_rho_loc.data());
-                if (is_aniso) {
+                if (IP.inversion().is_anisotropy) {
                     interp_kernel(sen_gc_loc.data());
                     interp_kernel(sen_gs_loc.data());
                 }

@@ -180,14 +180,16 @@ void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
     auto& mpi = Parallel::mpi();
 
     logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
-    sg.compute_dispersion_kernel();
-    
-    if (IP.topo().is_consider_topo) {
-        sg.correct_depth_with_topo();
-    }
+    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+        sg.compute_dispersion_kernel();
+        
+        if (IP.topo().is_consider_topo) {
+            sg.correct_depth_with_topo();
+        }
 
-    if (IP.inversion().is_anisotropy) {
-        sg.prepare_aniso_media();
+        if (IP.inversion().is_anisotropy) {
+            sg.prepare_aniso_media();
+        }
     }
     mpi.barrier();
 }

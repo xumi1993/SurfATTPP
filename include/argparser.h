@@ -172,13 +172,14 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
         std::exit(0);
     }
     CbFwdArgs out;
-    out.fname   = al.require("-i");
+    input_file  = al.require("-i");
     out.only_vs = al.has("-v");
     if (auto v = al.get("-n")) out.ncb      = parse_3int(*v);
     if (auto v = al.get("-p")) out.pert_vel = std::stod(*v);
     if (auto v = al.get("-m")) out.hmarg    = std::stod(*v);
     if (auto v = al.get("-s")) out.anom_size = std::stod(*v);
     if (auto v = al.get("-e")) out.max_noise = std::stod(*v);
+    run_mode = FORWARD_ONLY;
     return out;
 }
 
