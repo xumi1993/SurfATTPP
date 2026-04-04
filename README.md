@@ -53,6 +53,7 @@ Use `-DUSE_SINGLE_PRECISION=ON` to build with single-precision floats (default: 
 | Executable | Description |
 |------------|-------------|
 | `bin/SURFATT_tomo` | Main inversion / forward modelling |
+| `bin/SURFATT_cb_fwd` | Build a checkerboard model and run a forward simulation |
 | `bin/SURFATT_rotate_src_rec` | Rotate source-receiver CSV to local coordinates |
 | `bin/SURFATT_rotate_topo` | Rotate topography NetCDF grid to local coordinates |
 
@@ -64,7 +65,13 @@ The main executable `bin/SURFATT_tomo` for inverting surface dispersion data for
 mpirun -np 4 bin/SURFATT_tomo -i input_params.yml
 ```
 
-### A quick example
+Use `-f` to run a forward simulation only (no inversion):
+
+```bash
+mpirun -np 4 bin/SURFATT_tomo -i input_params.yml -f
+```
+
+### A Quick Example
 
 A case named `examples/00_checkerboard_iso` presents an example of inversion for 2×3×2 checkers using ambient noise surface wave data from 25 stations. Execute `run_this_example.sh` to run this example under 8 processors:
 
