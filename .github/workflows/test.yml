@@ -1,0 +1,64 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ devel ]
+  pull_request:
+    branches: [ main, devel ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.testcase }}
+    strategy:
+      matrix:
+        testcase:
+          - testcase01
+          - testcase02
+          - testcase03
+          - testcase04
+          - testcase05
+          - testcase06
+          - testcase07
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Mamba
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          activate-environment: build-env
+
+      - name: Install dependencies
+        shell: bash -l {0}
+        run: |
+          mamba install -y -c conda-forge \
+            cmake make openmpi hdf5 eigen yaml-cpp \
+            fortran-compiler cxx-compiler zlib spdlog
+          pip install pytomoatt
+
+      - name: Build
+        shell: bash -l {0}
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          make -C build -j$(nproc)
+
+      - name: Clone test cases
+        run: git clone https://github.com/xumi1993/SurfATT-tests.git ../SurfATT-tests
+
+      - name: Run ${{ matrix.testcase }}
+        shell: bash -l {0}
+        env:
+          NPROC: 2
+        run: |
+          SURFATT_BIN=$(realpath bin)
+          cd ../SurfATT-tests/${{ matrix.testcase }}
+          # Fix hardcoded binary path
+          sed -i "s|SRUFATT_HOME=.*|SRUFATT_HOME=${SURFATT_BIN}|" run_this_test.sh
+          # Fix hardcoded NPROC variable
+          sed -i "s|NPROC=.*|NPROC=${NPROC}|" run_this_test.sh
+          bash run_this_test.sh
