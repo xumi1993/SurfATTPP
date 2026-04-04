@@ -16,9 +16,12 @@ This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time *
 
 ## Citation
 
-If you use SurfATT in your research, please cite:
+If you use SurfATT in your research, please consider citing following papers:
 
-Mijian Xu, Shijie Hao, Jing Chen, Bingfeng Zhang, Ping Tong; SurfATT: High‐Performance Package for Adjoint‐State Surface‐Wave Travel‐Time Tomography. Seismological Research Letters, 96(4), 2638-2646. doi: https://doi.org/10.1785/0220240206
+- Mijian Xu, Shijie Hao, Jing Chen, Bingfeng Zhang, Ping Tong; SurfATT: High‐Performance Package for Adjoint‐State Surface‐Wave Travel‐Time Tomography. Seismological Research Letters, 96(4), 2638-2646. doi: https://doi.org/10.1785/0220240206
+
+- Hao, S., Chen, J., Xu, M., & Tong, P. (2024). Topography‐incorporated adjoint‐state surface wave traveltime tomography: Method and a case study in Hawaii. Journal of Geophysical Research: Solid Earth, 129(1), e2023JB027454. doi: https://doi.org/10.1029/2023JB027454
+
 
 ## Gallery
 
