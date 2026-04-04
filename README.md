@@ -3,6 +3,7 @@
 [![Language](https://img.shields.io/badge/-C++-00599C?logo=cplusplus&logoColor=white)](https://github.com/topics/cpp)
 [![License](https://img.shields.io/github/license/xumi1993/seispy)]()
 [![Build SurfATT](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml/badge.svg)](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml)
+[![Integration Tests](https://github.com/xumi1993/SurfATTPP/actions/workflows/test.yml/badge.svg?branch=devel)](https://github.com/xumi1993/SurfATTPP/actions/workflows/test.yml)
 
 This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time **T**omography written in modern C++20 with highlights:
 
@@ -12,7 +13,12 @@ This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time *
 - Consideration of **surface topography** ([Hao et al., 2024a](https://doi.org/10.1029/2023JB027454))
 - **MPI parallelism** with shared-memory windows for large-scale distributed computing
 - **HDF5** model I/O with parallel read/write support
-- Configurable **single or double precision** at compile time
+
+## Citation
+
+If you use SurfATT in your research, please cite:
+
+Mijian Xu, Shijie Hao, Jing Chen, Bingfeng Zhang, Ping Tong; SurfATT: High‐Performance Package for Adjoint‐State Surface‐Wave Travel‐Time Tomography. Seismological Research Letters, 96(4), 2638-2646. doi: https://doi.org/10.1785/0220240206
 
 ## Gallery
 
