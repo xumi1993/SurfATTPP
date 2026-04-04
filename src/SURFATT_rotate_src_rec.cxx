@@ -26,10 +26,10 @@ int main(int argc, char* argv[])
     sr.load(args.fname);
 
     // assign stla stlo to Eigen vectors for rotation
-    Eigen::VectorX<real_t> stla_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.stla, sr.n_obs);
-    Eigen::VectorX<real_t> stlo_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.stlo, sr.n_obs);
-    Eigen::VectorX<real_t> evla_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.evla, sr.n_obs);
-    Eigen::VectorX<real_t> evlo_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.evlo, sr.n_obs);
+    Eigen::VectorX<real_t> stla_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.stla, sr.n_obs());
+    Eigen::VectorX<real_t> stlo_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.stlo, sr.n_obs());
+    Eigen::VectorX<real_t> evla_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.evla, sr.n_obs());
+    Eigen::VectorX<real_t> evlo_vec = Eigen::Map<Eigen::VectorX<real_t>>(sr.evlo, sr.n_obs());
 
     // rotate source and receiver locations
     auto [new_stla, new_stlo] = sph2loc::rtp_rotation(stla_vec, stlo_vec, args.center[0], args.center[1], args.angle);

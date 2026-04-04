@@ -77,11 +77,8 @@ public:
     // write the source-receiver table to a CSV file (for debugging)
     void write(const std::string& filepath, const bool is_fwd = false);
 
-    // Number of rows after load()
-    int n_obs = 0;
-
-    // Maximum length (including null terminator) for evtname / staname entries
-    static constexpr int MAX_STR_LEN = 256;
+    inline int n_obs() const { return n_obs_; }
+    inline int nsrc_total() const { return nsrc_total_; }
 
     // Numeric fields — 1-D shared pointers; access as stla[i], stlo[i], ...
     real_t* stla      = nullptr;
@@ -125,6 +122,8 @@ private:
 
     void get_events();
     void get_periods();
-    int nsrc_total = 0;
+    int nsrc_total_ = 0;
+    // Number of rows after load()
+    int n_obs_ = 0;
 
 };
