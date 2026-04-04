@@ -3,49 +3,49 @@
 namespace {
 
 inline int kernel_idx4(const int ix, const int iy, const int iz, const int iper,
-                       const int ngrid_j, const int ngrid_k, const int nperiod) {
-    return (((ix * ngrid_j) + iy) * ngrid_k + iz) * nperiod + iper;
+                       const int ngrid_j, const int ngrid_k, const int nperiod_) {
+    return (((ix * ngrid_j) + iy) * ngrid_k + iz) * nperiod_ + iper;
 }
 
 }
 
 SurfGrid::SurfGrid(surfType tp){
     auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
-    SurfGrid::nperiod = sr.periods_info.nperiod;
+    nperiod_ = sr.periods_info.nperiod;
     Eigen::VectorX<real_t> periods = sr.periods_info.periods;
-    SurfGrid::itype = static_cast<int>(tp);
-    type_name_ = surfTypeStr[itype];
+    itype_ = static_cast<int>(tp);
+    type_name_ = surfTypeStr[itype_];
     auto& IP = InputParams::IP();
     auto& dcp = Decomposer::DCP();
 
     // Allocate shared memory for the grid arrays
     auto& mpi = Parallel::mpi();
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, a, win_a_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, b, win_b_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, c, win_c_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, topo_angle, win_topo_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, m11, win_m11_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, m12, win_m12_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, m22, win_m22_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, ref_t, win_ref_t_);
-    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod, svel, win_svel_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, a, win_a_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, b, win_b_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, c, win_c_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, topo_angle, win_topo_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, m11, win_m11_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, m12, win_m12_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, m22, win_m22_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, ref_t, win_ref_t_);
+    mpi.alloc_shared(ngrid_i*ngrid_j*nperiod_, svel, win_svel_);
 
     // Initialize ref_t to 1.0
     if (mpi.is_node_main()) {
-        std::fill(a, a + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(b, b + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(c, c + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(topo_angle, topo_angle + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(m11, m11 + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(m12, m12 + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(m22, m22 + ngrid_i*ngrid_j*nperiod, _0_CR);
-        std::fill(ref_t, ref_t + ngrid_i*ngrid_j*nperiod, _1_CR);
+        std::fill(a, a + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(b, b + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(c, c + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(topo_angle, topo_angle + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(m11, m11 + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(m12, m12 + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(m22, m22 + ngrid_i*ngrid_j*nperiod_, _0_CR);
+        std::fill(ref_t, ref_t + ngrid_i*ngrid_j*nperiod_, _1_CR);
     }
     mpi.barrier();
 
     if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
         if (run_mode == INVERSION_MODE) {
-            for (int iper = 0; iper < nperiod; ++iper) {
+            for (int iper = 0; iper < nperiod_; ++iper) {
                 adj_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
                 if (IP.inversion().is_anisotropy) {
                     adj_xi_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
@@ -57,17 +57,17 @@ SurfGrid::SurfGrid(surfType tp){
             }
         }
 
-        sen_vp_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-        sen_vs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-        sen_rho_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
+        sen_vp_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
+        sen_vs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
+        sen_rho_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
         sen_vp_loc.setZero();
         sen_vs_loc.setZero();
         sen_rho_loc.setZero();
         if (InputParams::IP().inversion().is_anisotropy) {
-            sen_gc_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-            sen_gs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod);
-            r1_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod);
-            r2_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod);
+            sen_gc_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
+            sen_gs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
+            r1_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod_);
+            r2_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod_);
             sen_gc_loc.setZero();
             sen_gs_loc.setZero();
             r1_loc.setZero();
@@ -81,29 +81,29 @@ void SurfGrid::build_media_matrix_with_topo() {
     auto& mpi = Parallel::mpi();
     auto& IP = InputParams::IP();
     auto &mg = ModelGrid::MG();
-    auto &sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+    auto &sr = (itype_ == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
     // Load topography 
     auto &topo = Topography::Topo();
     topo.grid(mg.xgrids, mg.ygrids);
 
-    Eigen::VectorX<real_t> avg_svel = Eigen::VectorX<real_t>::Zero(nperiod);
+    Eigen::VectorX<real_t> avg_svel = Eigen::VectorX<real_t>::Zero(nperiod_);
     if (mpi.is_main()) {
         auto req = surfker::build_disp_req(mg.zgrids, mg.vs1d, periods,
-                                IFLSPH, IP.data().iwave, IMODE, itype);
+                                IFLSPH, IP.data().iwave, IMODE, itype_);
 
         avg_svel = surfker::surfdisp(req);
     }
     mpi.barrier();
-    mpi.bcast(avg_svel.data(), nperiod);
+    mpi.bcast(avg_svel.data(), nperiod_);
 
-    const int n_elem = ngrid_i * ngrid_j * nperiod;
+    const int n_elem = ngrid_i * ngrid_j * nperiod_;
     std::vector<real_t> tmp_angle = std::vector<real_t>(n_elem, _0_CR);
     std::vector<real_t> tmp_a = std::vector<real_t>(n_elem, _0_CR);
     std::vector<real_t> tmp_b = std::vector<real_t>(n_elem, _0_CR);
     std::vector<real_t> tmp_c = std::vector<real_t>(n_elem, _0_CR);
-    for (int iper = 0; iper < nperiod; ++iper){
+    for (int iper = 0; iper < nperiod_; ++iper){
         int loc_rank = mpi.select_rank_for_src(iper);
         if (mpi.rank() == loc_rank) {
             real_t sigma = avg_svel(iper) * periods(iper) *
@@ -165,7 +165,7 @@ void SurfGrid::build_media() {
     auto &logger = ATTLogger::logger();
 
     logger.Info(std::format("Building media matrix for {}...", type_name()), MODULE_GRID);
-    int n_elem = ngrid_i * ngrid_j * nperiod;
+    int n_elem = ngrid_i * ngrid_j * nperiod_;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
     } else {
@@ -191,7 +191,7 @@ void SurfGrid::fwdsurf(){
     auto &IP = InputParams::IP();
     auto &mg = ModelGrid::MG();
     auto &dcp = Decomposer::DCP();
-    auto &sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+    auto &sr = (itype_ == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
     logger.Info(std::format(
@@ -199,7 +199,7 @@ void SurfGrid::fwdsurf(){
         MODULE_GRID
     );
 
-    const int n_elem = ngrid_i * ngrid_j * nperiod;
+    const int n_elem = ngrid_i * ngrid_j * nperiod_;
     std::vector<real_t> tmp_svel(n_elem, _0_CR);
     for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
         for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
@@ -219,9 +219,9 @@ void SurfGrid::fwdsurf(){
                 }
             }
             auto req = surfker::build_disp_req(mg.zgrids, vs1d, vp1d, rho1d, periods,
-                                        IFLSPH, IP.data().iwave, IMODE, itype);
+                                        IFLSPH, IP.data().iwave, IMODE, itype_);
             Eigen::VectorX<real_t> svel_point = surfker::surfdisp(req);
-            for (int iper = 0; iper < nperiod; ++iper) {
+            for (int iper = 0; iper < nperiod_; ++iper) {
                 const int idx = surf_idx(ix_glob, iy_glob, iper);
                 tmp_svel[idx] = svel_point(iper);
             }
@@ -243,7 +243,7 @@ void SurfGrid::compute_dispersion_kernel() {
     auto& mpi = Parallel::mpi();
     auto& mg = ModelGrid::MG();
     auto& IP = InputParams::IP();
-    auto& sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+    auto& sr = (itype_ == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     auto& logger = ATTLogger::logger();
     auto& dcp = Decomposer::DCP();
 
@@ -272,20 +272,20 @@ void SurfGrid::compute_dispersion_kernel() {
                 }
             }
             auto req = surfker::build_disp_req(mg.zgrids, vs1d, vp1d, rho1d, periods,
-                                    IFLSPH, IP.data().iwave, IMODE, itype);
+                                    IFLSPH, IP.data().iwave, IMODE, itype_);
             auto kernels = surfker::depthkernelHTI1d(req);
             
             // Copy the kernels for this grid point into the corresponding location in the global sensitivity arrays.
-            const int id0 = kernel_idx4(ix, iy, 0, 0, dcp.loc_ny(), ngrid_k, nperiod);
-            Eigen::Map<MatRM> vs_block(sen_vs_loc.data() + id0, ngrid_k, nperiod);
-            Eigen::Map<MatRM> vp_block(sen_vp_loc.data() + id0, ngrid_k, nperiod);
-            Eigen::Map<MatRM> rho_block(sen_rho_loc.data() + id0, ngrid_k, nperiod);
+            const int id0 = kernel_idx4(ix, iy, 0, 0, dcp.loc_ny(), ngrid_k, nperiod_);
+            Eigen::Map<MatRM> vs_block(sen_vs_loc.data() + id0, ngrid_k, nperiod_);
+            Eigen::Map<MatRM> vp_block(sen_vp_loc.data() + id0, ngrid_k, nperiod_);
+            Eigen::Map<MatRM> rho_block(sen_rho_loc.data() + id0, ngrid_k, nperiod_);
             vs_block = kernels.sen_vs.transpose();
             vp_block = kernels.sen_vp.transpose();
             rho_block = kernels.sen_rho.transpose();
             if (IP.inversion().is_anisotropy) {
-                Eigen::Map<MatRM> gc_block(sen_gc_loc.data() + id0, ngrid_k, nperiod);
-                Eigen::Map<MatRM> gs_block(sen_gs_loc.data() + id0, ngrid_k, nperiod);
+                Eigen::Map<MatRM> gc_block(sen_gc_loc.data() + id0, ngrid_k, nperiod_);
+                Eigen::Map<MatRM> gs_block(sen_gs_loc.data() + id0, ngrid_k, nperiod_);
                 gc_block = kernels.sen_gc.transpose();
                 gs_block = kernels.sen_gs.transpose();
             }
@@ -301,7 +301,7 @@ void SurfGrid::correct_depth_with_topo() {
 
     // Tensor layout: (loc_nx, loc_ny, ngrid_k, nperiod), RowMajor
     // For fixed (ix, iy, iper), elements along iz are strided by nperiod.
-    const Eigen::InnerStride<Eigen::Dynamic> iz_stride(nperiod);
+    const Eigen::InnerStride<Eigen::Dynamic> iz_stride(nperiod_);
     using MapStride = Eigen::Map<Eigen::VectorX<real_t>, 0, Eigen::InnerStride<Eigen::Dynamic>>;
 
     for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
@@ -309,20 +309,20 @@ void SurfGrid::correct_depth_with_topo() {
             int ix_glob = dcp.loc_I_start() + ix;
             int iy_glob = dcp.loc_J_start() + iy;
 
-            for (int iper = 0; iper < nperiod; ++iper) {
+            for (int iper = 0; iper < nperiod_; ++iper) {
                 // Topo-corrected depth grid: stretch each depth node by 1/cos(angle)
                 real_t angle = topo_angle[surf_idx(ix_glob, iy_glob, iper)];
                 Eigen::VectorX<real_t> newz = mg.zgrids / std::cos(angle * DEG2RAD);
 
                 // Base offset in the tensor for this (ix, iy, iz=0, iper)
-                int base = kernel_idx4(ix, iy, 0, iper, dcp.loc_ny(), ngrid_k, nperiod);
+                int base = kernel_idx4(ix, iy, 0, iper, dcp.loc_ny(), ngrid_k, nperiod_);
 
                 // Extract dense column (copy), interpolate, write back
                 auto interp_kernel = [&](real_t* ptr) {
                     Eigen::VectorX<real_t> col(MapStride(ptr + base, ngrid_k, iz_stride));
                     Eigen::VectorX<real_t> col_new = interp1d(mg.zgrids, col, newz);
                     for (int iz = 0; iz < ngrid_k; ++iz)
-                        ptr[base + iz * nperiod] = col_new(iz);
+                        ptr[base + iz * nperiod_] = col_new(iz);
                 };
 
                 interp_kernel(sen_vs_loc.data());
@@ -349,13 +349,13 @@ void SurfGrid::prepare_aniso_media() {
     r2_loc.setZero();
 
     // Each rank sums over the depth dimension for its local (ix, iy) sub-domain.
-    // sen_gc_loc shape: (loc_nx, loc_ny, ngrid_k, nperiod)
+    // sen_gc_loc shape: (loc_nx, loc_ny, ngrid_k, nperiod_)
     // gc3d_loc   shape: (loc_nx, loc_ny, ngrid_k)
     for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
         const int ix_glob = dcp.loc_I_start() + ix;
         for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
             const int iy_glob = dcp.loc_J_start() + iy;
-            for (int iper = 0; iper < nperiod; ++iper) {
+            for (int iper = 0; iper < nperiod_; ++iper) {
                 real_t r1_val = _0_CR, r2_val = _0_CR;
                 for (int k = 0; k < ngrid_k; ++k) {
                     r1_val += sen_gc_loc(ix, iy, k, iper) * mg.gc3d_loc(ix, iy, k);
@@ -370,13 +370,13 @@ void SurfGrid::prepare_aniso_media() {
 
     // Scatter the local results into full-grid temporary buffers (others stay 0),
     // then allreduce so every rank holds the complete r1/r2 surface grids.
-    const int n_elem = ngrid_i * ngrid_j * nperiod;
+    const int n_elem = ngrid_i * ngrid_j * nperiod_;
     std::vector<real_t> tmp_r1(n_elem, _0_CR), tmp_r2(n_elem, _0_CR);
     for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
         const int ix_glob = dcp.loc_I_start() + ix;
         for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
             const int iy_glob = dcp.loc_J_start() + iy;
-            for (int iper = 0; iper < nperiod; ++iper) {
+            for (int iper = 0; iper < nperiod_; ++iper) {
                 const int idx = surf_idx(ix_glob, iy_glob, iper);
                 tmp_r1[idx] = r1_loc(ix, iy, iper);
                 tmp_r2[idx] = r2_loc(ix, iy, iper);
@@ -399,7 +399,7 @@ void SurfGrid::prepare_aniso_media() {
     if (mpi.is_node_main()) {
         for (int ix = 0; ix < ngrid_i; ++ix) {
             for (int iy = 0; iy < ngrid_j; ++iy) {
-                for (int iper = 0; iper < nperiod; ++iper) {
+                for (int iper = 0; iper < nperiod_; ++iper) {
                     const int idx  = surf_idx(ix, iy, iper);
                     const real_t r1  = full_r1[idx];
                     const real_t r2  = full_r2[idx];
