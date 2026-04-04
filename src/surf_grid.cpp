@@ -249,8 +249,8 @@ void SurfGrid::compute_dispersion_kernel() {
 
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
     logger.Info(
-        is_aniso ? "Computing anisotropic kernels on each surface grid point..."
-                 : "Computing isotropic kernels on each surface grid point...",
+        IP.inversion().is_anisotropy ? "Computing anisotropic kernels on each surface grid point..."
+                                     : "Computing isotropic kernels on each surface grid point...",
         MODULE_GRID
     );
 
