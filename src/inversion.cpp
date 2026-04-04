@@ -206,9 +206,7 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line
         // Compute the dispersion kernel (sensitivity of travel times to
         //   velocity perturbations at each surface grid point) for this type of data.
         // Kernels are only needed for the adjoint (gradient) calculation.
-        if (is_calc_adj) {
-            preproc::prepare_dispersion_kernel(sg);
-        }
+        preproc::prepare_dispersion_kernel(sg);
 
         // calculate travel time for each source-receiver pair and period, and store in sr.events_local
         real_t chi = preproc::forward_for_event(sr, sg, is_calc_adj);

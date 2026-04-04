@@ -32,8 +32,6 @@ public:
     SurfGrid& operator=(const SurfGrid&) = delete;
     ~SurfGrid() = default;
 
-    int nperiod;
-    int itype;  // 0: phase velocity, 1: group velocity
     real_t* svel;  // length nperiod, phase or group velocity at each period
     real_t* a;
     real_t* b;
@@ -63,9 +61,11 @@ public:
     void prepare_aniso_media();
 
     inline int surf_idx(const int ix, const int iy, const int iper) {
-        return ((ix * ngrid_j) + iy) * nperiod + iper;
+        return ((ix * ngrid_j) + iy) * nperiod_ + iper;
     }
-
+    inline std::string type_name() const { return type_name_; }
+    inline int itype() const { return itype_; }
+    inline int nperiod() const { return nperiod_; }
 
 private:
     MPI_Win win_svel_ = MPI_WIN_NULL;
@@ -77,6 +77,10 @@ private:
     MPI_Win win_m12_  = MPI_WIN_NULL;
     MPI_Win win_m22_  = MPI_WIN_NULL;
     MPI_Win win_ref_t_ = MPI_WIN_NULL;
+
+    std::string type_name_;
+    int itype_;
+    int nperiod_;
 
     explicit SurfGrid(surfType tp);
     void release_shm();

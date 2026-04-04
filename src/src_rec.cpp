@@ -35,12 +35,12 @@ void SrcRec::load(const std::string& filepath)
         try {
             doc = rapidcsv::Document(filepath, rapidcsv::LabelParams(0, -1));
         } catch (const std::ios_base::failure &e) {
-            throw std::runtime_error(
-                "SrcRec::load: cannot open '" + filepath + "': " + e.what()
-                + "\n  Check that the file exists and the path in input_params is correct."
-            );
+            logger.Error(std::format(
+                "SrcRec::load: failed to open file {}: {}", filepath, e.what()
+            ), MODULE_SRCREC);
+            mpi.abort(EXIT_FAILURE);
         }
-        n_obs = static_cast<int>(doc.GetRowCount());
+        n_obs_ = static_cast<int>(doc.GetRowCount());
 
         v_stla    = doc.GetColumn<real_t>("stla");
         v_stlo    = doc.GetColumn<real_t>("stlo");
@@ -56,15 +56,15 @@ void SrcRec::load(const std::string& filepath)
             v_weight  = doc.GetColumn<real_t>("weight");
         } catch (const std::exception& e) {
             // If "weight" column is missing, fill with 1.0
-            v_weight.resize(n_obs, _1_CR);
+            v_weight.resize(n_obs_, _1_CR);
         }
 
         // Optional "dist" column; if missing, compute from stla/stlo/evla/evlo
         try {
             v_dist    = doc.GetColumn<real_t>("dist");
         } catch (const std::exception& e) {
-            v_dist.resize(n_obs);
-            for (int i = 0; i < n_obs; ++i) {
+            v_dist.resize(n_obs_);
+            for (int i = 0; i < n_obs_; ++i) {
                 v_dist[i] = gps2dist(v_stla[i], v_stlo[i], v_evla[i], v_evlo[i]);
             }
         }
@@ -73,8 +73,8 @@ void SrcRec::load(const std::string& filepath)
         try {
             v_vel     = doc.GetColumn<real_t>("vel");
         } catch (const std::exception& e) {
-            v_vel.resize(n_obs);
-            for (int i = 0; i < n_obs; ++i) {
+            v_vel.resize(n_obs_);
+            for (int i = 0; i < n_obs_; ++i) {
                 v_vel[i] = (v_tt[i] > 0) ? (v_dist[i] / v_tt[i]) : 0.0;
             }
         }
@@ -82,20 +82,20 @@ void SrcRec::load(const std::string& filepath)
     mpi.barrier();
 
     // 2. Broadcast row count
-    mpi.bcast(n_obs);
+    mpi.bcast(n_obs_);
 
     // 3) Allocate one shared-memory window per numeric field.
     //    This allows all local ranks on the node to access a single copy
     //    instead of storing duplicated arrays.
-    mpi.alloc_shared(n_obs, stla, win_stla_);
-    mpi.alloc_shared(n_obs, stlo, win_stlo_);
-    mpi.alloc_shared(n_obs, evla, win_evla_);
-    mpi.alloc_shared(n_obs, evlo, win_evlo_);
-    mpi.alloc_shared(n_obs, dist, win_dist_);
-    mpi.alloc_shared(n_obs, period_all, win_period_);
-    mpi.alloc_shared(n_obs, tt, win_tt_);
-    mpi.alloc_shared(n_obs, vel, win_vel_);
-    mpi.alloc_shared(n_obs, weight, win_weight_);
+    mpi.alloc_shared(n_obs_, stla, win_stla_);
+    mpi.alloc_shared(n_obs_, stlo, win_stlo_);
+    mpi.alloc_shared(n_obs_, evla, win_evla_);
+    mpi.alloc_shared(n_obs_, evlo, win_evlo_);
+    mpi.alloc_shared(n_obs_, dist, win_dist_);
+    mpi.alloc_shared(n_obs_, period_all, win_period_);
+    mpi.alloc_shared(n_obs_, tt, win_tt_);
+    mpi.alloc_shared(n_obs_, vel, win_vel_);
+    mpi.alloc_shared(n_obs_, weight, win_weight_);
     if (mpi.is_main()) {
         std::copy(v_stla.begin(), v_stla.end(), stla);
         std::copy(v_stlo.begin(), v_stlo.end(), stlo);
@@ -111,15 +111,15 @@ void SrcRec::load(const std::string& filepath)
 
     // After rank 0 populates the shared buffers, synchronize visibility so
     // every rank sees the same finalized content before downstream processing.
-    mpi.sync_from_main_rank(stla, n_obs);
-    mpi.sync_from_main_rank(stlo, n_obs);
-    mpi.sync_from_main_rank(evla, n_obs);
-    mpi.sync_from_main_rank(evlo, n_obs);
-    mpi.sync_from_main_rank(dist, n_obs);
-    mpi.sync_from_main_rank(period_all, n_obs);
-    mpi.sync_from_main_rank(tt, n_obs);
-    mpi.sync_from_main_rank(vel, n_obs);
-    mpi.sync_from_main_rank(weight, n_obs);
+    mpi.sync_from_main_rank(stla, n_obs_);
+    mpi.sync_from_main_rank(stlo, n_obs_);
+    mpi.sync_from_main_rank(evla, n_obs_);
+    mpi.sync_from_main_rank(evlo, n_obs_);
+    mpi.sync_from_main_rank(dist, n_obs_);
+    mpi.sync_from_main_rank(period_all, n_obs_);
+    mpi.sync_from_main_rank(tt, n_obs_);
+    mpi.sync_from_main_rank(vel, n_obs_);
+    mpi.sync_from_main_rank(weight, n_obs_);
 
     // Build derived metadata used by inversion/forward steps:
     //   - event-wise receiver index lists
@@ -151,7 +151,7 @@ void SrcRec::get_events(){
         for (const auto& src : valid_event_keys) {
             for (int iper = 0; iper < periods_info.nperiod; ++iper) {
                 event_info info;
-                for (int i = 0; i < n_obs; ++i) {
+                for (int i = 0; i < n_obs_; ++i) {
                     
                     if (evtname[i] == src && real_t_equal(periods_info.periods(iper), period_all[i])) {
                         info.rec_indices.push_back(i);
@@ -170,12 +170,12 @@ void SrcRec::get_events(){
                 }
             }
         }
-        nsrc_total = static_cast<int>(src_name_list.size());
+        nsrc_total_ = static_cast<int>(src_name_list.size());
     }
     mpi.barrier();
-    mpi.bcast(nsrc_total);
-    if (!mpi.is_main()) src_name_list.resize(nsrc_total);
-    for (int i = 0; i < nsrc_total; ++i) {
+    mpi.bcast(nsrc_total_);
+    if (!mpi.is_main()) src_name_list.resize(nsrc_total_);
+    for (int i = 0; i < nsrc_total_; ++i) {
         mpi.bcast(src_name_list[i]);
     }
 
@@ -183,10 +183,10 @@ void SrcRec::get_events(){
     // We broadcast event names (small metadata), then send larger payloads
     // (evla/evlo/receiver-index list) only to the selected destination rank.
     logger.Info(std::format(
-        "Distributing {} events to {} ranks", nsrc_total, mpi.size()),
+        "Distributing {} events to {} ranks", nsrc_total_, mpi.size()),
         MODULE_SRCREC
     );
-    for (int i_src = 0; i_src < nsrc_total; i_src++) {
+    for (int i_src = 0; i_src < nsrc_total_; i_src++) {
         int dst_rank = mpi.select_rank_for_src(i_src);
         
         std::string src_name;
@@ -233,8 +233,8 @@ void SrcRec::get_periods(){
     auto& mpi = Parallel::mpi();
 
     if (mpi.is_main()){
-        std::vector<real_t> periods_vec(n_obs);
-        std::copy(period_all, period_all + n_obs, periods_vec.begin());
+        std::vector<real_t> periods_vec(n_obs_);
+        std::copy(period_all, period_all + n_obs_, periods_vec.begin());
         std::sort(periods_vec.begin(), periods_vec.end());
         periods_vec.erase(std::unique(periods_vec.begin(), periods_vec.end()), periods_vec.end());
         periods_info.nperiod = static_cast<int>(periods_vec.size());
@@ -245,7 +245,7 @@ void SrcRec::get_periods(){
             real_t per = periods_info.periods(i);
             int count = 0;
             real_t sum_vel = _0_CR;
-            for (int j = 0; j < n_obs; ++j) {
+            for (int j = 0; j < n_obs_; ++j) {
                 if (std::abs(period_all[j] - per) < 1e-6) {
                     count++;
                     sum_vel += vel[j];
@@ -280,13 +280,13 @@ void SrcRec::build_stas()
         // Build staname → (stla, stlo) map for each loaded table
         auto make_map = [](const SrcRec& sr) {
             std::map<std::string, std::pair<real_t, real_t>> m;
-            for (int i = 0; i < sr.n_obs; ++i)
+            for (int i = 0; i < sr.n_obs(); ++i)
                 m.try_emplace(sr.staname[i], sr.stla[i], sr.stlo[i]);
             return m;
         };
 
-        const bool have_ph = (SR_ph().n_obs > 0);
-        const bool have_gr = (SR_gr().n_obs > 0);
+        const bool have_ph = (SR_ph().n_obs() > 0);
+        const bool have_gr = (SR_gr().n_obs() > 0);
         std::map<std::string, std::pair<real_t, real_t>> merged;
         if (have_ph && have_gr) {
             auto map_ph = make_map(SR_ph());
@@ -326,9 +326,9 @@ void SrcRec::build_stas()
 void SrcRec::gather_syn_tt()
 {
     auto &mpi = Parallel::mpi();
-    if (mpi.is_main()) tt_fwd.setZero(n_obs);
+    if (mpi.is_main()) tt_fwd.setZero(n_obs_);
 
-    for (int i_src = 0; i_src < nsrc_total; i_src++) {
+    for (int i_src = 0; i_src < nsrc_total_; i_src++) {
         int dst_rank = mpi.select_rank_for_src(i_src);
         std::string src_name;
         if (mpi.is_main()) src_name = src_name_list[i_src];
@@ -365,7 +365,7 @@ void SrcRec::gather_syn_tt()
     mpi.barrier();
 
     if (mpi.is_main()) {
-        Eigen::Map<Eigen::VectorX<real_t>> dist_map(dist, n_obs);
+        Eigen::Map<Eigen::VectorX<real_t>> dist_map(dist, n_obs_);
         vel_fwd = dist_map.array() / tt_fwd.array();
     }
 }
@@ -390,7 +390,7 @@ static std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6)
 // If is_fwd == true, output forward-modeled fields (tt_fwd / vel_fwd);
 // otherwise output observed/reference fields (tt / vel).
 void SrcRec::write(const std::string& filepath, const bool is_fwd){
-    if (n_obs == 0) {
+    if (n_obs_ == 0) {
         throw std::runtime_error("SrcRec::write: no observations to write");
     }
     auto &mpi = Parallel::mpi();
@@ -403,27 +403,27 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
                 logger.Error("Forward-modeled travel times (tt_fwd) are not assigned", MODULE_SRCREC);
                 exit(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs_, 4));
         } else {
-            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs_, 4));
         }
         doc.SetColumn<std::string> (1,  staname);
-        doc.SetColumn<std::string> (2,  fmt_col(stla,       n_obs, 4));
-        doc.SetColumn<std::string> (3,  fmt_col(stlo,       n_obs, 4));
+        doc.SetColumn<std::string> (2,  fmt_col(stla,       n_obs_, 4));
+        doc.SetColumn<std::string> (3,  fmt_col(stlo,       n_obs_, 4));
         doc.SetColumn<std::string> (4,  evtname);
-        doc.SetColumn<std::string> (5,  fmt_col(evla,       n_obs, 4));
-        doc.SetColumn<std::string> (6,  fmt_col(evlo,       n_obs, 4));
-        doc.SetColumn<std::string> (7,  fmt_col(period_all, n_obs, 2));
-        doc.SetColumn<std::string> (8,  fmt_col(weight,     n_obs, 4));
-        doc.SetColumn<std::string> (9,  fmt_col(dist,       n_obs, 3));
+        doc.SetColumn<std::string> (5,  fmt_col(evla,       n_obs_, 4));
+        doc.SetColumn<std::string> (6,  fmt_col(evlo,       n_obs_, 4));
+        doc.SetColumn<std::string> (7,  fmt_col(period_all, n_obs_, 2));
+        doc.SetColumn<std::string> (8,  fmt_col(weight,     n_obs_, 4));
+        doc.SetColumn<std::string> (9,  fmt_col(dist,       n_obs_, 3));
         if (is_fwd) {
             if (vel_fwd.size() == 0) {
                 logger.Error("Forward-modeled velocities (vel_fwd) are not assigned", MODULE_SRCREC);
                 exit(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs, 4));
+            doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs_, 4));
         } else {
-            doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs, 4));
+            doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs_, 4));
         }
         doc.SetColumnName(0,  "tt");
         doc.SetColumnName(1,  "staname");

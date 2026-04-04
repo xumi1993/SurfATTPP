@@ -51,7 +51,7 @@ public:
     // ---- Lifecycle ---------------------------------------------------------
     ~Parallel() { finalize(); }
     void finalize();
-    [[noreturn]] void abort();
+    [[noreturn]] void abort(const int error_code);
 
     // ---- Synchronisation ---------------------------------------------------
     void barrier();

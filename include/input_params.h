@@ -28,9 +28,13 @@ struct OutputParams {
 };
 
 struct DomainParams {
-    std::vector<real_t> depth;           // [min_km, max_km]
-    std::vector<real_t> interval;        // [dlon_deg, dlat_deg, dz_km]
+    int grid_method;    // 0 
     int                 num_grid_margin;
+    std::vector<real_t> depth       = std::vector<real_t>(2, _0_CR);     // [min_km, max_km]
+    std::vector<real_t> interval    = std::vector<real_t>(3, _0_CR);     // [dlon_deg, dlat_deg, dz_km]
+    std::vector<real_t> lat_min_max = std::vector<real_t>(2, _0_CR);     // [lat_min, lat_max], only for grid_method 1
+    std::vector<real_t> lon_min_max = std::vector<real_t>(2, _0_CR);
+    std::vector<int>    n_grid      = std::vector<int>(3, 0);            // [nlon, nlat, nz], only for grid_method 1
 };
 
 struct TopoParams {

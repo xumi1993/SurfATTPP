@@ -3,6 +3,7 @@
 [![Language](https://img.shields.io/badge/-C++-00599C?logo=cplusplus&logoColor=white)](https://github.com/topics/cpp)
 [![License](https://img.shields.io/github/license/xumi1993/seispy)]()
 [![Build SurfATT](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml/badge.svg)](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml)
+[![Integration Tests](https://github.com/xumi1993/SurfATTPP/actions/workflows/test.yml/badge.svg?branch=devel)](https://github.com/xumi1993/SurfATTPP/actions/workflows/test.yml)
 
 This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time **T**omography written in modern C++20 with highlights:
 
@@ -12,7 +13,15 @@ This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time *
 - Consideration of **surface topography** ([Hao et al., 2024a](https://doi.org/10.1029/2023JB027454))
 - **MPI parallelism** with shared-memory windows for large-scale distributed computing
 - **HDF5** model I/O with parallel read/write support
-- Configurable **single or double precision** at compile time
+
+## Citation
+
+If you use SurfATT in your research, please consider citing following papers:
+
+- Mijian Xu, Shijie Hao, Jing Chen, Bingfeng Zhang, Ping Tong; SurfATT: High‐Performance Package for Adjoint‐State Surface‐Wave Travel‐Time Tomography. Seismological Research Letters, 96(4), 2638-2646. doi: https://doi.org/10.1785/0220240206
+
+- Hao, S., Chen, J., Xu, M., & Tong, P. (2024). Topography‐incorporated adjoint‐state surface wave traveltime tomography: Method and a case study in Hawaii. Journal of Geophysical Research: Solid Earth, 129(1), e2023JB027454. doi: https://doi.org/10.1029/2023JB027454
+
 
 ## Gallery
 
@@ -53,6 +62,7 @@ Use `-DUSE_SINGLE_PRECISION=ON` to build with single-precision floats (default: 
 | Executable | Description |
 |------------|-------------|
 | `bin/SURFATT_tomo` | Main inversion / forward modelling |
+| `bin/SURFATT_cb_fwd` | Build a checkerboard model and run a forward simulation |
 | `bin/SURFATT_rotate_src_rec` | Rotate source-receiver CSV to local coordinates |
 | `bin/SURFATT_rotate_topo` | Rotate topography NetCDF grid to local coordinates |
 
@@ -64,7 +74,13 @@ The main executable `bin/SURFATT_tomo` for inverting surface dispersion data for
 mpirun -np 4 bin/SURFATT_tomo -i input_params.yml
 ```
 
-### A quick example
+Use `-f` to run a forward simulation only (no inversion):
+
+```bash
+mpirun -np 4 bin/SURFATT_tomo -i input_params.yml -f
+```
+
+### A Quick Example
 
 A case named `examples/00_checkerboard_iso` presents an example of inversion for 2×3×2 checkers using ambient noise surface wave data from 25 stations. Execute `run_this_example.sh` to run this example under 8 processors:
 
@@ -72,4 +88,8 @@ A case named `examples/00_checkerboard_iso` presents an example of inversion for
 cd examples/00_checkerboard_iso
 bash run_this_example.sh
 ```
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on reporting bugs, proposing features, code style, and the pull-request process.
 

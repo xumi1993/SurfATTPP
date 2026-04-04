@@ -25,7 +25,7 @@ void accumulate_kernels(
     auto& IP = InputParams::IP();
     auto& mg = ModelGrid::MG();
 
-    auto svel_ij = extract_period_ij(sg.svel, sg.nperiod, iper);
+    auto svel_ij = extract_period_ij(sg.svel, sg.nperiod(), iper);
     const auto inv_svel3 = svel_ij.array().pow(-_3_CR);
 
     sg.adj_s_local[iper].array() += adj_field.array() * inv_svel3;
@@ -38,9 +38,9 @@ void accumulate_kernels(
         Eigen::MatrixX<real_t> Tx, Ty;
         gradient_2_geo(*tfield, mg.xgrids, mg.ygrids, Tx, Ty);
 
-        auto a_ij = extract_period_ij(sg.a, sg.nperiod, iper);
-        auto b_ij = extract_period_ij(sg.b, sg.nperiod, iper);
-        auto c_ij = extract_period_ij(sg.c, sg.nperiod, iper);
+        auto a_ij = extract_period_ij(sg.a, sg.nperiod(), iper);
+        auto b_ij = extract_period_ij(sg.b, sg.nperiod(), iper);
+        auto c_ij = extract_period_ij(sg.c, sg.nperiod(), iper);
 
         auto Tx2 = Tx.array().square();
         auto Ty2 = Ty.array().square();
@@ -75,7 +75,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
     auto& logger = ATTLogger::logger();
 
     real_t chi = _0_CR;
-    logger.Info("Computing forward or/and adjoint calculations for each event...", MODULE_PREPROC);
+    logger.Info("Computing forward or/and adjoint fields for each event...", MODULE_PREPROC);
     for (auto& evt : sr.events_local) {
         real_t evla = evt.second.evla;
         real_t evlo = evt.second.evlo;
@@ -85,10 +85,10 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
             mpi.rank(), evt.first), 
             MODULE_PREPROC, false
         );
-        auto svel_ij = extract_period_ij(sg.svel, sg.nperiod, iper);
-        auto m11_ij = extract_period_ij(sg.m11, sg.nperiod, iper);
-        auto m12_ij = extract_period_ij(sg.m12, sg.nperiod, iper);
-        auto m22_ij = extract_period_ij(sg.m22, sg.nperiod, iper);
+        auto svel_ij = extract_period_ij(sg.svel, sg.nperiod(), iper);
+        auto m11_ij = extract_period_ij(sg.m11, sg.nperiod(), iper);
+        auto m12_ij = extract_period_ij(sg.m12, sg.nperiod(), iper);
+        auto m22_ij = extract_period_ij(sg.m22, sg.nperiod(), iper);
 
         // Compute the travel time for this source-receiver pair and period
         // using the surface wave dispersion grid (sg) and model grid (mg).
@@ -149,21 +149,21 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
 
 void preproc::reset_kernel_accumulators( SurfGrid& sg) {
     auto& IP = InputParams::IP();
-    auto& mpi = Parallel::mpi();
 
-    if (run_mode == FORWARD_ONLY) return;
-    // Reset the model perturbation arrays to zero before accumulating kernels.
-    for (int iper = 0; iper < sg.nperiod; ++iper) {
-        sg.adj_s_local[iper].setZero();
-        if (IP.postproc().is_kden) {
-            sg.kden_s_local[iper].setZero();
+    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+        // Reset the model perturbation arrays to zero before accumulating kernels.
+        if (run_mode == INVERSION_MODE) {
+            for (int iper = 0; iper < sg.nperiod(); ++iper) {
+                sg.adj_s_local[iper].setZero();
+                if (IP.postproc().is_kden) {
+                    sg.kden_s_local[iper].setZero();
+                }
+                if (IP.inversion().is_anisotropy) {
+                    sg.adj_xi_local[iper].setZero();
+                    sg.adj_eta_local[iper].setZero();
+                }
+            }
         }
-        if (IP.inversion().is_anisotropy) {
-            sg.adj_xi_local[iper].setZero();
-            sg.adj_eta_local[iper].setZero();
-        }
-    }
-    if (mpi.is_main()){
         sg.sen_vp_loc.setZero();
         sg.sen_vs_loc.setZero();
         sg.sen_rho_loc.setZero();
@@ -179,15 +179,17 @@ void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
     auto& logger = ATTLogger::logger();
     auto& mpi = Parallel::mpi();
 
-    logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
-    sg.compute_dispersion_kernel();
-    
-    if (IP.topo().is_consider_topo) {
-        sg.correct_depth_with_topo();
-    }
+    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+        logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
+        sg.compute_dispersion_kernel();
+        
+        if (IP.topo().is_consider_topo) {
+            sg.correct_depth_with_topo();
+        }
 
-    if (IP.inversion().is_anisotropy) {
-        sg.prepare_aniso_media();
+        if (IP.inversion().is_anisotropy) {
+            sg.prepare_aniso_media();
+        }
     }
     mpi.barrier();
 }
@@ -228,7 +230,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
     }
 
     // Combine the local kernel accumulators across ranks to get the global kernel for each period, then apply the sensitivity kernels to get the model parameter kernels.
-    for (int iper = 0; iper < sg.nperiod; ++iper) {
+    for (int iper = 0; iper < sg.nperiod(); ++iper) {
         // Combine the local kernel accumulators across ranks to get the global kernel for this period.
 
         // reduce adj_s_local to the main rank

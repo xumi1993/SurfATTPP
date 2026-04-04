@@ -60,9 +60,9 @@ void Parallel::finalize() {
         throw std::runtime_error("Parallel: MPI_Finalize failed");
 }
 
-void Parallel::abort() {
-    MPI_Abort(MPI_COMM_WORLD, 30);
-    std::exit(30);  // unreachable, but satisfies [[noreturn]]
+void Parallel::abort(const int error_code) {
+    MPI_Abort(MPI_COMM_WORLD, error_code);
+    std::exit(error_code);  // unreachable, but satisfies [[noreturn]]
 }
 
 // ---------------------------------------------------------------------------

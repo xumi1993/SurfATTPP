@@ -83,14 +83,14 @@ inline std::array<int, 2> parse_2int(const std::string& s) {
 // ---------------------------------------------------------------------------
 
 struct TomoArgs {
-    std::string fname;
     bool isfwd = false;
 };
 
 struct CbFwdArgs {
-    std::string fname;
-    std::array<int, 3> ncb  = {0, 0, 0};
+    std::array<int, 3> ncb      = {0, 0, 0};
+    std::array<int, 3> ncb_ani  = {0, 0, 0};
     double pert_vel  = 0.08;
+    double pert_ani  = 0.0;   // anisotropic perturbation magnitude (gc and gs), additive
     double hmarg     = 0.0;
     double anom_size = 0.0;
     double max_noise = 0.0;
@@ -160,25 +160,40 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
             " [-m margin_degree] [-p pert] [-s anom_size_km]\n\n"
             "Create checkerboard and forward simulate travel time for surface wave\n\n"
             "required arguments:\n"
-            "  -i para_file        Path to parameter file in yaml format\n"
-            "  -n nx/ny/nz         Number of anomalies along X, Y and Z\n\n"
+            "  -i para_file            Path to parameter file in yaml format\n"
+            "  -n nx/ny/nz             Number of anomalies along X, Y and Z\n\n"
             "optional arguments:\n"
-            "  -h                  Print help message\n"
-            "  -e tt_noise         Add random noise to travel time data (default: 0)\n"
-            "  -v                  Only perturb Vs model\n"
-            "  -m margin_degree    Margin between anomalies in degrees (default: 0)\n"
-            "  -p pert_vel         Magnitude of velocity perturbations (default: 0.08)\n"
-            "  -s anom_size_km     Size of top anomalies in km (default: uniform)\n";
+            "  -h                      Print help message\n"
+            "  -a nx/ny/nz             Number of anisotropic anomalies along X, Y and Z (default: same as -n)\n"
+            "  -e tt_noise             Add random noise to travel time data (default: 0)\n"
+            "  -v                      Only perturb Vs model\n"
+            "  -m margin_degree        Margin between anomalies in degrees (default: 0)\n"
+            "  -p pert_vel[/pert_ani]  Magnitude of velocity perturbations (default: 0.08)\n"
+            "  -s anom_size_km         Size of top anomalies in km (default: uniform)\n";
         std::exit(0);
     }
     CbFwdArgs out;
-    out.fname   = al.require("-i");
+    input_file  = al.require("-i");
     out.only_vs = al.has("-v");
-    if (auto v = al.get("-n")) out.ncb      = parse_3int(*v);
-    if (auto v = al.get("-p")) out.pert_vel = std::stod(*v);
-    if (auto v = al.get("-m")) out.hmarg    = std::stod(*v);
+    if (auto v = al.get("-n")) out.ncb       = parse_3int(*v);
+    if (auto v = al.get("-a")) {
+        out.ncb_ani   = parse_3int(*v);
+    } else {
+        out.ncb_ani = out.ncb;  // default: same as -n
+    }
+    if (auto v = al.get("-p")) {
+        if (v->find('/') != std::string::npos) {
+            auto pert = parse_2double(*v);
+            out.pert_vel = pert[0];
+            out.pert_ani = pert[1];
+        } else {
+            out.pert_vel = std::stod(*v);
+        }
+    }
+    if (auto v = al.get("-m")) out.hmarg     = std::stod(*v);
     if (auto v = al.get("-s")) out.anom_size = std::stod(*v);
     if (auto v = al.get("-e")) out.max_noise = std::stod(*v);
+    run_mode = FORWARD_ONLY;
     return out;
 }
 
