@@ -46,6 +46,11 @@ int main(int argc, char* argv[]) {
         args.ncb[0], args.ncb[1], args.ncb[2],
         args.pert_vel, args.hmarg, args.anom_size, args.only_vs
     );
+    mg.add_aniso_perturbation(
+        args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
+        args.pert_ani, args.pert_ani, args.hmarg, _0_CR
+    );
+    mg.write(TARGET_MODEL_FNAME);
 
     // initialize decomposer (for parallel execution)
     Decomposer::DCP();

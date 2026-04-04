@@ -75,7 +75,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
     auto& logger = ATTLogger::logger();
 
     real_t chi = _0_CR;
-    logger.Info("Computing forward or/and adjoint calculations for each event...", MODULE_PREPROC);
+    logger.Info("Computing forward or/and adjoint fields for each event...", MODULE_PREPROC);
     for (auto& evt : sr.events_local) {
         real_t evla = evt.second.evla;
         real_t evlo = evt.second.evlo;
@@ -179,8 +179,8 @@ void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
     auto& logger = ATTLogger::logger();
     auto& mpi = Parallel::mpi();
 
-    logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
     if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+        logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
         sg.compute_dispersion_kernel();
         
         if (IP.topo().is_consider_topo) {

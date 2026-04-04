@@ -33,14 +33,17 @@ namespace {
         const int nz,
         const real_t asanom_size
     ) {
+        auto &logger = ATTLogger::logger();
+        auto &mpi = Parallel::mpi();
         if (nz <= 1) {
-            throw std::runtime_error("ModelGrid::dep_anom: nz must be > 1");
+            logger.Error("dep_anom: nz must be > 1", MODULE_GRID);
+            mpi.abort(EXIT_FAILURE);
         }
         if (zgrids.size() < 2) {
-            throw std::runtime_error("ModelGrid::dep_anom: zgrids size must be >= 2");
+            logger.Error("dep_anom: zgrids size must be >= 2", MODULE_GRID);
+            mpi.abort(EXIT_FAILURE);
         }
 
-        auto &logger = ATTLogger::logger();
         const int maxanchor = nz * 2 + 1;
         const real_t dz = zgrids(1) - zgrids(0);
         const real_t nanomtop = asanom_size / dz;
@@ -53,7 +56,7 @@ namespace {
 
         anch(0) = _1_CR;
         n_pi(0) = _0_CR;
-        logger.Info(
+        logger.Debug(
             std::format(
                 "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
                 (anch(0) - _1_CR) * dz,
@@ -68,7 +71,7 @@ namespace {
                       + static_cast<real_t>(i - 1) * anom_size_inc;
             n_pi(i) = n_pi(i - 1) + static_cast<real_t>(0.25);
 
-            logger.Info(
+            logger.Debug(
                 std::format(
                     "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
                     (anch(i) - _1_CR) * dz,
@@ -103,7 +106,8 @@ namespace {
         );
 
         if (info == minpack::InfoCode::ImproperInput) {
-            throw std::runtime_error("ModelGrid::dep_anom: minpack lmdif1 failed with ImproperInput");
+            logger.Error("ModelGrid::dep_anom: minpack lmdif1 failed with ImproperInput", MODULE_GRID);
+            mpi.abort(EXIT_FAILURE);
         }
 
         return {
@@ -401,6 +405,51 @@ void ModelGrid::build_init_model() {
     }
 }
 
+std::tuple<Eigen::VectorX<real_t>, Eigen::VectorX<real_t>, Eigen::VectorX<real_t>>
+ModelGrid::build_perturbation_pattern(
+    int nx_w, int ny_w, int nz_w, real_t hmargin, real_t anom_sz
+) const {
+    const int ntaper_i = static_cast<int>(hmargin / dgrid_i);
+    const int ntaper_j = static_cast<int>(hmargin / dgrid_j);
+    const int inner_i  = ngrid_i - 2 * ntaper_i;
+    const int inner_j  = ngrid_j - 2 * ntaper_j;
+
+    if (inner_i <= 0 || inner_j <= 0)
+        throw std::runtime_error(
+            "ModelGrid::build_perturbation_pattern: hmargin too large for current grid size");
+
+    Eigen::VectorX<real_t> xp = Eigen::VectorX<real_t>::Zero(ngrid_i);
+    Eigen::VectorX<real_t> yp = Eigen::VectorX<real_t>::Zero(ngrid_j);
+    Eigen::VectorX<real_t> zp = Eigen::VectorX<real_t>::Zero(ngrid_k);
+
+    {
+        Eigen::VectorX<real_t> ii = Eigen::VectorX<real_t>::LinSpaced(
+            inner_i, _0_CR, static_cast<real_t>(inner_i - 1));
+        xp.segment(ntaper_i, inner_i) =
+            (static_cast<real_t>(nx_w) * PI * ii.array() / static_cast<real_t>(inner_i)).sin().matrix();
+    }
+    {
+        Eigen::VectorX<real_t> jj = Eigen::VectorX<real_t>::LinSpaced(
+            inner_j, _0_CR, static_cast<real_t>(inner_j - 1));
+        yp.segment(ntaper_j, inner_j) =
+            (static_cast<real_t>(ny_w) * PI * jj.array() / static_cast<real_t>(inner_j)).sin().matrix();
+    }
+    if (anom_sz <= _0_CR) {
+        Eigen::VectorX<real_t> kk = Eigen::VectorX<real_t>::LinSpaced(
+            ngrid_k, _0_CR, static_cast<real_t>(ngrid_k - 1));
+        zp = (static_cast<real_t>(nz_w) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
+    } else {
+        const auto para = dep_anom(zgrids, nz_w, anom_sz);
+        for (int k = 0; k < ngrid_k; ++k) {
+            const real_t phase = (
+                std::sqrt(para[0] * para[0] + para[1] * static_cast<real_t>(k)) - para[0]
+            ) / para[2];
+            zp(k) = std::sin(static_cast<real_t>(2) * PI * phase);
+        }
+    }
+    return {xp, yp, zp};
+}
+
 void ModelGrid::add_perturbation(
     const int nx, const int ny, const int nz,
     const real_t pert_vel, const real_t hmargin,
@@ -410,54 +459,7 @@ void ModelGrid::add_perturbation(
     const int nelem = ngrid_i * ngrid_j * ngrid_k;
 
     if (mpi.is_main()) {
-
-        const int ntaper_i = static_cast<int>(hmargin / dgrid_i);
-        const int ntaper_j = static_cast<int>(hmargin / dgrid_j);
-        const int inner_i = ngrid_i - 2 * ntaper_i;
-        const int inner_j = ngrid_j - 2 * ntaper_j;
-
-        if (inner_i <= 0 || inner_j <= 0) {
-            throw std::runtime_error(
-                "ModelGrid::add_perturbation: hmargin too large for current grid size");
-        }
-
-        Eigen::VectorX<real_t> x_pert = Eigen::VectorX<real_t>::Zero(ngrid_i);
-        Eigen::VectorX<real_t> y_pert = Eigen::VectorX<real_t>::Zero(ngrid_j);
-        Eigen::VectorX<real_t> z_pert = Eigen::VectorX<real_t>::Zero(ngrid_k);
-
-        // x_pert[ntaper_i : ni-ntaper_i-1] = sin(nx*pi*arange(inner_i)/inner_i)
-        {
-            Eigen::VectorX<real_t> ii = Eigen::VectorX<real_t>::LinSpaced(
-                inner_i, _0_CR, static_cast<real_t>(inner_i - 1));
-            x_pert.segment(ntaper_i, inner_i) =
-                (static_cast<real_t>(nx) * PI * ii.array() / static_cast<real_t>(inner_i)).sin().matrix();
-        }
-
-        // y_pert[ntaper_j : nj-ntaper_j-1] = sin(ny*pi*arange(inner_j)/inner_j)
-        {
-            Eigen::VectorX<real_t> jj = Eigen::VectorX<real_t>::LinSpaced(
-                inner_j, _0_CR, static_cast<real_t>(inner_j - 1));
-            y_pert.segment(ntaper_j, inner_j) =
-                (static_cast<real_t>(ny) * PI * jj.array() / static_cast<real_t>(inner_j)).sin().matrix();
-        }
-
-        if (anom_size <= _0_CR) {
-            // Uniform-depth wavelength branch.
-            Eigen::VectorX<real_t> kk = Eigen::VectorX<real_t>::LinSpaced(
-                ngrid_k, _0_CR, static_cast<real_t>(ngrid_k - 1));
-            z_pert = (static_cast<real_t>(nz) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
-        } else {
-            // Depth-varying wavelength branch fitted by minpack.
-            const auto para = dep_anom(zgrids, nz, anom_size);
-            for (int k = 0; k < ngrid_k; ++k) {
-                const real_t phase = (
-                    std::sqrt(para[0] * para[0] + para[1] * static_cast<real_t>(k)) - para[0]
-                ) / para[2];
-                z_pert(k) = std::sin(static_cast<real_t>(2) * PI * phase);
-            }
-        }
-
-        // Apply perturbation (vectorized along k for each i,j line)
+        auto [x_pert, y_pert, z_pert] = build_perturbation_pattern(nx, ny, nz, hmargin, anom_size);
         for (int i = 0; i < ngrid_i; ++i) {
             for (int j = 0; j < ngrid_j; ++j) {
                 const real_t amp = x_pert(i) * y_pert(j) * pert_vel;
@@ -465,7 +467,6 @@ void ModelGrid::add_perturbation(
                 vs_line.array() *= (_1_CR + amp * z_pert.array());
             }
         }
-
         if (!only_vs) {
             Eigen::Map<Eigen::VectorX<real_t>> vs_vec(vs3d, nelem);
             Eigen::Map<Eigen::VectorX<real_t>> vp_vec(vp3d, nelem);
@@ -479,6 +480,40 @@ void ModelGrid::add_perturbation(
     mpi.sync_from_main_rank(vs3d, nelem);
     mpi.sync_from_main_rank(vp3d, nelem);
     mpi.sync_from_main_rank(rho3d, nelem);
+}
+
+void ModelGrid::add_aniso_perturbation(
+    const int nx, const int ny, const int nz,
+    const real_t angle, const real_t pert_ani,
+    const real_t hmargin, const real_t anom_size
+) {
+    auto &mpi = Parallel::mpi();
+    auto &IP = InputParams::IP();
+    const int nelem = ngrid_i * ngrid_j * ngrid_k;
+
+    if (!IP.inversion().is_anisotropy) return;
+
+    if (mpi.is_main()) {
+        auto [xp, yp, zp] = build_perturbation_pattern(nx, ny, nz, hmargin, anom_size);
+        for (int i = 0; i < ngrid_i; ++i) {
+            for (int j = 0; j < ngrid_j; ++j) {
+                for (int k = 0; k < ngrid_k; ++k) {
+                    const real_t amp = xp(i) * yp(j) * zp(k) * pert_ani;
+                    if (amp > _0_CR) {
+                        gc3d[I2V(i, j, k)] = amp * std::cos(2 * angle * DEG2RAD);
+                        gs3d[I2V(i, j, k)] = amp * std::sin(2 * angle * DEG2RAD);
+                    } else {
+                        gc3d[I2V(i, j, k)] = amp * std::cos(2 * angle * DEG2RAD);
+                        gs3d[I2V(i, j, k)] = amp * std::sin(2 * angle * DEG2RAD);
+                    }
+                }
+            }
+        }
+    }
+
+    mpi.barrier();
+    mpi.sync_from_main_rank(gc3d, nelem);
+    mpi.sync_from_main_rank(gs3d, nelem);
 }
 
 void ModelGrid::collect_model_loc() {
@@ -521,13 +556,17 @@ void ModelGrid::write(const std::string &subname) {
     if (mpi.is_main()) {
         std::string filename = std::format("{}/{}", IP.output().output_path, subname);
         H5IO f(filename, H5IO::TRUNC);
-        f.write_vector("xgrids", xgrids);
-        f.write_vector("ygrids", ygrids);
-        f.write_vector("zgrids", zgrids);
+        f.write_vector("x", xgrids);
+        f.write_vector("y", ygrids);
+        f.write_vector("z", zgrids);
         f.write_volume("vs", std::vector<real_t>(vs3d, vs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
         if (IP.inversion().use_alpha_beta_rho) {
             f.write_volume("vp", std::vector<real_t>(vp3d, vp3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
             f.write_volume("rho", std::vector<real_t>(rho3d, rho3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+        }
+        if (IP.inversion().is_anisotropy) {
+            f.write_volume("gc", std::vector<real_t>(gc3d, gc3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("gs", std::vector<real_t>(gs3d, gs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
         }
     }
     mpi.barrier();
