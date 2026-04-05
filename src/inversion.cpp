@@ -337,7 +337,7 @@ void Inversion::steepest_descent() {
 
     grad_normalization(gradient_);
 
-    logger.Info("Steepest descent optimization", MODULE_INV);
+    logger.Info("Steepest descent optimization with step length {:.6f}".format(alpha_), MODULE_INV);
     if (iter_ > 0 && misfit_[iter_] >= misfit_[iter_ - 1]) {
         // If misfit increased, reduce step size and revert to previous model
         // (not implemented yet: would need to store previous model and restore it here)
