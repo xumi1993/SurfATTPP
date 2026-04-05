@@ -450,8 +450,11 @@ void postproc::kernel_precondition(SurfGrid& sg) {
 FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
     auto &logger = ATTLogger::logger();
     auto &PP = PostProc::PP();
+    auto &IP = InputParams::IP();
 
-    logger.Info("Smoothing kernels...", MODULE_POSTPROC);
+    std::string method_name = (IP.postproc().smooth_method == 0) ? "PDE smoothing" : "multigrid smoothing";
+
+    logger.Info(std::format("Smoothing kernels with {}...", method_name), MODULE_POSTPROC);
     FieldVec ker_loc_smooth(sg.ker_loc.size());
     for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;

@@ -29,7 +29,7 @@ Inversion::Inversion() {
     // initialize gradient
     if (run_mode == INVERSION_MODE) {
         // initialize HDF5 file for storing model and gradient history (used by LBFGS)
-        db_fname = std::format("{}/{}", IP.output().output_path, INIT_MODEL_FNAME);
+        db_fname = std::format("{}/{}", IP.output().output_path, MODEL_ITER_FNAME);
 
         if (mpi.is_main()) {
             try {
@@ -83,9 +83,9 @@ void Inversion::run_inversion() {
     auto &mpi = Parallel::mpi();
     auto &mg = ModelGrid::MG();
     auto &logger = ATTLogger::logger();
-    logger.Info(std::format("Starting inversion {}th iteration ...", iter_), MODULE_INV);
     
     for ( iter_ = 0; iter_ < IP.inversion().niter; ++iter_ ) {
+        logger.Info(std::format("Starting inversion {}th iteration ...", iter_), MODULE_INV);
         // Initialize the iteration: distribute the current model to local subdomains, reset model update and search direction
         init_iteration();
 
@@ -114,12 +114,18 @@ void Inversion::run_inversion() {
             exit(EXIT_FAILURE);
         }
 
+        logger.Info(std::format(
+            "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
+                100 * misfit_[iter_] / misfit_[0]
+        ), MODULE_INV);
+
+
         // Check for convergence based on misfit reduction
         if (check_convergence()) break;
 
         mpi.barrier();
     }
-    mg.write(std::format("{}/{}", IP.output().output_path, FINAL_MODEL_FNAME));
+    mg.write(FINAL_MODEL_FNAME);
 }
 
 void Inversion::init_iteration() {
@@ -168,15 +174,15 @@ bool Inversion::check_convergence() {
             }
             sum_misfit_prev /= BREAK_ITER;
             sum_misfit_curr /= BREAK_ITER;
-            real_t misfit_reduction = (sum_misfit_prev - sum_misfit_curr) / sum_misfit_prev;
+            real_t misfit_reduction = 100 * (sum_misfit_prev - sum_misfit_curr) / sum_misfit_prev;
             if (misfit_reduction < 0) {
                 logger.Info(std::format("Misfit increased in the last {} iterations.", BREAK_ITER), MODULE_INV);
                 break_flag = true;
             } else if (misfit_reduction < IP.inversion().min_derr) {
-                logger.Info(std::format("Convergence achieved with misfit reduction of {:.2e} in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
+                logger.Info(std::format("Convergence achieved with misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
                 break_flag = true;
             } else {
-                logger.Info(std::format("Misfit reduction of {:.2e} in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
+                logger.Info(std::format("Misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
                 break_flag = false;
             }
         }
@@ -331,15 +337,16 @@ void Inversion::steepest_descent() {
 
     grad_normalization(gradient_);
 
+    logger.Info("Steepest descent optimization", MODULE_INV);
     if (iter_ > 0 && misfit_[iter_] >= misfit_[iter_ - 1]) {
         // If misfit increased, reduce step size and revert to previous model
         // (not implemented yet: would need to store previous model and restore it here)
         logger.Info(
-            std::format("Misfit increased from {:.6f} to {:.6f}", misfit_[iter_-1], misfit_[iter_]),
+            std::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_-1], misfit_[iter_]),
             MODULE_INV
         );
         alpha_ *= IP.inversion().maxshrink;
-        logger.Info(std::format("Reducing step length to {:.6e}", alpha_), MODULE_INV);
+        logger.Info(std::format("Reducing step length to {:.6f}", alpha_), MODULE_INV);
     }
     // Pass gradient directly; model_update applies model -= alpha * gradient (descent).
     model_update(gradient_);
@@ -368,7 +375,7 @@ bool Inversion::line_search() {
 
     if ( iter_ > iter_start_ ) {
         real_t desc_angle = optimize::calc_descent_angle(search_dir, gradient_);
-        logger.Info(std::format("Angle between direction and negative gradient: {:.6f} degrees",
+        logger.Info(std::format("Angle between direction and negative gradient: {:.4f} degrees",
             desc_angle), MODULE_INV
         );
         if (desc_angle > MAX_DESC_ANGLE) {
@@ -388,9 +395,12 @@ bool Inversion::line_search() {
     alpha_L_ = _0_CR;
     for ( sub_iter = 0; sub_iter < IP.inversion().max_sub_niter; ++sub_iter ) {
         logger.Info(std::format(
-            "Line search sub-iteration {}: testing step length alpha = {:.6e}", sub_iter, alpha_
+            "Line search sub-iteration {}: testing step length alpha = {:.6f}", sub_iter, alpha_
         ), MODULE_INV);
 
+        // Reset local model slices from the global (pre-line-search) model before
+        // each trial step, so sub-iterations are independent of each other.
+        distribute_model_para();
         model_update(search_dir);
 
         // Run forward calculation with the updated model to evaluate the misfit at this step length
@@ -404,11 +414,11 @@ bool Inversion::line_search() {
         );
 
         if (wolfe_res.status == optimize::WolfeResult::Status::ACCEPT) {
-            logger.Info(std::format("Line search accepted with alpha = {:.6e}", alpha_), MODULE_INV);
+            logger.Info(std::format("Line search accepted with alpha = {:.6f}", alpha_), MODULE_INV);
             break_flag = true;
         } else if (wolfe_res.status == optimize::WolfeResult::Status::TRY) {
             alpha_ = wolfe_res.next_alpha;
-            logger.Info(std::format("Line search trying next alpha = {:.6e}", alpha_), MODULE_INV);
+            logger.Info(std::format("Line search trying next alpha = {:.6f}", alpha_), MODULE_INV);
             break_flag = false;
         } else {
             logger.Info("Line search failed to find a suitable step length.", MODULE_INV);

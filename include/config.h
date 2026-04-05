@@ -44,6 +44,7 @@ const std::string LOG_FNAME = "surfatt_runtime.log";
 const std::string FINAL_MODEL_FNAME = "final_model.h5";
 const std::string INIT_MODEL_FNAME = "initial_model.h5";
 const std::string TARGET_MODEL_FNAME = "target_model.h5";
+const std::string MODEL_ITER_FNAME = "model_iter.h5";
 inline std::string input_file;  // set by parse_options()
 inline std::string db_fname;    // set by inversion constructor
 

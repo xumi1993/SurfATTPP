@@ -298,6 +298,9 @@ void SurfGrid::correct_depth_with_topo() {
     auto &dcp = Decomposer::DCP();
     auto &mg = ModelGrid::MG();
     auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+
+    logger.Info("Correcting kernel depth with topography...", MODULE_GRID);
 
     // Tensor layout: (loc_nx, loc_ny, ngrid_k, nperiod), RowMajor
     // For fixed (ix, iy, iper), elements along iz are strided by nperiod.
