@@ -90,7 +90,10 @@ void Inversion::run_inversion() {
         init_iteration();
 
         // Run forward and adjoint calculations to compute the gradient
-        misfit_[iter_] = run_forward_adjoint(true);
+        if (IP.inversion().optim_method != OPTIM_LBFGS || iter_ == 0) {
+            misfit_trial_ = run_forward_adjoint(true);
+        }
+        misfit_[iter_] = misfit_trial_;
 
         if (IP.output().output_in_process_model || IP.inversion().optim_method == OPTIM_LBFGS) {
             store_gradient();
@@ -118,7 +121,6 @@ void Inversion::run_inversion() {
             "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
                 100 * misfit_[iter_] / misfit_[0]
         ), MODULE_INV);
-
 
         // Check for convergence based on misfit reduction
         if (check_convergence()) break;
@@ -247,7 +249,7 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line
             // smooth the kernels if needed
             auto ker_smooth = postproc::kernel_smooth(sg);
 
-            for (size_t ipara = 0; ipara < NPARAMS; ++ipara) {
+            for (int ipara = 0; ipara < NPARAMS; ++ipara) {
                 // Accumulate the smoothed kernel into the gradient for this parameter
                 if (is_active_param[ipara]) {
                     gradient_[ipara] = gradient_[ipara] + ker_smooth[ipara] * IP.data().weights[itype] / chi;
@@ -311,7 +313,7 @@ void Inversion::store_gradient() {
     auto &dcp = Decomposer::DCP();
     auto &mpi = Parallel::mpi();
 
-    // All ranks participate in the gatherdient_.s
+    // All ranks participate in the gathering of the gradient
     FieldVec grad_all(NPARAMS);
     for (int i = 0; i < NPARAMS; ++i) {
         if (is_active_param[i]) 
@@ -323,10 +325,9 @@ void Inversion::store_gradient() {
     H5IO f(db_fname, H5IO::RDWR);
     const std::string sfx = std::format("_{:03d}", iter_);
 
-    const std::array<const char*, 5> grad_names = {"vs", "vp", "rho", "gc", "gs"};
     for (int i = 0; i < NPARAMS; ++i) {
         if (is_active_param[i])
-            f.write_tensor(std::string("grad_") + grad_names[i] + sfx, grad_all[i]);
+            f.write_tensor(std::string("grad_") + pnames[i] + sfx, grad_all[i]);
     }
 }
 
@@ -428,7 +429,7 @@ bool Inversion::line_search() {
         mpi.barrier();
         if (break_flag) break;
     }
-    if (!restart_flag) misfit_[iter_] = misfit_trial;
+    if (!restart_flag) misfit_trial_ = misfit_trial;
     return restart_flag;
 }
 
