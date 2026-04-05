@@ -68,6 +68,7 @@ void Topography::grid(const Eigen::VectorX<real_t>& x,
 void Topography::check_bounds(const Eigen::VectorX<real_t>& x,
                                const Eigen::VectorX<real_t>& y) {
     auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
 
     real_t lon_min = lon_raw.minCoeff();
     real_t lon_max = lon_raw.maxCoeff();
@@ -89,16 +90,17 @@ void Topography::check_bounds(const Eigen::VectorX<real_t>& x,
                         y_min, y_max, lat_min, lat_max),
             MODULE_TOPO
         );
-        exit(EXIT_FAILURE);
+        mpi.abort(EXIT_FAILURE);
     }
 }
 
 Eigen::MatrixX<real_t> Topography::calc_dip_angle() {
+    auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
     
     if (z.size() == 0) {
-        ATTLogger::logger().Error("Topo grid not set. Call grid() first.", MODULE_TOPO);
-        exit(EXIT_FAILURE);
+        logger.Error("Topo grid not set. Call grid() first.", MODULE_TOPO);
+        mpi.abort(EXIT_FAILURE);
     }
     Eigen::MatrixX<real_t> dip_angle;
     if (mpi.is_main()) {
@@ -135,7 +137,7 @@ void Topography::rotate(
         if (xx_bk.minCoeff() < lon.minCoeff() || xx_bk.maxCoeff() > lon.maxCoeff() ||
             yy_bk.minCoeff() < lat.minCoeff() || yy_bk.maxCoeff() > lat.maxCoeff()) {
             logger.Error("Rotated grid extends beyond topography bounds.", MODULE_TOPO);
-            exit(EXIT_FAILURE);
+            mpi.abort(EXIT_FAILURE);
         }
         z = interp2d(lon, lat, z, xx_bk, yy_bk);
     }

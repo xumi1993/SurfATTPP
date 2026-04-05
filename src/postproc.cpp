@@ -198,7 +198,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                 logger.Error(std::format(
                     "x = {} out of bounds [{}, {}]", mg.xgrids(i + dcp.loc_I_start()), xinv(0, igrid), xinv(ninvx - 1, igrid)
                 ), MODULE_POSTPROC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
             wx = (mg.xgrids(i + dcp.loc_I_start()) - xinv(idx, igrid)) / (xinv(idx + 1, igrid) - xinv(idx, igrid));
             for (int j = 0; j < dcp.loc_ny(); ++j) {
@@ -207,7 +207,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                     logger.Error(std::format(
                         "y = {} out of bounds [{}, {}]", mg.ygrids(j + dcp.loc_J_start()), yinv(0, igrid), yinv(ninvy - 1, igrid)
                     ), MODULE_POSTPROC);
-                    exit(EXIT_FAILURE);
+                    mpi.abort(EXIT_FAILURE);
                 }
                 wy = (mg.ygrids(j + dcp.loc_J_start()) - yinv(idy, igrid)) / (yinv(idy + 1, igrid) - yinv(idy, igrid));
                 for (int k = 0; k < ngrid_k; ++k) {
@@ -216,7 +216,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                         logger.Error(std::format(
                             "z = {} out of bounds [{}, {}]", mg.zgrids(k), zinv(0, igrid), zinv(ninvz - 1, igrid)
                         ), MODULE_POSTPROC);
-                        exit(EXIT_FAILURE);
+                        mpi.abort(EXIT_FAILURE);
                     }
                     wz = (mg.zgrids(k) - zinv(idz, igrid)) / (zinv(idz + 1, igrid) - zinv(idz, igrid));
                     for (int n = 0; n < 8; ++n) {
@@ -267,6 +267,8 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
 Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
     const auto &mg = ModelGrid::MG();
     const auto &dcp = Decomposer::DCP();
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
 
     int idx, idy, idz, m;
     int ninvx = n_inv_I + 2;
@@ -280,28 +282,28 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
         for (int i = 0; i < dcp.loc_nx(); ++i) {
             idx = locate_bissection(xinv.col(igrid).data(), ninvx, mg.xgrids(i + dcp.loc_I_start()));
             if (idx == -1){
-                ATTLogger::logger().Error(std::format(
+                logger.Error(std::format(
                     "x = {} out of bounds [{}, {}]", mg.xgrids(i + dcp.loc_I_start()), xinv(0, igrid), xinv(ninvx - 1, igrid)
                 ), MODULE_POSTPROC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
             wx = (mg.xgrids(i + dcp.loc_I_start()) - xinv(idx, igrid)) / (xinv(idx + 1, igrid) - xinv(idx, igrid));
             for (int j = 0; j < dcp.loc_ny(); ++j) {
                 idy = locate_bissection(yinv.col(igrid).data(), ninvy, mg.ygrids(j + dcp.loc_J_start()));
                 if (idy == -1){
-                    ATTLogger::logger().Error(std::format(
+                    logger.Error(std::format(
                         "y = {} out of bounds [{}, {}]", mg.ygrids(j + dcp.loc_J_start()), yinv(0, igrid), yinv(ninvy - 1, igrid)
                     ), MODULE_POSTPROC);
-                    exit(EXIT_FAILURE);
+                    mpi.abort(EXIT_FAILURE);
                 }
                 wy = (mg.ygrids(j + dcp.loc_J_start()) - yinv(idy, igrid)) / (yinv(idy + 1, igrid) - yinv(idy, igrid));
                 for (int k = 0; k < ngrid_k; ++k) {
                     idz = locate_bissection(zinv.col(igrid).data(), ninvz, mg.zgrids(k));
                     if (idz == -1){
-                        ATTLogger::logger().Error(std::format(
+                        logger.Error(std::format(
                             "z = {} out of bounds [{}, {}]", mg.zgrids(k), zinv(0, igrid), zinv(ninvz - 1, igrid)
                         ), MODULE_POSTPROC);
-                        exit(EXIT_FAILURE);
+                        mpi.abort(EXIT_FAILURE);
                     }
                     wz = (mg.zgrids(k) - zinv(idz, igrid)) / (zinv(idz + 1, igrid) - zinv(idz, igrid));
                     real_t val = _0_CR;
@@ -353,7 +355,7 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
 
     if (sigma_h <= _0_CR || sigma_v <= _0_CR ) {
         logger.Error("Invalid sigma values for PDE-based smoothing. All sigma values must be positive.", MODULE_POSTPROC);
-        exit(EXIT_FAILURE);
+        mpi.abort(EXIT_FAILURE);
     }
     Tensor3r smoothed_buf(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     smoothed_buf = buf;  // initialize smoothed_buf with the input buf
@@ -367,7 +369,7 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
     real_t cmax_v = dgrid_k * dgrid_k / 6.0;                                // km²
     if (cmax_h <= VERYTINY || cmax_v <= VERYTINY) {
         logger.Error("Grid spacing is too small for PDE-based smoothing.", MODULE_POSTPROC);
-        exit(EXIT_FAILURE);
+        mpi.abort(EXIT_FAILURE);
     }
 
     // Time step (dimensionless); stability is enforced via cmax_h/cmax_v below.
@@ -412,6 +414,9 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
 
 Tensor3r PostProc::smooth(const Tensor3r &buf) {
     auto &IP = InputParams::IP();
+    auto logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
+
     if (IP.postproc().smooth_method == 0) {
         return pde_smooth(buf);
     } else if (IP.postproc().smooth_method == 1) {
@@ -419,8 +424,8 @@ Tensor3r PostProc::smooth(const Tensor3r &buf) {
         // Here we can apply some smoothing in the inversion grid if needed (not implemented in this example)
         return inv_grid.inv2fwd(inv_buf.data());
     } else {
-        ATTLogger::logger().Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
-        exit(EXIT_FAILURE);
+        logger.Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
+        mpi.abort(EXIT_FAILURE);
     }
 }
 

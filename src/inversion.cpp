@@ -37,7 +37,7 @@ Inversion::Inversion() {
             } catch (const std::exception &e) {
                 logger.Error(std::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
                 logger.Error("Check if the output path exists and is writable, or delete the existing file.", MODULE_INV);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
         }
 
@@ -111,7 +111,7 @@ void Inversion::run_inversion() {
             mg.collect_model_loc();
         } else {
             logger.Error("Unsupported optimization method specified in input parameters.", MODULE_INV);
-            exit(EXIT_FAILURE);
+            mpi.abort(EXIT_FAILURE);
         }
 
         logger.Info(std::format(

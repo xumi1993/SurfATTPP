@@ -401,7 +401,7 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
         if (is_fwd){
             if (tt_fwd.size() == 0) {
                 logger.Error("Forward-modeled travel times (tt_fwd) are not assigned", MODULE_SRCREC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
             doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs_, 4));
         } else {
@@ -419,7 +419,7 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
         if (is_fwd) {
             if (vel_fwd.size() == 0) {
                 logger.Error("Forward-modeled velocities (vel_fwd) are not assigned", MODULE_SRCREC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
             doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs_, 4));
         } else {
