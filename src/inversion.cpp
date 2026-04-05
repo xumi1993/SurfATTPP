@@ -90,9 +90,7 @@ void Inversion::run_inversion() {
         init_iteration();
 
         // Run forward and adjoint calculations to compute the gradient
-        if (IP.inversion().optim_method != OPTIM_LBFGS || iter_ == 0) {
-            misfit_trial_ = run_forward_adjoint(true);
-        }
+        misfit_trial_ = run_forward_adjoint(true);
         misfit_[iter_] = misfit_trial_;
 
         if (IP.output().output_in_process_model || IP.inversion().optim_method == OPTIM_LBFGS) {
@@ -274,6 +272,7 @@ void Inversion::grad_normalization(FieldVec &grads) {
 
     real_t global_max;
     mpi.max_all_all(local_max, global_max);
+    if (global_max < REAL_EPS) return;  // guard against zero gradient
     for (int ipara = 0; ipara < NPARAMS; ++ipara) {
         if (is_active_param[ipara]) {
             grads[ipara] = grads[ipara] / global_max;
@@ -358,7 +357,7 @@ bool Inversion::line_search() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
-    bool break_flag, restart_flag = false;
+    bool break_flag = false, restart_flag = false;
     real_t misfit_trial = _0_CR;
 
     logger.Info("Optimization with L-BFGS method", MODULE_INV);
@@ -386,9 +385,6 @@ bool Inversion::line_search() {
     }
 
     ker_prev_ = ker_curr_;
-    for (int p = 0; p < NPARAMS; ++p) {
-        if (is_active_param[p]) ker_curr_[p].setZero();
-    }
 
     alpha_ = IP.inversion().step_length;
     int sub_iter = 0;
@@ -398,6 +394,15 @@ bool Inversion::line_search() {
         logger.Info(std::format(
             "Line search sub-iteration {}: testing step length alpha = {:.6f}", sub_iter, alpha_
         ), MODULE_INV);
+
+        // Reset kernel and gradient accumulators for each independent trial.
+        // ker_curr_ must reflect only the current alpha, not a sum over all trials.
+        for (int p = 0; p < NPARAMS; ++p) {
+            if (is_active_param[p]) {
+                ker_curr_[p].setZero();
+                gradient_[p].setZero();
+            }
+        }
 
         // Reset local model slices from the global (pre-line-search) model before
         // each trial step, so sub-iterations are independent of each other.

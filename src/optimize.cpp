@@ -34,7 +34,9 @@ real_t calc_descent_angle(const FieldVec &direction, const FieldVec &gradient) {
     auto &mpi = Parallel::mpi();
 
     // Compute local contributions.
-    real_t local_dot   = -field_dot(gradient, direction); // -g · d
+    // Angle between actual step (–direction) and steepest descent (–gradient):
+    // cos = (direction·gradient) / (||direction|| * ||gradient||)
+    real_t local_dot   = field_dot(gradient, direction);
     real_t local_gnorm =  field_dot(gradient, gradient);
     real_t local_dnorm =  field_dot(direction, direction);
 
@@ -198,6 +200,7 @@ FieldVec lbfgs_direction(int iter) {
         }
 
         // ---- First loop (backward: newest → oldest) -------------------------
+        // Skip pairs with rho = 0 (sy ≤ 0: curvature condition violated).
         std::vector<real_t> alpha(hist_size, _0_CR);
         for (int h = hist_size - 1; h >= 0; --h) {
             alpha[h] = rho[h] * field_dot(s_hist[h], q);
@@ -207,12 +210,14 @@ FieldVec lbfgs_direction(int iter) {
         }
 
         // ---- Initial Hessian scaling: γ = (s^T y) / (y^T y) ---------------
+        // Clamp γ to positive: a negative or zero γ would invert or zero the
+        // search direction (causing the 90-degree restart loop).
         auto r = q; // r ← H₀ q
         if (hist_size > 0) {
             int last  = hist_size - 1;
             real_t yy = field_dot(y_hist[last], y_hist[last]);
             real_t sy = field_dot(s_hist[last], y_hist[last]);
-            real_t gamma = (yy > _0_CR) ? (sy / yy) : _1_CR;
+            real_t gamma = (sy > _0_CR && yy > _0_CR) ? (sy / yy) : _1_CR;
             for (int p = 0; p < NPARAMS; ++p)
                 if (is_active_param[p])
                     r[p] = gamma * r[p];

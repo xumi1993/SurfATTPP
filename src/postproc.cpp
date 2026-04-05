@@ -414,7 +414,7 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
 
 Tensor3r PostProc::smooth(const Tensor3r &buf) {
     auto &IP = InputParams::IP();
-    auto logger = ATTLogger::logger();
+    auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
 
     if (IP.postproc().smooth_method == 0) {
