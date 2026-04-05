@@ -358,23 +358,37 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
     Tensor3r smoothed_buf(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     smoothed_buf = buf;  // initialize smoothed_buf with the input buf
 
-    // Determine diffusion coefficients
-    real_t cmax = std::min({dgrid_i*dgrid_i, dgrid_j*dgrid_j, dgrid_k*dgrid_k}) / 9.0;
-    if (cmax <= VERYTINY) {
+    // Compute per-direction maximal stable diffusion coefficients (dt = 1).
+    // Horizontal uses degrees², vertical uses km² — kept separate so units never mix.
+    // Stability condition for 3-D forward Euler:
+    //   ch/dx² + ch/dy² + cv/dz² ≤ 1/2
+    // With ch ≤ min(dx²,dy²)/6 and cv ≤ dz²/6 the sum is at most 3*(1/6) = 1/2. ✓
+    real_t cmax_h = std::min(dgrid_i * dgrid_i, dgrid_j * dgrid_j) / 6.0;  // deg²
+    real_t cmax_v = dgrid_k * dgrid_k / 6.0;                                // km²
+    if (cmax_h <= VERYTINY || cmax_v <= VERYTINY) {
         logger.Error("Grid spacing is too small for PDE-based smoothing.", MODULE_POSTPROC);
         exit(EXIT_FAILURE);
     }
-    real_t ch, cv;
-    if (sigma_v >= sigma_h) {
-        cv = cmax;
-        ch = cv * (sigma_h * sigma_h) / (sigma_v * sigma_v);
-    } else {
-        ch = cmax;
-        cv = ch * (sigma_v * sigma_v) / (sigma_h * sigma_h);
-    }
 
-    real_t dt = _1_CR;
-    int nstep = int(std::ceil(std::pow(std::max(sigma_h, sigma_v), 2) / (2 * cmax * dt)));
+    // Time step (dimensionless); stability is enforced via cmax_h/cmax_v below.
+    const real_t dt = _1_CR;
+
+    // Minimum steps required for each direction to achieve its target sigma.
+    // sigma_h is in degrees, sigma_v is in km — each compared only against
+    // its own-unit cmax, so there is no cross-unit comparison.
+    int nstep_h = static_cast<int>(std::ceil(sigma_h * sigma_h / (2.0 * cmax_h * dt)));
+    int nstep_v = static_cast<int>(std::ceil(sigma_v * sigma_v / (2.0 * cmax_v * dt)));
+    int nstep   = std::max({nstep_h, nstep_v, 1});
+
+    // Actual diffusion coefficients that achieve exactly sigma in nstep steps.
+    // Because nstep ≥ nstep_h and nstep ≥ nstep_v, both ch ≤ cmax_h and cv ≤ cmax_v,
+    // so the stability condition is guaranteed.
+    real_t ch = sigma_h * sigma_h / (2.0 * nstep * dt);  // deg²/step
+    real_t cv = sigma_v * sigma_v / (2.0 * nstep * dt);  // km²/step
+
+    logger.Debug(std::format(
+        "PDE smooth: sigma_h={:.3f} deg, sigma_v={:.3f} km, nstep={} (h:{} v:{}), ch={:.4e}, cv={:.4e}",
+        sigma_h, sigma_v, nstep, nstep_h, nstep_v, ch, cv), MODULE_POSTPROC);
 
     mpi.barrier();
 
