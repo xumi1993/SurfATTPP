@@ -371,6 +371,36 @@ void SrcRec::gather_syn_tt()
 }
 
 
+ResidualStats SrcRec::compute_residual_stats() {
+    auto &mpi = Parallel::mpi();
+
+    real_t local_n   = _0_CR;
+    real_t local_sum = _0_CR;
+    real_t local_sq  = _0_CR;
+
+    for (const auto& [name, info] : events_local) {
+        const int n_rec = static_cast<int>(info.rec_indices.size());
+        for (int i = 0; i < n_rec; ++i) {
+            const real_t residual = info.syn_data[i] - tt[info.rec_indices[i]];
+            local_n   += _1_CR;
+            local_sum += residual;
+            local_sq  += residual * residual;
+        }
+    }
+
+    mpi.sum_all_all_inplace(local_n);
+    mpi.sum_all_all_inplace(local_sum);
+    mpi.sum_all_all_inplace(local_sq);
+
+    if (local_n == _0_CR)
+        return {_0_CR, _0_CR};
+
+    const real_t mean = local_sum / local_n;
+    const real_t var  = local_sq  / local_n - mean * mean;
+    const real_t stddev = std::sqrt(std::max(var, _0_CR));
+    return {mean, stddev};  // ResidualStats aggregate init
+}
+
 // ---------------------------------------------------------------------------
 // Convert a numeric array into fixed-precision string values for CSV output.
 // rapidcsv writing here is string-based to keep formatting explicit/consistent.

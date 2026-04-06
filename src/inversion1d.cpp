@@ -136,6 +136,5 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
         MODULE_INV1D
     );
 
-    exit(0);
     return vs1d;
 }

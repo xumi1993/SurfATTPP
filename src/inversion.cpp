@@ -4,6 +4,8 @@
 #include "utils.h"
 #include "h5io.h"
 #include "optimize.h"
+#include "src_rec.h"
+#include <fstream>
 
 static void distribute_model_para(){
     auto& mg = ModelGrid::MG();
@@ -68,6 +70,20 @@ Inversion::Inversion() {
 
         // Set the initial step length for the optimization. This can be tuned or made adaptive in the future.
         alpha_ = IP.inversion().step_length;
+
+        // Open objective function log on main rank
+        if (mpi.is_main() && run_mode == INVERSION_MODE) {
+            const std::string obj_path = std::format("{}/{}", IP.output().output_path, OBJ_FNAME);
+            obj_file_.open(obj_path);
+            if (!obj_file_) {
+                logger.Error(std::format("Cannot open {} for writing", obj_path), MODULE_INV);
+                mpi.abort(EXIT_FAILURE);
+            } else {
+                obj_file_ << std::unitbuf;  // flush after every write operation
+                obj_file_ << std::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12}\n",
+                    "iter", "misfit", "ph_mean", "ph_std", "gr_mean", "gr_std");
+            }
+        }
     }
 };
 
@@ -79,20 +95,43 @@ void Inversion::run_forward() {
     write_src_rec_fwd();
 }
 
+void Inversion::write_obj_line()
+{
+    auto &mpi = Parallel::mpi();
+
+    // compute_residual_stats() uses MPI allreduce — all ranks must call it.
+    // events_local is empty for disabled types so the result is naturally {0, 0}.
+    auto ph_stats = SrcRec::SR_ph().compute_residual_stats();
+    auto gr_stats = SrcRec::SR_gr().compute_residual_stats();
+
+    if (mpi.is_main() && obj_file_)
+        obj_file_ << std::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e}\n",
+            iter_, misfit_[iter_], ph_stats.mean, ph_stats.stddev, gr_stats.mean, gr_stats.stddev);
+}
+
 void Inversion::run_inversion() {
     auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
     auto &mg = ModelGrid::MG();
     auto &logger = ATTLogger::logger();
-    
+
     for ( iter_ = 0; iter_ < IP.inversion().niter; ++iter_ ) {
         logger.Info(std::format("Starting inversion {}th iteration ...", iter_), MODULE_INV);
         // Initialize the iteration: distribute the current model to local subdomains, reset model update and search direction
         init_iteration();
 
-        // Run forward and adjoint calculations to compute the gradient
-        misfit_trial_ = run_forward_adjoint(true);
+        // Run forward and adjoint calculations to compute the gradient.
+        // When using L-BFGS, the accepted line-search step already computed g_{k+1}
+        // and stored it in gradient_ / ker_curr_, so we can skip this call.
+        const bool need_fwd_adj = !gradient_reuse_;  // flag reset inside init_iteration()
+        if (need_fwd_adj) {
+            misfit_trial_ = run_forward_adjoint(true);
+        } else {
+            logger.Info("Reusing gradient from accepted line-search step (skipping forward+adjoint).", MODULE_INV);
+        }
         misfit_[iter_] = misfit_trial_;
+
+        write_obj_line();
 
         if (IP.output().output_in_process_model || IP.inversion().optim_method == OPTIM_LBFGS) {
             store_gradient();
@@ -145,18 +184,28 @@ void Inversion::init_iteration() {
 
     // initialize kernel for current and previous iteration to zero
     if (IP.inversion().optim_method == OPTIM_LBFGS){
-        for (int p = 0; p < NPARAMS; ++p) {
-            if (is_active_param[p]) {
-                ker_curr_[p].setZero();
-                ker_prev_[p].setZero();
+        if (!gradient_reuse_) {
+            // Fresh start: zero everything
+            for (int p = 0; p < NPARAMS; ++p) {
+                if (is_active_param[p]) {
+                    ker_curr_[p].setZero();
+                    ker_prev_[p].setZero();
+                }
             }
+        } else {
+            // gradient_ and ker_curr_ are already valid (carried from accepted line search).
+            // Only zero ker_prev_; line_search() will repopulate it via ker_prev_ = ker_curr_.
+            for (int p = 0; p < NPARAMS; ++p)
+                if (is_active_param[p]) ker_prev_[p].setZero();
         }
     }
 
-    // Initialize model update and search direction to zero
-    for (int ipara = 0; ipara < NPARAMS; ++ipara) {
-        if (is_active_param[ipara]) gradient_[ipara].setZero();
+    // Initialize gradient to zero — skip when reusing from accepted line search
+    if (!gradient_reuse_) {
+        for (int ipara = 0; ipara < NPARAMS; ++ipara)
+            if (is_active_param[ipara]) gradient_[ipara].setZero();
     }
+    gradient_reuse_ = false;  // consumed; will be set again by line_search on next accept
     mpi.barrier();
 }
 
@@ -194,7 +243,7 @@ bool Inversion::check_convergence() {
     return break_flag;
 }
 
-real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line_search) {
+real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
 
@@ -402,7 +451,7 @@ bool Inversion::line_search() {
         model_update(search_dir);
 
         // Run forward calculation with the updated model to evaluate the misfit at this step length
-        misfit_trial = run_forward_adjoint(true, true);
+        misfit_trial = run_forward_adjoint(true);
 
         // wolfe_condition checks if the current step length satisfies the strong Wolfe conditions and returns the next step length to try if not.
         auto wolfe_res = optimize::wolfe_condition(
