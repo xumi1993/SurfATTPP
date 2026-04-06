@@ -76,6 +76,7 @@ void Inversion::run_forward() {
     logger.Info("Running forward calculation...", MODULE_INV);
     distribute_model_para();
     run_forward_adjoint(false);
+    write_src_rec_fwd();
 }
 
 void Inversion::run_inversion() {
@@ -119,6 +120,8 @@ void Inversion::run_inversion() {
             "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
                 100 * misfit_[iter_] / misfit_[0]
         ), MODULE_INV);
+
+        write_src_rec_fwd();
 
         // Check for convergence based on misfit reduction
         if (check_convergence()) break;
@@ -193,7 +196,6 @@ bool Inversion::check_convergence() {
 
 real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line_search) {
     auto& IP = InputParams::IP();
-    auto& logger = ATTLogger::logger();
     auto& mpi = Parallel::mpi();
 
     real_t misfit_total = _0_CR;
@@ -216,16 +218,6 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj, const bool in_line
 
         // calculate travel time for each source-receiver pair and period, and store in sr.events_local
         real_t chi = preproc::forward_for_event(sr, sg, is_calc_adj);
-
-        // gather synthetic travel times to the main rank for output and inversion steps
-        if (run_mode == FORWARD_ONLY || (IP.output().output_in_process_data && !in_line_search)) {
-            logger.Info("Gathering forward-modeled travel times to the main rank for output...", MODULE_PREPROC);
-            sr.gather_syn_tt();
-            sr.write(
-                std::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, 
-                surfTypeStr[itype]), true
-            );
-        }
         
         if (run_mode == INVERSION_MODE) {
             misfit_total += chi * IP.data().weights[itype];
@@ -459,4 +451,30 @@ void Inversion::model_update(FieldVec &dir) {
         mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
     }
     mpi.barrier();
+}
+
+void Inversion::write_src_rec_fwd(){
+    auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+
+    for (surfType tp : {surfType::PH, surfType::GR}) {
+        int itype = static_cast<int>(tp);
+        if (!IP.data().vel_type[itype]) continue;
+        auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+
+        std::string sfx = surfTypeStr[itype];
+        if (run_mode != FORWARD_ONLY) {
+            sfx += std::format("_{:03d}", iter_);
+        }
+        // gather synthetic travel times to the main rank for output and inversion steps
+        if (run_mode == FORWARD_ONLY || (IP.output().output_in_process_data)) {
+            logger.Info(std::format(
+                "Gathering synthetic {} travel times to the main rank for output...", surfTypeStr[itype]), MODULE_PREPROC
+            );
+            sr.gather_syn_tt();
+            sr.write(
+                std::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, sfx), true
+            );
+        }
+    }
 }

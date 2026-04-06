@@ -25,6 +25,7 @@ jobs:
           - testcase10
           - testcase11
           - testcase12
+          - testcase13
       fail-fast: false
 
     steps:

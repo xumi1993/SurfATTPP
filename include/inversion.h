@@ -54,6 +54,7 @@ private:
     bool check_convergence();
     void model_update(FieldVec &dir);
     bool line_search();
+    void write_src_rec_fwd();
 
     Tensor3r model_update_;
     FieldVec ker_curr_, ker_prev_;
