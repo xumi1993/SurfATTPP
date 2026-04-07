@@ -92,9 +92,9 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     const bool cond_armijo    = f1 <= f0 + alpha * c1 * q;
     const bool cond_curvature = q1 >= c2 * q;
 
-    logger.Info(std::format("Armijo condition: f0={:.6e}  f1={:.6e}  f0+c1*alpha*q={:.6e}",
+    logger.Debug(std::format("Armijo condition: f0={:.6e}  f1={:.6e}  f0+c1*alpha*q={:.6e}",
         f0, f1, f0 + alpha * c1 * q), MODULE_OPTIM);
-    logger.Info(std::format("Curvature condition: q(grad·dir)={:.6e}  q1(grad'·dir)={:.6e}  c2*q={:.6e}",
+    logger.Debug(std::format("Curvature condition: q(grad·dir)={:.6e}  q1(grad'·dir)={:.6e}  c2*q={:.6e}",
         q, q1, c2 * q), MODULE_OPTIM);
     logger.Info(std::format("Armijo: {};  Curvature: {}", cond_armijo, cond_curvature), MODULE_OPTIM);
 
@@ -103,7 +103,7 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     if (cond_armijo && cond_curvature) {
         res.status     = WolfeResult::Status::ACCEPT;
         res.next_alpha = alpha;
-        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6e} -> {:.6e}, alpha={:.6e}",
+        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6f} -> {:.6f}, alpha={:.6f}",
             f0, f1, alpha), MODULE_OPTIM);
 
     } else if (!cond_armijo) {
@@ -111,7 +111,7 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
         alpha_R        = alpha;
         res.next_alpha = (alpha_L + alpha_R) * _0_5_CR;
         res.status     = WolfeResult::Status::TRY;
-        logger.Info(std::format("Armijo not satisfied (step too large). Next alpha={:.6e}",
+        logger.Info(std::format("Armijo not satisfied (step too large). Next alpha={:.6f}",
             res.next_alpha), MODULE_OPTIM);
 
     } else {
@@ -120,7 +120,7 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
         res.next_alpha = (alpha_R > _0_CR) ? (alpha_L + alpha_R) * _0_5_CR
                                            : alpha * _2_CR;
         res.status     = WolfeResult::Status::TRY;
-        logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6e}",
+        logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6f}",
             res.next_alpha), MODULE_OPTIM);
     }
 

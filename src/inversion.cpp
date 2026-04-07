@@ -80,8 +80,8 @@ Inversion::Inversion() {
                 mpi.abort(EXIT_FAILURE);
             } else {
                 obj_file_ << std::unitbuf;  // flush after every write operation
-                obj_file_ << std::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12}\n",
-                    "iter", "misfit", "ph_mean", "ph_std", "gr_mean", "gr_std");
+                obj_file_ << std::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
+                    "iter", "misfit", "ph_mean", "ph_std", "gr_mean", "gr_std", "alpha");
             }
         }
     }
@@ -105,8 +105,8 @@ void Inversion::write_obj_line()
     auto gr_stats = SrcRec::SR_gr().compute_residual_stats();
 
     if (mpi.is_main() && obj_file_)
-        obj_file_ << std::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e}\n",
-            iter_, misfit_[iter_], ph_stats.mean, ph_stats.stddev, gr_stats.mean, gr_stats.stddev);
+        obj_file_ << std::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
+            iter_, misfit_[iter_], ph_stats.mean, ph_stats.stddev, gr_stats.mean, gr_stats.stddev, alpha_);
 }
 
 void Inversion::run_inversion() {
