@@ -54,7 +54,7 @@ void InputParams::load_domain(const YAML::Node &n) {
     domain_.depth           = req<std::vector<real_t>>(n, "depth_min_max");
     if (domain_.grid_method == 0) {
         YAML::Node ng = n["grid_method_0"];
-        // Require depth/interval, compute n_xyz from them
+        // Require depth/interval, compute n_grid from them
         domain_.interval        = req<std::vector<real_t>>(ng, "interval");
         domain_.num_grid_margin = opt<int>(ng, "num_grid_margin", 5);
     } else if (domain_.grid_method == 1) {

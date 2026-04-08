@@ -142,22 +142,15 @@ ModelGrid::ModelGrid() {
 
         // Number of grid nodes (inclusive on both ends).
         // Round first to avoid floating-point drift (e.g. 99.9999999 -> 100).
-        n_xyz[0] = static_cast<int>(std::llround((xend - xbeg) / dgrid_i) + 1);
-        n_xyz[1] = static_cast<int>(std::llround((yend - ybeg) / dgrid_j) + 1);
-        n_xyz[2] = static_cast<int>(std::llround((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1);
+        ngrid_i = static_cast<int>(std::llround((xend - xbeg) / dgrid_i) + 1);
+        ngrid_j = static_cast<int>(std::llround((yend - ybeg) / dgrid_j) + 1);
+        ngrid_k = static_cast<int>(std::llround((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1);
 
-        // Expose grid sizes through the I2V macro variables
-        ngrid_i = n_xyz[0];
-        ngrid_j = n_xyz[1];
-        ngrid_k = n_xyz[2];
     } else if (dom.grid_method == 1) {
         // Grid dimensions and bounding box are directly specified in the config
-        n_xyz[0] = dom.n_grid[0];
-        n_xyz[1] = dom.n_grid[1];
-        n_xyz[2] = dom.n_grid[2];
-        ngrid_i = n_xyz[0];
-        ngrid_j = n_xyz[1];
-        ngrid_k = n_xyz[2];
+        ngrid_i = dom.n_grid[0];
+        ngrid_j = dom.n_grid[1];
+        ngrid_k = dom.n_grid[2];
         xbeg = dom.lon_min_max[0];
         xend = dom.lon_min_max[1];
         ybeg = dom.lat_min_max[0];
@@ -167,12 +160,12 @@ ModelGrid::ModelGrid() {
         mpi.abort(EXIT_FAILURE);
     }
 
-    xgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[0], xbeg, xend);
-    ygrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[1], ybeg, yend);
-    zgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[2], dom.depth[0], dom.depth[1]);
+    xgrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_i, xbeg, xend);
+    ygrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_j, ybeg, yend);
+    zgrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_k, dom.depth[0], dom.depth[1]);
 
     logger.Info(
-        std::format("Model grids: nx,ny,nz: {}, {}, {}", n_xyz[0], n_xyz[1], n_xyz[2]),
+        std::format("Model grids: nx,ny,nz: {}, {}, {}", ngrid_i, ngrid_j, ngrid_k),
         MODULE_GRID
     );
     logger.Info(
@@ -193,12 +186,12 @@ void ModelGrid::allocate_model_grids() {
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
 
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vp3d, win_vp_);
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vs3d, win_vs_);
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], rho3d, win_rho_);
+    mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vp3d, win_vp_);
+    mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vs3d, win_vs_);
+    mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, rho3d, win_rho_);
     if (IP.inversion().is_anisotropy) {
-        mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gc3d, win_gc_);
-        mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gs3d, win_gs_);
+        mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gc3d, win_gc_);
+        mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gs3d, win_gs_);
     }
     // Always allocate local model slices; they are needed by fwdsurf() in both
     // FORWARD_ONLY and INVERSION_MODE.
@@ -243,15 +236,15 @@ void ModelGrid::load_3d_model() {
     auto &mpi = Parallel::mpi();
     H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
     hsize_t nx = 0, ny = 0, nz = 0;
-    const hsize_t expect_n = static_cast<hsize_t>(n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    const hsize_t expect_n = static_cast<hsize_t>(ngrid_i * ngrid_j * ngrid_k);
 
     auto check_dims = [&](const std::string &name) {
-        if (nx != static_cast<hsize_t>(n_xyz[0]) ||
-            ny != static_cast<hsize_t>(n_xyz[1]) ||
-            nz != static_cast<hsize_t>(n_xyz[2])) {
+        if (nx != static_cast<hsize_t>(ngrid_i) ||
+            ny != static_cast<hsize_t>(ngrid_j) ||
+            nz != static_cast<hsize_t>(ngrid_k)) {
             throw std::runtime_error(std::format(
                 "ModelGrid: dataset '{}' shape ({},{},{}) != grid ({},{},{})",
-                name, nx, ny, nz, n_xyz[0], n_xyz[1], n_xyz[2]));
+                name, nx, ny, nz, ngrid_i, ngrid_j, ngrid_k));
         }
     };
 
@@ -371,9 +364,9 @@ void ModelGrid::build_init_model() {
     if (IP.inversion().init_model_type != 2) {
         // Extrude the 1-D profile laterally to fill the full 3-D volume
         if (mpi.is_main()) {
-            for (int ix = 0; ix < n_xyz[0]; ++ix) {
-                for (int iy = 0; iy < n_xyz[1]; ++iy) {
-                    for (int iz = 0; iz < n_xyz[2]; ++iz) {
+            for (int ix = 0; ix < ngrid_i; ++ix) {
+                for (int iy = 0; iy < ngrid_j; ++iy) {
+                    for (int iz = 0; iz < ngrid_k; ++iz) {
                         vp3d[I2V(ix, iy, iz)] = vs2vp(vs1d(iz));
                         vs3d[I2V(ix, iy, iz)] = vs1d(iz);
                         rho3d[I2V(ix, iy, iz)] = vp2rho(vp3d[I2V(ix, iy, iz)]);  // empirical Vp→density scaling
@@ -398,12 +391,12 @@ void ModelGrid::build_init_model() {
     // non-main ranks must resize it before the bcast to avoid a null-ptr crash.
     if (!mpi.is_main()) vs1d.resize(ngrid_k);
     mpi.bcast(vs1d.data(), ngrid_k);
-    mpi.sync_from_main_rank(vp3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
-    mpi.sync_from_main_rank(vs3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
-    mpi.sync_from_main_rank(rho3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    mpi.sync_from_main_rank(vp3d,  ngrid_i * ngrid_j * ngrid_k);
+    mpi.sync_from_main_rank(vs3d,  ngrid_i * ngrid_j * ngrid_k);
+    mpi.sync_from_main_rank(rho3d, ngrid_i * ngrid_j * ngrid_k);
     if (IP.inversion().is_anisotropy) {
-        mpi.sync_from_main_rank(gc3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
-        mpi.sync_from_main_rank(gs3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+        mpi.sync_from_main_rank(gc3d, ngrid_i * ngrid_j * ngrid_k);
+        mpi.sync_from_main_rank(gs3d, ngrid_i * ngrid_j * ngrid_k);
     }
 }
 
