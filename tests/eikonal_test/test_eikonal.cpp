@@ -18,14 +18,26 @@
  */
 
 #include "eikonal_solver.h"
+#include "h5io.h"
 
 #include <Eigen/Dense>
 #include <cassert>
+#include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
+
+extern "C" {
+void fsm_uw_ps_lonlat_2d_fortran(const double* xx_deg, const double* yy_deg,
+                                 const int* nx, const int* ny,
+                                 const double* spha, const double* sphb,
+                                 const double* sphc, const double* fun,
+                                 const double* x0_deg, const double* y0_deg,
+                                 double* t_out);
+}
 
 
 // ---------------------------------------------------------------------------
@@ -428,6 +440,206 @@ static void test_adjoint_linearity()
 }
 
 // ---------------------------------------------------------------------------
+// Test 9: C++ vs Fortran equality + benchmark (travel-time field)
+// ---------------------------------------------------------------------------
+static void test_forward_fortran_cpp_benchmark()
+{
+    const int nx = 121, ny = 91;
+    const real_t x0_deg = 0.3, y0_deg = -0.4;
+
+    VectorXd xx_deg = VectorXd::LinSpaced(nx, -30.0, 30.0);
+    VectorXd yy_deg = VectorXd::LinSpaced(ny, -20.0, 20.0);
+    MatrixXd spha(nx, ny), sphb(nx, ny), sphc(nx, ny), fun(nx, ny);
+
+    for (int ix = 0; ix < nx; ++ix) {
+        for (int iy = 0; iy < ny; ++iy) {
+            const real_t lon = xx_deg(ix) * PI / 180.0;
+            const real_t lat = yy_deg(iy) * PI / 180.0;
+            spha(ix, iy) = 1.0 + 0.10 * std::sin(2.0 * lon) * std::cos(lat);
+            sphb(ix, iy) = 1.0 + 0.08 * std::cos(1.5 * lon) * std::sin(lat);
+            sphc(ix, iy) = 0.03 * std::sin(lon + lat);
+            fun(ix, iy)  = 1.0 / (3.2 + 0.3 * std::cos(lat));
+        }
+    }
+
+    MatrixXd t_fortran = MatrixXd::Zero(nx, ny);
+    const double x0_d = static_cast<double>(x0_deg);
+    const double y0_d = static_cast<double>(y0_deg);
+    fsm_uw_ps_lonlat_2d_fortran(xx_deg.data(), yy_deg.data(),
+                                &nx, &ny,
+                                spha.data(), sphb.data(), sphc.data(), fun.data(),
+                                &x0_d, &y0_d,
+                                t_fortran.data());
+
+    MatrixXd t_cpp = eikonal::FSM_UW_PS_lonlat_2d(
+        xx_deg, yy_deg, spha, sphb, sphc, fun, x0_deg, y0_deg);
+
+    const real_t max_abs = (t_cpp - t_fortran).array().abs().maxCoeff();
+    const real_t max_rel = ((t_cpp - t_fortran).array().abs()
+                            / (t_fortran.array().abs() + 1e-14)).maxCoeff();
+    const MatrixXd diff = t_cpp - t_fortran;
+
+    std::cout << "  max_abs_diff: " << std::setprecision(16) << max_abs << "\n";
+    std::cout << "  max_rel_diff: " << std::setprecision(16) << max_rel << "\n";
+
+    // Persist comparison fields for offline inspection/plotting.
+    {
+        const std::string out_h5 = "eikonal_forward_compare.h5";
+        const MatrixXd vel = fun.cwiseInverse();
+        H5IO f(out_h5, H5IO::TRUNC);
+        f.write_vector("lon_deg", xx_deg);
+        f.write_vector("lat_deg", yy_deg);
+        f.write_matrix("fun_slowness", fun);
+        f.write_matrix("vel_km_s", vel);
+        f.write_matrix("spha", spha);
+        f.write_matrix("sphb", sphb);
+        f.write_matrix("sphc", sphc);
+        f.write_matrix("t_fortran", t_fortran);
+        f.write_matrix("t_cpp", t_cpp);
+        f.write_matrix("t_diff", diff);
+        f.write_scalar("x0_deg", x0_deg);
+        f.write_scalar("y0_deg", y0_deg);
+        std::cout << "  wrote h5: " << out_h5 << "\n";
+    }
+
+    assert(max_abs == 0.0 && "C++ forward eikonal must be numerically identical to Fortran");
+
+    constexpr int nrepeat = 10;
+    using clock = std::chrono::high_resolution_clock;
+
+    auto t0 = clock::now();
+    for (int i = 0; i < nrepeat; ++i) {
+        fsm_uw_ps_lonlat_2d_fortran(xx_deg.data(), yy_deg.data(),
+                                    &nx, &ny,
+                                    spha.data(), sphb.data(), sphc.data(), fun.data(),
+                                    &x0_d, &y0_d,
+                                    t_fortran.data());
+    }
+    auto t1 = clock::now();
+
+    auto t2 = clock::now();
+    for (int i = 0; i < nrepeat; ++i) {
+        t_cpp = eikonal::FSM_UW_PS_lonlat_2d(xx_deg, yy_deg, spha, sphb, sphc, fun, x0_deg, y0_deg);
+    }
+    auto t3 = clock::now();
+
+    const double ms_fortran = std::chrono::duration<double, std::milli>(t1 - t0).count() / nrepeat;
+    const double ms_cpp = std::chrono::duration<double, std::milli>(t3 - t2).count() / nrepeat;
+
+    std::cout << "  benchmark avg (Fortran direct): " << ms_fortran << " ms/run\n";
+    std::cout << "  benchmark avg (C++ API):      " << ms_cpp << " ms/run\n";
+
+    print("[PASS] forward Fortran/C++ equality + benchmark");
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: complex velocity structure comparison + benchmark
+// ---------------------------------------------------------------------------
+static void test_forward_fortran_cpp_benchmark_complex()
+{
+    const int nx = 161, ny = 121;
+    const real_t x0_deg = 1.2, y0_deg = -2.4;
+
+    VectorXd xx_deg = VectorXd::LinSpaced(nx, -35.0, 35.0);
+    VectorXd yy_deg = VectorXd::LinSpaced(ny, -25.0, 25.0);
+    MatrixXd spha(nx, ny), sphb(nx, ny), sphc(nx, ny), fun(nx, ny);
+
+    // Build a complex but smooth velocity model:
+    // background + two Gaussian anomalies + checkerboard-like perturbation.
+    for (int ix = 0; ix < nx; ++ix) {
+        for (int iy = 0; iy < ny; ++iy) {
+            const real_t lon = xx_deg(ix);
+            const real_t lat = yy_deg(iy);
+            const real_t lonr = lon * PI / 180.0;
+            const real_t latr = lat * PI / 180.0;
+
+            const real_t g1 = std::exp(-((lon - 10.0)*(lon - 10.0) / (2.0 * 8.0 * 8.0)
+                                        + (lat + 6.0)*(lat + 6.0) / (2.0 * 5.0 * 5.0)));
+            const real_t g2 = std::exp(-((lon + 14.0)*(lon + 14.0) / (2.0 * 10.0 * 10.0)
+                                        + (lat - 8.0)*(lat - 8.0) / (2.0 * 7.0 * 7.0)));
+            const real_t checker = std::sin(3.0 * lonr) * std::cos(2.5 * latr);
+
+            real_t vel = 3.35
+                       + 0.10 * std::cos(1.7 * latr)
+                       + 0.08 * std::sin(1.3 * lonr)
+                       + 0.14 * g1
+                       - 0.12 * g2
+                       + 0.05 * checker;
+            vel = std::max<real_t>(2.8, std::min<real_t>(4.2, vel));
+
+            fun(ix, iy) = 1.0 / vel;
+
+            // Keep tensor positive-definite and spatially varying.
+            spha(ix, iy) = 1.0 + 0.12 * std::sin(2.0 * lonr) * std::cos(latr) + 0.03 * g1;
+            sphb(ix, iy) = 1.0 + 0.10 * std::cos(1.5 * lonr) * std::sin(latr) - 0.02 * g2;
+            sphc(ix, iy) = 0.04 * std::sin(lonr + latr) + 0.01 * checker;
+        }
+    }
+
+    MatrixXd t_fortran = MatrixXd::Zero(nx, ny);
+    const double x0_d = static_cast<double>(x0_deg);
+    const double y0_d = static_cast<double>(y0_deg);
+    fsm_uw_ps_lonlat_2d_fortran(xx_deg.data(), yy_deg.data(),
+                                &nx, &ny,
+                                spha.data(), sphb.data(), sphc.data(), fun.data(),
+                                &x0_d, &y0_d,
+                                t_fortran.data());
+
+    MatrixXd t_cpp = eikonal::FSM_UW_PS_lonlat_2d(
+        xx_deg, yy_deg, spha, sphb, sphc, fun, x0_deg, y0_deg);
+    const MatrixXd diff = t_cpp - t_fortran;
+    const MatrixXd vel = fun.cwiseInverse();
+
+    const real_t max_abs = diff.array().abs().maxCoeff();
+    const real_t max_rel = (diff.array().abs() / (t_fortran.array().abs() + 1e-14)).maxCoeff();
+    std::cout << "  [complex] max_abs_diff: " << std::setprecision(16) << max_abs << "\n";
+    std::cout << "  [complex] max_rel_diff: " << std::setprecision(16) << max_rel << "\n";
+    assert(max_abs == 0.0 && "Complex model: C++ forward eikonal must be numerically identical to Fortran");
+
+    {
+        const std::string out_h5 = "eikonal_forward_compare_complex.h5";
+        H5IO f(out_h5, H5IO::TRUNC);
+        f.write_vector("lon_deg", xx_deg);
+        f.write_vector("lat_deg", yy_deg);
+        f.write_matrix("fun_slowness", fun);
+        f.write_matrix("vel_km_s", vel);
+        f.write_matrix("spha", spha);
+        f.write_matrix("sphb", sphb);
+        f.write_matrix("sphc", sphc);
+        f.write_matrix("t_fortran", t_fortran);
+        f.write_matrix("t_cpp", t_cpp);
+        f.write_matrix("t_diff", diff);
+        f.write_scalar("x0_deg", x0_deg);
+        f.write_scalar("y0_deg", y0_deg);
+        std::cout << "  wrote h5: " << out_h5 << "\n";
+    }
+
+    constexpr int nrepeat = 8;
+    using clock = std::chrono::high_resolution_clock;
+    auto t0 = clock::now();
+    for (int i = 0; i < nrepeat; ++i) {
+        fsm_uw_ps_lonlat_2d_fortran(xx_deg.data(), yy_deg.data(),
+                                    &nx, &ny,
+                                    spha.data(), sphb.data(), sphc.data(), fun.data(),
+                                    &x0_d, &y0_d,
+                                    t_fortran.data());
+    }
+    auto t1 = clock::now();
+    auto t2 = clock::now();
+    for (int i = 0; i < nrepeat; ++i) {
+        t_cpp = eikonal::FSM_UW_PS_lonlat_2d(xx_deg, yy_deg, spha, sphb, sphc, fun, x0_deg, y0_deg);
+    }
+    auto t3 = clock::now();
+
+    const double ms_fortran = std::chrono::duration<double, std::milli>(t1 - t0).count() / nrepeat;
+    const double ms_cpp = std::chrono::duration<double, std::milli>(t3 - t2).count() / nrepeat;
+    std::cout << "  [complex] benchmark avg (Fortran direct): " << ms_fortran << " ms/run\n";
+    std::cout << "  [complex] benchmark avg (C++ API):      " << ms_cpp << " ms/run\n";
+
+    print("[PASS] forward Fortran/C++ equality + benchmark (complex model)");
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 int main()
@@ -457,6 +669,12 @@ int main()
 
     std::cout << "\nTest 8: adjoint linearity (superposition)\n";
     test_adjoint_linearity();
+
+    std::cout << "\nTest 9: forward Fortran vs C++ equality + benchmark\n";
+    test_forward_fortran_cpp_benchmark();
+
+    std::cout << "\nTest 10: complex velocity structure comparison + benchmark\n";
+    test_forward_fortran_cpp_benchmark_complex();
 
     std::cout << "\n=== All tests passed ===\n";
     return 0;

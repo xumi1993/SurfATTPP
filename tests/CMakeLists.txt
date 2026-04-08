@@ -7,6 +7,8 @@
 set(LIBS_TO_LINK objs surfker_obj minpack_obj Eigen3::Eigen ${MY_HDF5_LIBS} ${SPDLOG_TARGET}
     yaml-cpp::yaml-cpp MPI::MPI_CXX)
 
+find_program(MAMBA_EXE mamba REQUIRED)
+
 # --- yaml_test --------------------------------------------------------------
 add_executable(test_input_params
     yaml_test/test_input_params.cpp
@@ -46,6 +48,8 @@ target_link_libraries(test_h5io PRIVATE ${LIBS_TO_LINK})
 # --- eikonal_test -----------------------------------------------------------
 add_executable(test_eikonal
     eikonal_test/test_eikonal.cpp
+    eikonal_test/eikon_solver_2d.f90
+    eikonal_test/eikonal_solver_cwrap.f90
 )
 target_link_libraries(test_eikonal PRIVATE ${LIBS_TO_LINK})
 target_compile_options(test_eikonal PRIVATE -O2)
@@ -55,6 +59,12 @@ add_executable(test_surfdisp
     surfdisp_test/test_surfdisp.cpp
 )
 target_link_libraries(test_surfdisp PRIVATE ${LIBS_TO_LINK})
+
+# --- interp_test ------------------------------------------------------------
+add_executable(test_interp2d_dump
+    interp_test/test_interp2d_dump.cpp
+)
+target_link_libraries(test_interp2d_dump PRIVATE ${LIBS_TO_LINK})
 
 # ---------------------------------------------------------------------------
 # CTest registration
@@ -101,6 +111,15 @@ add_test(
 add_test(
     NAME test_surfdisp
     COMMAND test_surfdisp
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME test_interp2d_python
+    COMMAND ${MAMBA_EXE} run -n pytomoatt python
+            ${CMAKE_SOURCE_DIR}/tests/interp_test/compare_interp2d_with_python.py
+            $<TARGET_FILE:test_interp2d_dump>
+            ${CMAKE_BINARY_DIR}/interp2d_cpp_output.txt
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
