@@ -140,10 +140,13 @@ ModelGrid::ModelGrid() {
         ybeg = lat_min - dom.num_grid_margin * dgrid_j;
         yend = lat_max + dom.num_grid_margin * dgrid_j;
 
-        // Number of grid nodes (inclusive on both ends)
-        n_xyz[0] = static_cast<int>((xend - xbeg) / dgrid_i) + 1;
-        n_xyz[1] = static_cast<int>((yend - ybeg) / dgrid_j) + 1;
-        n_xyz[2] = static_cast<int>((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1;
+        // Number of grid nodes (inclusive on both ends).
+        // Round first to avoid floating-point drift (e.g. 99.9999999 -> 100).
+        n_xyz[0] = static_cast<int>(std::llround((xend - xbeg) / dgrid_i) + 1);
+        n_xyz[1] = static_cast<int>(std::llround((yend - ybeg) / dgrid_j) + 1);
+        n_xyz[2] = static_cast<int>(std::llround((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1);
+
+        std::cout << (xend - xbeg) / dgrid_i + 1 << " " << (yend - ybeg) / dgrid_j + 1 << " " << (dom.depth[1] - dom.depth[0]) / dgrid_k + 1 << std::endl;
         // Expose grid sizes through the I2V macro variables
         ngrid_i = n_xyz[0];
         ngrid_j = n_xyz[1];
