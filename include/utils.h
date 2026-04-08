@@ -421,8 +421,13 @@ inline Eigen::VectorX<real_t> interp1d(
     for (int k = 0; k < nq; ++k) {
         const real_t qx = xq(k);
 
-        if (qx < xgrid(0) || qx > xgrid(nx - 1)) {
-            yq(k) = std::numeric_limits<real_t>::quiet_NaN();
+        // Extrapolate at boundaries using constant extension (nearer endpoint value)
+        if (qx < xgrid(0)) {
+            yq(k) = y(0);
+            continue;
+        }
+        if (qx > xgrid(nx - 1)) {
+            yq(k) = y(nx - 1);
             continue;
         }
 
@@ -610,4 +615,19 @@ inline Eigen::VectorX<real_t> extract_1d_from_3d(
         data_1d(k) = data[I2V(ix, iy, k)];
     }
     return data_1d;
+}
+
+// ---------------------------------------------------------------------------
+// Convert a numeric array into fixed-precision string values for CSV output.
+// rapidcsv writing here is string-based to keep formatting explicit/consistent.
+inline std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6) {
+    std::vector<std::string> v(n);
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(prec);
+    for (int i = 0; i < n; ++i) {
+        oss.str(""); oss.clear();
+        oss << data[i];
+        v[i] = oss.str();
+    }
+    return v;
 }

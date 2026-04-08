@@ -82,6 +82,7 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     const real_t c1            = IP.inversion().c1;
     const real_t c2            = IP.inversion().c2;
     const int    max_sub_niter = IP.inversion().max_sub_niter;
+    const real_t alpha_init    = IP.inversion().step_length;
 
     // direction is the positive gradient (search_dir); model_update subtracts it,
     // so the actual descent step is d = -direction.  Wolfe conditions require
@@ -116,12 +117,22 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
 
     } else {
         // Armijo ok but curvature not: step too small, widen.
-        alpha_L        = alpha;
-        res.next_alpha = (alpha_R > _0_CR) ? (alpha_L + alpha_R) * _0_5_CR
-                                           : alpha * _2_CR;
-        res.status     = WolfeResult::Status::TRY;
-        logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6f}",
-            res.next_alpha), MODULE_OPTIM);
+        alpha_L = alpha;
+        real_t candidate = (alpha_R > _0_CR) ? (alpha_L + alpha_R) * _0_5_CR
+                                             : alpha * _2_CR;
+        
+        // Cap at initial configured step length; if capped, accept even if curvature not satisfied
+        if (candidate > alpha_init) {
+            res.next_alpha = alpha_init;
+            res.status     = WolfeResult::Status::ACCEPT;
+            logger.Info(std::format("Curvature not satisfied but enlarged alpha exceeds alpha_init={:.6f}. "
+                "Accept alpha_init={:.6f}", alpha_init, alpha_init), MODULE_OPTIM);
+        } else {
+            res.next_alpha = candidate;
+            res.status     = WolfeResult::Status::TRY;
+            logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6f}",
+                res.next_alpha), MODULE_OPTIM);
+        }
     }
 
     if (res.status == WolfeResult::Status::TRY && subiter == max_sub_niter - 1) {

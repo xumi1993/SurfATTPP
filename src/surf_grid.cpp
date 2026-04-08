@@ -87,6 +87,9 @@ void SurfGrid::build_media_matrix_with_topo() {
     // Load topography 
     auto &topo = Topography::Topo();
     topo.grid(mg.xgrids, mg.ygrids);
+    // Save the freshly-interpolated (unsmoothed) topo so each period can
+    // start from the same base before period-specific smoothing.
+    const Eigen::MatrixX<real_t> z_gridded = topo.z;
 
     Eigen::VectorX<real_t> avg_svel = Eigen::VectorX<real_t>::Zero(nperiod_);
     if (mpi.is_main()) {
@@ -106,9 +109,13 @@ void SurfGrid::build_media_matrix_with_topo() {
     for (int iper = 0; iper < nperiod_; ++iper){
         int loc_rank = mpi.select_rank_for_src(iper);
         if (mpi.rank() == loc_rank) {
-            real_t sigma = avg_svel(iper) * periods(iper) *
-                           IP.topo().wavelen_factor / (_2_CR * PI);
-            topo.smooth(sigma);
+            // Restore the unsmoothed gridded topo before each period's smoothing.
+            topo.z = z_gridded;
+            // sigma in km (wavelength-based), but gaussian_smooth_geo_2 expects arc-degrees.
+            real_t sigma_km = avg_svel(iper) * periods(iper) *
+                              IP.topo().wavelen_factor / (_2_CR * PI);
+            real_t sigma_deg = sigma_km / (R_EARTH * DEG2RAD);
+            topo.smooth(sigma_deg);
 
             // dip angle: shape (ngrid_i, ngrid_j)
             Eigen::MatrixX<real_t> angle_per = topo.calc_dip_angle();
@@ -307,6 +314,9 @@ void SurfGrid::correct_depth_with_topo() {
     const Eigen::InnerStride<Eigen::Dynamic> iz_stride(nperiod_);
     using MapStride = Eigen::Map<Eigen::VectorX<real_t>, 0, Eigen::InnerStride<Eigen::Dynamic>>;
 
+    const real_t zmin = mg.zgrids(0);
+    const real_t zmax = mg.zgrids(ngrid_k - 1);
+
     for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
         for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
             int ix_glob = dcp.loc_I_start() + ix;
@@ -315,7 +325,13 @@ void SurfGrid::correct_depth_with_topo() {
             for (int iper = 0; iper < nperiod_; ++iper) {
                 // Topo-corrected depth grid: stretch each depth node by 1/cos(angle)
                 real_t angle = topo_angle[surf_idx(ix_glob, iy_glob, iper)];
-                Eigen::VectorX<real_t> newz = mg.zgrids / std::cos(angle * DEG2RAD);
+                real_t cosang = std::cos(angle * DEG2RAD);
+                // Avoid numerical blow-up near vertical dip and keep interpolation in-bounds.
+                if (!std::isfinite(cosang) || std::abs(cosang) < 1e-6) {
+                    cosang = 1e-6;
+                }
+                Eigen::VectorX<real_t> newz = mg.zgrids / cosang;
+                newz = newz.array().max(zmin).min(zmax).matrix();
 
                 // Base offset in the tensor for this (ix, iy, iz=0, iper)
                 int base = kernel_idx4(ix, iy, 0, iper, dcp.loc_ny(), ngrid_k, nperiod_);

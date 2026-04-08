@@ -126,6 +126,7 @@ void Inversion::run_inversion() {
         const bool need_fwd_adj = !gradient_reuse_;  // flag reset inside init_iteration()
         if (need_fwd_adj) {
             misfit_trial_ = run_forward_adjoint(true);
+            write_src_rec_fwd();
         } else {
             logger.Info("Reusing gradient from accepted line-search step (skipping forward+adjoint).", MODULE_INV);
         }
@@ -150,6 +151,7 @@ void Inversion::run_inversion() {
                 ), MODULE_INV);
             }
             mg.collect_model_loc();
+            write_src_rec_fwd();
         } else {
             logger.Error("Unsupported optimization method specified in input parameters.", MODULE_INV);
             mpi.abort(EXIT_FAILURE);
@@ -159,8 +161,6 @@ void Inversion::run_inversion() {
             "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
                 100 * misfit_[iter_] / misfit_[0]
         ), MODULE_INV);
-
-        write_src_rec_fwd();
 
         // Check for convergence based on misfit reduction
         if (check_convergence()) break;

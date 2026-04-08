@@ -401,21 +401,6 @@ ResidualStats SrcRec::compute_residual_stats() {
     return {mean, stddev};  // ResidualStats aggregate init
 }
 
-// ---------------------------------------------------------------------------
-// Convert a numeric array into fixed-precision string values for CSV output.
-// rapidcsv writing here is string-based to keep formatting explicit/consistent.
-static std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6) {
-    std::vector<std::string> v(n);
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(prec);
-    for (int i = 0; i < n; ++i) {
-        oss.str(""); oss.clear();
-        oss << data[i];
-        v[i] = oss.str();
-    }
-    return v;
-}
-
 // Write the current observation table to CSV.
 // If is_fwd == true, output forward-modeled fields (tt_fwd / vel_fwd);
 // otherwise output observed/reference fields (tt / vel).

@@ -118,7 +118,6 @@ struct RotateModelArgs {
     std::string outfname;
     real_t angle = 0.0;
     std::optional<std::array<real_t, 2>> center;  // absent when not supplied on the command line
-    std::string keyname = "vs";
 };
 
 struct Tomo2DArgs {
@@ -262,7 +261,6 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
             "optional arguments:\n"
             "  -a angle             Rotation angle in degrees\n"
             "  -c clat/clon         Centre of rotation (lat/lon)\n"
-            "  -k keyname           Variable name to rotate (default: \"vs\")\n"
             "  -h                   Print help message\n";
         std::exit(0);
     }
@@ -271,7 +269,6 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
     out.outfname = al.require("-o");
     if (auto v = al.get("-a")) out.angle   = std::stod(*v);
     if (auto v = al.get("-c")) out.center  = parse_2double(*v);
-    if (auto v = al.get("-k")) out.keyname = *v;
     return out;
 }
 
