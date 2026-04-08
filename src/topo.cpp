@@ -98,6 +98,7 @@ Eigen::MatrixX<real_t> Topography::calc_dip_angle() {
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
     
+    // TODO: Need to be checked.
     if (z.size() == 0) {
         logger.Error("Topo grid not set. Call grid() first.", MODULE_TOPO);
         mpi.abort(EXIT_FAILURE);

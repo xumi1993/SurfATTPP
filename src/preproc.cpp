@@ -186,6 +186,7 @@ void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
         }
 
         if (IP.inversion().is_anisotropy) {
+            // TODO: need to be checked.
             sg.prepare_aniso_media();
         }
     }
@@ -302,6 +303,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
             }
         }
 
+        // TODO: Need to be checked for the anisotropic case.
         // Anisotropic parameter kernels (Gc, Gs)
         if (IP.inversion().is_anisotropy) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {

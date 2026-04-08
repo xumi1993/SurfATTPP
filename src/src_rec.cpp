@@ -418,9 +418,9 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
                 logger.Error("Forward-modeled travel times (tt_fwd) are not assigned", MODULE_SRCREC);
                 mpi.abort(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs_, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs_, 6));
         } else {
-            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs_, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs_, 6));
         }
         doc.SetColumn<std::string> (1,  staname);
         doc.SetColumn<std::string> (2,  fmt_col(stla,       n_obs_, 4));
@@ -436,9 +436,9 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
                 logger.Error("Forward-modeled velocities (vel_fwd) are not assigned", MODULE_SRCREC);
                 mpi.abort(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs_, 4));
+            doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs_, 6));
         } else {
-            doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs_, 4));
+            doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs_, 6));
         }
         doc.SetColumnName(0,  "tt");
         doc.SetColumnName(1,  "staname");
