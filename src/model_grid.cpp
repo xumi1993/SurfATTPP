@@ -87,17 +87,9 @@ namespace {
 
         const auto info = minpack::lmdif1(
             [&anch, &n_pi](int m, int /*n*/, const double* x, double* fvec, int& iflag) {
-                constexpr double eps = 1.0e-12;
-                if (std::abs(x[2]) < eps) {
-                    iflag = -1;
-                    return;
-                }
+                (void)iflag;
                 for (int i = 0; i < m; ++i) {
                     const double arg = x[0] * x[0] + x[1] * (static_cast<double>(anch(i)) - 1.0);
-                    if (arg < 0.0) {
-                        iflag = -1;
-                        return;
-                    }
                     const double anomfun = (std::sqrt(arg) - x[0]) / x[2];
                     fvec[i] = std::abs(anomfun - static_cast<double>(n_pi(i)));
                 }
@@ -105,8 +97,13 @@ namespace {
             maxanchor, 3,para, fitfun, tol
         );
 
-        if (info == minpack::InfoCode::ImproperInput) {
-            logger.Error("ModelGrid::dep_anom: minpack lmdif1 failed with ImproperInput", MODULE_GRID);
+        logger.Debug(std::format(
+            "Depth anomaly fit status info={} (1..4 are converged), params: {:.4f} {:.4f} {:.4f}",
+            static_cast<int>(info), para[0], para[1], para[2]
+        ), MODULE_GRID);
+
+        if (static_cast<int>(info) <= 0) {
+            logger.Error("ModelGrid::dep_anom: minpack lmdif1 failed (info <= 0)", MODULE_GRID);
             mpi.abort(EXIT_FAILURE);
         }
 
@@ -242,9 +239,10 @@ void ModelGrid::load_3d_model() {
         if (nx != static_cast<hsize_t>(ngrid_i) ||
             ny != static_cast<hsize_t>(ngrid_j) ||
             nz != static_cast<hsize_t>(ngrid_k)) {
-            throw std::runtime_error(std::format(
+            logger.Error(std::format(
                 "ModelGrid: dataset '{}' shape ({},{},{}) != grid ({},{},{})",
-                name, nx, ny, nz, ngrid_i, ngrid_j, ngrid_k));
+                name, nx, ny, nz, ngrid_i, ngrid_j, ngrid_k), MODULE_GRID);
+            mpi.abort(EXIT_FAILURE);
         }
     };
 
@@ -358,7 +356,8 @@ void ModelGrid::build_init_model() {
         }
         mpi.barrier();
     } else {
-        throw std::runtime_error("ModelGrid: unknown init_model_type " + std::to_string(IP.inversion().init_model_type));
+        logger.Error(std::format("Unsupported init_model_type {}", IP.inversion().init_model_type), MODULE_GRID);
+        mpi.abort(EXIT_FAILURE);
     }
 
     if (IP.inversion().init_model_type != 2) {
@@ -404,14 +403,17 @@ std::tuple<Eigen::VectorX<real_t>, Eigen::VectorX<real_t>, Eigen::VectorX<real_t
 ModelGrid::build_perturbation_pattern(
     int nx_w, int ny_w, int nz_w, real_t hmargin, real_t anom_sz
 ) const {
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
     const int ntaper_i = static_cast<int>(hmargin / dgrid_i);
     const int ntaper_j = static_cast<int>(hmargin / dgrid_j);
     const int inner_i  = ngrid_i - 2 * ntaper_i;
     const int inner_j  = ngrid_j - 2 * ntaper_j;
 
-    if (inner_i <= 0 || inner_j <= 0)
-        throw std::runtime_error(
-            "ModelGrid::build_perturbation_pattern: hmargin too large for current grid size");
+    if (inner_i <= 0 || inner_j <= 0){
+        logger.Error("ModelGrid::build_perturbation_pattern: hmargin too large for current grid size", MODULE_GRID);
+        mpi.abort(EXIT_FAILURE);
+    }
 
     Eigen::VectorX<real_t> xp = Eigen::VectorX<real_t>::Zero(ngrid_i);
     Eigen::VectorX<real_t> yp = Eigen::VectorX<real_t>::Zero(ngrid_j);
@@ -435,7 +437,11 @@ ModelGrid::build_perturbation_pattern(
         zp = (static_cast<real_t>(nz_w) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
     } else {
         const auto para = dep_anom(zgrids, nz_w, anom_sz);
-        for (int k = 0; k < ngrid_k; ++k) {
+        logger.Info(std::format(
+            "Depth perturbation phase function parameters: p0={:.3f}, p1={:.3f}, p2={:.3f}",
+            para[0], para[1], para[2]
+        ), MODULE_GRID);
+        for (int k = 0; k < ngrid_k - 1; ++k) {
             const real_t phase = (
                 std::sqrt(para[0] * para[0] + para[1] * static_cast<real_t>(k)) - para[0]
             ) / para[2];
