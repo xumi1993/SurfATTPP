@@ -104,7 +104,7 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     if (cond_armijo && cond_curvature) {
         res.status     = WolfeResult::Status::ACCEPT;
         res.next_alpha = alpha;
-        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6f} -> {:.6f}, alpha={:.6f}",
+        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6f} -> {:.6f}",
             f0, f1, alpha), MODULE_OPTIM);
 
     } else if (!cond_armijo) {
@@ -112,7 +112,7 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
         alpha_R        = alpha;
         res.next_alpha = (alpha_L + alpha_R) * _0_5_CR;
         res.status     = WolfeResult::Status::TRY;
-        logger.Info(std::format("Armijo not satisfied (step too large). Next alpha={:.6f}",
+        logger.Info(std::format("Armijo not satisfied (step too large).",
             res.next_alpha), MODULE_OPTIM);
 
     } else {
@@ -125,12 +125,12 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
         if (candidate > alpha_init) {
             res.next_alpha = alpha_init;
             res.status     = WolfeResult::Status::ACCEPT;
-            logger.Info(std::format("Curvature not satisfied but enlarged alpha exceeds alpha_init={:.6f}. "
-                "Accept alpha_init={:.6f}", alpha_init, alpha_init), MODULE_OPTIM);
+            logger.Info(std::format("Curvature not satisfied but enlarged alpha exceeds alpha_init={:.6f}. ",
+                alpha_init, alpha_init), MODULE_OPTIM);
         } else {
             res.next_alpha = candidate;
             res.status     = WolfeResult::Status::TRY;
-            logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6f}",
+            logger.Info(std::format("Curvature not satisfied (step too small)",
                 res.next_alpha), MODULE_OPTIM);
         }
     }

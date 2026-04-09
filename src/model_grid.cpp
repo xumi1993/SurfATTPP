@@ -495,11 +495,11 @@ void ModelGrid::add_aniso_perturbation(
                 for (int k = 0; k < ngrid_k; ++k) {
                     const real_t amp = xp(i) * yp(j) * zp(k) * pert_ani;
                     if (amp > _0_CR) {
-                        gc3d[I2V(i, j, k)] = amp * std::cos(2 * angle * DEG2RAD);
-                        gs3d[I2V(i, j, k)] = amp * std::sin(2 * angle * DEG2RAD);
+                        gc3d[I2V(i, j, k)] = std::abs(amp) * std::cos(2 * angle * DEG2RAD);
+                        gs3d[I2V(i, j, k)] = std::abs(amp) * std::sin(2 * angle * DEG2RAD);
                     } else {
-                        gc3d[I2V(i, j, k)] = amp * std::cos(2 * angle * DEG2RAD);
-                        gs3d[I2V(i, j, k)] = amp * std::sin(2 * angle * DEG2RAD);
+                        gc3d[I2V(i, j, k)] = std::abs(amp) * std::cos(2 * (angle + 90) * DEG2RAD);
+                        gs3d[I2V(i, j, k)] = std::abs(amp) * std::sin(2 * (angle + 90) * DEG2RAD);
                     }
                 }
             }
