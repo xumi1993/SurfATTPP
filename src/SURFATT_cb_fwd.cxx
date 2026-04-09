@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
     );
     mg.add_aniso_perturbation(
         args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
-        args.ani_angle, args.pert_ani, args.hmarg, _0_CR
+        args.ani_angle, args.pert_ani, args.hmarg, args.anom_size
     );
     mg.write(TARGET_MODEL_FNAME);
 

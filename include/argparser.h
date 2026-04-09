@@ -193,7 +193,7 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
             "  -h                      Print help message\n"
             "  -a nx/ny/nz[/angle]     Number of anisotropic anomalies; optional anisotropy angle (deg, default: 120)\n"
             "  -e tt_noise             Add random noise to travel time data (default: 0)\n"
-            "  -v                      Only perturb Vs model\n"
+            "  -v                      Only perturb Vs model, default: false\n"
             "  -m margin_degree        Margin between anomalies in degrees (default: 0)\n"
             "  -p pert_vel[/pert_ani]  Magnitude of velocity perturbations (default: 0.08)\n"
             "  -s anom_size_km         Size of top anomalies in km (default: uniform)\n";
