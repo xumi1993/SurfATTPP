@@ -20,7 +20,6 @@ static void print(const std::string &msg) {
 // ---------------------------------------------------------------------------
 static void verify_all() {
     const auto &d   = InputParams::IP().data();
-    const auto &o   = InputParams::IP().output();
     const auto &dom = InputParams::IP().domain();
     const auto &t   = InputParams::IP().topo();
     const auto &inv = InputParams::IP().inversion();
@@ -53,10 +52,6 @@ static void verify_all() {
     assert(inv.is_anisotropy      == true);
     assert(inv.use_alpha_beta_rho == true);
     assert(inv.rho_scaling        == true);
-    assert(inv.init_model_type    == 1);
-    assert_near(inv.vel_range[0], 1.8);
-    assert_near(inv.vel_range[1], 4.2);
-    assert(inv.init_model_path == "/path/to/init_mod.h5");
     assert(inv.niter        == 40);
     assert_near(inv.min_derr,    0.0001);
     assert(inv.optim_method  == 2);

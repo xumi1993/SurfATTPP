@@ -212,8 +212,8 @@ void ModelGrid::allocate_model_grids() {
 void ModelGrid::build_1d_model_linear() {
     vs1d = Eigen::VectorX<real_t>::LinSpaced(
         zgrids.size(), 
-        InputParams::IP().inversion().vel_range[0], 
-        InputParams::IP().inversion().vel_range[1]
+        InputParams::IP().model().vel_range[0], 
+        InputParams::IP().model().vel_range[1]
     );
 }
 
@@ -232,7 +232,7 @@ void ModelGrid::load_3d_model() {
     const auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
-    H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
+    H5IO f(IP.model().init_model_path, H5IO::RDONLY);
     const hsize_t expect_n = static_cast<hsize_t>(ngrid_i * ngrid_j * ngrid_k);
 
     try {
@@ -421,7 +421,7 @@ void ModelGrid::load_3d_model() {
     } catch (const std::exception &e) {
         logger.Error(std::format(
             "ModelGrid: failed to load 3D model from HDF5 file '{}': {}",
-            IP.inversion().init_model_path, e.what()
+            IP.model().init_model_path, e.what()
         ), MODULE_GRID);
         mpi.abort(EXIT_FAILURE);
     }
@@ -448,25 +448,25 @@ void ModelGrid::build_init_model() {
     auto &mpi = Parallel::mpi();
     auto &logger = ATTLogger::logger();
 
-    if (IP.inversion().init_model_type == 0) {
+    if (IP.model().init_model_type == 0) {
         // Build a simple linear Vs gradient
         logger.Info(std::format(
             "Building linear 1-D initial model with S-wave velocity from {:.2f} to {:.2f} km/s", 
-            IP.inversion().vel_range[0], IP.inversion().vel_range[1]), MODULE_GRID
+            IP.model().vel_range[0], IP.model().vel_range[1]), MODULE_GRID
         );
         build_1d_model_linear();
-    } else if (IP.inversion().init_model_type == 1) {
+    } else if (IP.model().init_model_type == 1) {
         // Invert average dispersion curves to obtain a 1-D Vs model
         logger.Info(
             "Building 1-D initial model from surface-wave inversion of average dispersion curves",
             MODULE_GRID
         );
         build_1d_model_inversion();
-    } else if (IP.inversion().init_model_type == 2) {
+    } else if (IP.model().init_model_type == 2) {
         // Load an externally-supplied 3-D model; only main rank does the I/O
         logger.Info(std::format(
             "Building 3-D initial model from HDF5 file: {}",
-            IP.inversion().init_model_path),
+            IP.model().init_model_path),
             MODULE_GRID
         );
         if (mpi.is_main()) {
@@ -474,11 +474,11 @@ void ModelGrid::build_init_model() {
         }
         mpi.barrier();
     } else {
-        logger.Error(std::format("Unsupported init_model_type {}", IP.inversion().init_model_type), MODULE_GRID);
+        logger.Error(std::format("Unsupported init_model_type {}", IP.model().init_model_type), MODULE_GRID);
         mpi.abort(EXIT_FAILURE);
     }
 
-    if (IP.inversion().init_model_type != 2) {
+    if (IP.model().init_model_type != 2) {
         // Extrude the 1-D profile laterally to fill the full 3-D volume
         if (mpi.is_main()) {
             for (int ix = 0; ix < ngrid_i; ++ix) {

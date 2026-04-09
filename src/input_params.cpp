@@ -68,6 +68,12 @@ void InputParams::load_domain(const YAML::Node &n) {
     }
 }
 
+void InputParams::load_model(const YAML::Node &n) {
+    model_.init_model_type = req<int>(n, "init_model_type");
+    model_.vel_range       = req<std::vector<real_t>>(n, "vel_range");
+    model_.init_model_path = opt<std::string>(n, "init_model_path", "");
+}
+
 void InputParams::load_topo(const YAML::Node &n) {
     topo_.is_consider_topo = req<bool>(n, "is_consider_topo");
     topo_.topo_file        = opt<std::string>(n, "topo_file", "");
@@ -114,10 +120,6 @@ void InputParams::load_inversion(const YAML::Node &n) {
     inversion_.use_alpha_beta_rho = req<bool>(n, "use_alpha_beta_rho");
     inversion_.rho_scaling        = req<bool>(n, "rho_scaling");
 
-    inversion_.init_model_type = req<int>(n, "init_model_type");
-    inversion_.vel_range       = req<std::vector<real_t>>(n, "vel_range");
-    inversion_.init_model_path = opt<std::string>(n, "init_model_path", "");
-
     inversion_.niter    = req<int>(n, "niter");
     inversion_.min_derr = req<real_t>(n, "min_derr");
 
@@ -154,6 +156,7 @@ InputParams::InputParams(const std::string &filepath)
     load_data(require_section("data"));
     load_output(require_section("output"));
     load_domain(require_section("domain"));
+    load_model(require_section("model"));
     load_topo(require_section("topo"));
     load_postproc(require_section("postproc"));
     load_inversion(require_section("inversion"));
@@ -211,6 +214,13 @@ void InputParams::bcast_domain() {
     mpi.bcast_vec(domain_.n_grid);
 }
 
+void InputParams::bcast_model() {
+    auto &mpi = Parallel::mpi();
+    mpi.bcast(model_.init_model_type);
+    mpi.bcast_vec(model_.vel_range);
+    mpi.bcast(model_.init_model_path);
+}
+
 void InputParams::bcast_topo() {
     auto &mpi = Parallel::mpi();
     mpi.bcast(topo_.is_consider_topo);
@@ -236,9 +246,6 @@ void InputParams::bcast_inversion() {
     mpi.bcast(inversion_.is_anisotropy);
     mpi.bcast(inversion_.use_alpha_beta_rho);
     mpi.bcast(inversion_.rho_scaling);
-    mpi.bcast(inversion_.init_model_type);
-    mpi.bcast_vec(inversion_.vel_range);
-    mpi.bcast(inversion_.init_model_path);
     mpi.bcast(inversion_.niter);
     mpi.bcast(inversion_.min_derr);
     mpi.bcast(inversion_.optim_method);
@@ -253,6 +260,7 @@ void InputParams::bcast_all_params() {
     bcast_data();
     bcast_output();
     bcast_domain();
+    bcast_model();
     bcast_topo();
     bcast_postproc();
     bcast_inversion();

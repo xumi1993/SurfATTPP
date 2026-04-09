@@ -43,6 +43,13 @@ struct TopoParams {
     real_t      wavelen_factor;
 };
 
+struct ModelParams {
+    // initial model
+    int                 init_model_type;  // 0 linear, 1 1-D avg, 2 external 3-D
+    std::vector<real_t> vel_range;        // [v_min, v_max] km/s
+    std::string         init_model_path;  // only used when init_model_type == 2
+};
+
 struct PostprocParams {
     real_t kdensity_coe;
     bool is_kden;
@@ -60,11 +67,7 @@ struct InversionParams {
     bool is_anisotropy;
     bool use_alpha_beta_rho;
     bool rho_scaling;
-    // initial model
-    int                 init_model_type;  // 0 linear, 1 1-D avg, 2 external 3-D
-    std::vector<real_t> vel_range;        // [v_min, v_max] km/s
-    std::string         init_model_path;  // only used when init_model_type == 2
-    // convergence
+    // iteration
     int    niter;
     real_t min_derr;
     // optimisation
@@ -116,6 +119,7 @@ public:
     const DataParams      &data()      const { return data_; }
     const OutputParams    &output()    const { return output_; }
     const DomainParams    &domain()    const { return domain_; }
+    const ModelParams     &model()     const { return model_; }
     const TopoParams      &topo()      const { return topo_; }
     const PostprocParams  &postproc()  const { return postproc_; }
     const InversionParams &inversion() const { return inversion_; }
@@ -156,6 +160,7 @@ private:
     TopoParams      topo_;
     PostprocParams  postproc_;
     InversionParams inversion_;
+    ModelParams     model_;
 
     YAML::Node resolve(const std::string &key) const;
 
@@ -165,6 +170,7 @@ private:
     void load_topo(const YAML::Node &n);
     void load_inversion(const YAML::Node &n);
     void load_postproc(const YAML::Node &n);
+    void load_model(const YAML::Node &n);
 
     void bcast_data();
     void bcast_output();
@@ -172,4 +178,5 @@ private:
     void bcast_topo();
     void bcast_postproc();
     void bcast_inversion();
+    void bcast_model();
 };
