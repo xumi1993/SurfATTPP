@@ -7,6 +7,7 @@
 #include "utils.h"
 #include "decomposer.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -232,35 +233,146 @@ void ModelGrid::load_3d_model() {
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
     H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
-    hsize_t nx = 0, ny = 0, nz = 0;
     const hsize_t expect_n = static_cast<hsize_t>(ngrid_i * ngrid_j * ngrid_k);
 
-    auto check_dims = [&](const std::string &name) {
-        if (nx != static_cast<hsize_t>(ngrid_i) ||
-            ny != static_cast<hsize_t>(ngrid_j) ||
-            nz != static_cast<hsize_t>(ngrid_k)) {
-            logger.Error(std::format(
-                "ModelGrid: dataset '{}' shape ({},{},{}) != grid ({},{},{})",
-                name, nx, ny, nz, ngrid_i, ngrid_j, ngrid_k), MODULE_GRID);
-            mpi.abort(EXIT_FAILURE);
-        }
-    };
-
     try {
+        auto read_axis = [&](const std::string &name_new, const std::string &name_old) {
+            std::vector<real_t> v;
+            std::string used_name;
+            if (f.exists(name_new)) {
+                v = f.read_vector<real_t>(name_new);
+                used_name = name_new;
+            } else if (f.exists(name_old)) {
+                v = f.read_vector<real_t>(name_old);
+                used_name = name_old;
+            } else {
+                throw std::runtime_error(std::format(
+                    "Missing coordinate axis '{}' (or legacy '{}') in initial model file",
+                    name_new, name_old));
+            }
+            if (v.size() < 2) {
+                throw std::runtime_error(std::format(
+                    "Axis '{}' must contain at least 2 nodes, got {}", used_name, v.size()));
+            }
+            Eigen::VectorX<real_t> out = Eigen::Map<Eigen::VectorX<real_t>>(v.data(), static_cast<int>(v.size()));
+            for (int i = 1; i < out.size(); ++i) {
+                if (out(i) <= out(i - 1)) {
+                    throw std::runtime_error(std::format(
+                        "Axis '{}' must be strictly increasing (index {}: {} <= {})",
+                        used_name, i, out(i), out(i - 1)));
+                }
+            }
+            return out;
+        };
+
+        const Eigen::VectorX<real_t> xsrc = read_axis("x", "xgrids");
+        const Eigen::VectorX<real_t> ysrc = read_axis("y", "ygrids");
+        const Eigen::VectorX<real_t> zsrc = read_axis("z", "zgrids");
+
+        auto axis_equal = [](const Eigen::VectorX<real_t>& a, const Eigen::VectorX<real_t>& b) {
+            if (a.size() != b.size()) return false;
+            for (int i = 0; i < a.size(); ++i) {
+                if (!real_t_equal(a(i), b(i))) return false;
+            }
+            return true;
+        };
+
+        const bool same_grid =
+            axis_equal(xsrc, xgrids) &&
+            axis_equal(ysrc, ygrids) &&
+            axis_equal(zsrc, zgrids);
+
+        auto check_target_inside_source = [&](const Eigen::VectorX<real_t>& src,
+                                              const Eigen::VectorX<real_t>& dst,
+                                              const std::string& axis_name) {
+            const real_t s0 = src(0);
+            const real_t s1 = src(src.size() - 1);
+            const real_t d0 = dst(0);
+            const real_t d1 = dst(dst.size() - 1);
+            const real_t tol = static_cast<real_t>(1.0e-6) * std::max(static_cast<real_t>(1), std::abs(s1 - s0));
+            if (d0 < s0 - tol || d1 > s1 + tol) {
+                throw std::runtime_error(std::format(
+                    "Target {} grid [{:.6f}, {:.6f}] is outside source grid [{:.6f}, {:.6f}]",
+                    axis_name, d0, d1, s0, s1));
+            }
+        };
+
+        if (!same_grid) {
+            check_target_inside_source(xsrc, xgrids, "x");
+            check_target_inside_source(ysrc, ygrids, "y");
+            check_target_inside_source(zsrc, zgrids, "z");
+        }
+
+        auto interpolate_or_copy = [&](const std::string &name, real_t *dst) {
+            hsize_t nx = 0, ny = 0, nz = 0;
+            auto src = f.read_volume<real_t>(name, nx, ny, nz);
+            if (nx != static_cast<hsize_t>(xsrc.size()) ||
+                ny != static_cast<hsize_t>(ysrc.size()) ||
+                nz != static_cast<hsize_t>(zsrc.size())) {
+                throw std::runtime_error(std::format(
+                    "Dataset '{}' shape ({},{},{}) is inconsistent with source grids ({},{},{})",
+                    name, nx, ny, nz, xsrc.size(), ysrc.size(), zsrc.size()));
+            }
+
+            if (same_grid &&
+                nx == static_cast<hsize_t>(ngrid_i) &&
+                ny == static_cast<hsize_t>(ngrid_j) &&
+                nz == static_cast<hsize_t>(ngrid_k)) {
+                std::copy(src.begin(), src.end(), dst);
+                return;
+            }
+
+            const real_t x0 = xsrc(0), x1 = xsrc(xsrc.size() - 1);
+            const real_t y0 = ysrc(0), y1 = ysrc(ysrc.size() - 1);
+            const real_t z0 = zsrc(0), z1 = zsrc(zsrc.size() - 1);
+
+            for (int i = 0; i < ngrid_i; ++i) {
+                real_t qx = xgrids(i);
+                if (qx < x0) qx = x0;
+                if (qx > x1) qx = x1;
+                for (int j = 0; j < ngrid_j; ++j) {
+                    real_t qy = ygrids(j);
+                    if (qy < y0) qy = y0;
+                    if (qy > y1) qy = y1;
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        real_t qz = zgrids(k);
+                        if (qz < z0) qz = z0;
+                        if (qz > z1) qz = z1;
+                        const real_t val = trilinear_interpolation(
+                            xsrc.data(), ysrc.data(), zsrc.data(),
+                            static_cast<int>(nx), static_cast<int>(ny), static_cast<int>(nz),
+                            src.data(),
+                            qx, qy, qz
+                        );
+                        if (std::isnan(val)) {
+                            throw std::runtime_error(std::format(
+                                "Trilinear interpolation failed for '{}' at ({:.6f},{:.6f},{:.6f})",
+                                name, qx, qy, qz));
+                        }
+                        dst[I2V(i, j, k)] = val;
+                    }
+                }
+            }
+        };
+
         // --- vs (required) ---
         {
-            auto d = f.read_volume<real_t>("vs", nx, ny, nz);
-            check_dims("vs");
-            std::copy(d.begin(), d.end(), vs3d);
-            logger.Info("Loaded 'vs' from HDF5 file.", MODULE_GRID);
+            interpolate_or_copy("vs", vs3d);
+            logger.Info(
+                same_grid ? "Loaded 'vs' from HDF5 file." :
+                            "Loaded and interpolated 'vs' onto current model grid.",
+                MODULE_GRID
+            );
         }
 
         // --- vp (optional, fallback: empirical vs2vp) ---
         if (f.exists("vp")) {
-            auto d = f.read_volume<real_t>("vp", nx, ny, nz);
-            check_dims("vp");
-            std::copy(d.begin(), d.end(), vp3d);
-            logger.Info("Loaded 'vp' from HDF5 file.", MODULE_GRID);
+            interpolate_or_copy("vp", vp3d);
+            logger.Info(
+                same_grid ? "Loaded 'vp' from HDF5 file." :
+                            "Loaded and interpolated 'vp' onto current model grid.",
+                MODULE_GRID
+            );
         } else {
             logger.Info("'vp' not found in HDF5 file, computing from empirical vs2vp.", MODULE_GRID);
             for (hsize_t i = 0; i < expect_n; ++i)
@@ -269,10 +381,12 @@ void ModelGrid::load_3d_model() {
 
         // --- rho (optional, fallback: empirical vp2rho) ---
         if (f.exists("rho")) {
-            auto d = f.read_volume<real_t>("rho", nx, ny, nz);
-            check_dims("rho");
-            std::copy(d.begin(), d.end(), rho3d);
-            logger.Info("Loaded 'rho' from HDF5 file.", MODULE_GRID);
+            interpolate_or_copy("rho", rho3d);
+            logger.Info(
+                same_grid ? "Loaded 'rho' from HDF5 file." :
+                            "Loaded and interpolated 'rho' onto current model grid.",
+                MODULE_GRID
+            );
         } else {
             logger.Info("'rho' not found in HDF5 file, computing from empirical vp2rho.", MODULE_GRID);
             for (hsize_t i = 0; i < expect_n; ++i)
@@ -282,19 +396,23 @@ void ModelGrid::load_3d_model() {
         // --- gc / gs (optional, only if is_anisotropy) ---
         if (IP.inversion().is_anisotropy) {
             if (f.exists("gc")) {
-                auto d = f.read_volume<real_t>("gc", nx, ny, nz);
-                check_dims("gc");
-                std::copy(d.begin(), d.end(), gc3d);
-                logger.Info("Loaded 'gc' from HDF5 file.", MODULE_GRID);
+                interpolate_or_copy("gc", gc3d);
+                logger.Info(
+                    same_grid ? "Loaded 'gc' from HDF5 file." :
+                                "Loaded and interpolated 'gc' onto current model grid.",
+                    MODULE_GRID
+                );
             } else {
                 logger.Info("'gc' not found in HDF5 file, initialising to zero.", MODULE_GRID);
                 std::fill(gc3d, gc3d + expect_n, _0_CR);
             }
             if (f.exists("gs")) {
-                auto d = f.read_volume<real_t>("gs", nx, ny, nz);
-                check_dims("gs");
-                std::copy(d.begin(), d.end(), gs3d);
-                logger.Info("Loaded 'gs' from HDF5 file.", MODULE_GRID);
+                interpolate_or_copy("gs", gs3d);
+                logger.Info(
+                    same_grid ? "Loaded 'gs' from HDF5 file." :
+                                "Loaded and interpolated 'gs' onto current model grid.",
+                    MODULE_GRID
+                );
             } else {
                 logger.Info("'gs' not found in HDF5 file, initialising to zero.", MODULE_GRID);
                 std::fill(gs3d, gs3d + expect_n, _0_CR);
@@ -379,10 +497,10 @@ void ModelGrid::build_init_model() {
         }
         // write() guards itself with is_main() and calls mpi.barrier() internally,
         // so it must be called by all ranks — not inside if (mpi.is_main()).
-        if (IP.output().output_initial_model) {
-            write(std::string("initial_model.h5"));
-        }
         mpi.barrier();
+    }
+    if (IP.output().output_initial_model) {
+        write(std::string("initial_model.h5"));
     }
 
     // Broadcast the model from main rank to all other ranks.
