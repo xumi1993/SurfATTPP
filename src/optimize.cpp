@@ -34,7 +34,9 @@ real_t calc_descent_angle(const FieldVec &direction, const FieldVec &gradient) {
     auto &mpi = Parallel::mpi();
 
     // Compute local contributions.
-    real_t local_dot   = -field_dot(gradient, direction); // -g · d
+    // Angle between actual step (–direction) and steepest descent (–gradient):
+    // cos = (direction·gradient) / (||direction|| * ||gradient||)
+    real_t local_dot   = field_dot(gradient, direction);
     real_t local_gnorm =  field_dot(gradient, gradient);
     real_t local_dnorm =  field_dot(direction, direction);
 
@@ -80,27 +82,29 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     const real_t c1            = IP.inversion().c1;
     const real_t c2            = IP.inversion().c2;
     const int    max_sub_niter = IP.inversion().max_sub_niter;
+    const real_t alpha_init    = IP.inversion().step_length;
 
-    // q  = grad(x) · d  (must be < 0 for a descent direction)
-    // q1 = grad(x + alpha*d) · d
-    const real_t q  = field_dot_global(gradient, direction);
-    const real_t q1 = field_dot_global(ker_next,  direction);
+    // direction is the positive gradient (search_dir); model_update subtracts it,
+    // so the actual descent step is d = -direction.  Wolfe conditions require
+    // q = ∇f · d < 0, hence we negate the dot products here.
+    const real_t q  = -field_dot_global(gradient, direction);
+    const real_t q1 = -field_dot_global(ker_next,  direction);
 
     const bool cond_armijo    = f1 <= f0 + alpha * c1 * q;
     const bool cond_curvature = q1 >= c2 * q;
 
-    logger.Info(std::format("  f0={:.6e}  f1={:.6e}  f0+c1*alpha*q={:.6e}",
+    logger.Debug(std::format("Armijo condition: f0={:.6e}  f1={:.6e}  f0+c1*alpha*q={:.6e}",
         f0, f1, f0 + alpha * c1 * q), MODULE_OPTIM);
-    logger.Info(std::format("  q(grad·dir)={:.6e}  q1(grad'·dir)={:.6e}  c2*q={:.6e}",
+    logger.Debug(std::format("Curvature condition: q(grad·dir)={:.6e}  q1(grad'·dir)={:.6e}  c2*q={:.6e}",
         q, q1, c2 * q), MODULE_OPTIM);
-    logger.Info(std::format("  Armijo: {}  Curvature: {}", cond_armijo, cond_curvature), MODULE_OPTIM);
+    logger.Info(std::format("Armijo: {};  Curvature: {}", cond_armijo, cond_curvature), MODULE_OPTIM);
 
     WolfeResult res;
 
     if (cond_armijo && cond_curvature) {
         res.status     = WolfeResult::Status::ACCEPT;
         res.next_alpha = alpha;
-        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6e} -> {:.6e}, alpha={:.6e}",
+        logger.Info(std::format("Wolfe conditions satisfied. Misfit {:.6f} -> {:.6f}",
             f0, f1, alpha), MODULE_OPTIM);
 
     } else if (!cond_armijo) {
@@ -108,17 +112,27 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
         alpha_R        = alpha;
         res.next_alpha = (alpha_L + alpha_R) * _0_5_CR;
         res.status     = WolfeResult::Status::TRY;
-        logger.Info(std::format("Armijo not satisfied (step too large). Next alpha={:.6e}",
+        logger.Info(std::format("Armijo not satisfied (step too large).",
             res.next_alpha), MODULE_OPTIM);
 
     } else {
         // Armijo ok but curvature not: step too small, widen.
-        alpha_L        = alpha;
-        res.next_alpha = (alpha_R > _0_CR) ? (alpha_L + alpha_R) * _0_5_CR
-                                           : alpha * _2_CR;
-        res.status     = WolfeResult::Status::TRY;
-        logger.Info(std::format("Curvature not satisfied (step too small). Next alpha={:.6e}",
-            res.next_alpha), MODULE_OPTIM);
+        alpha_L = alpha;
+        real_t candidate = (alpha_R > _0_CR) ? (alpha_L + alpha_R) * _0_5_CR
+                                             : alpha * _2_CR;
+        
+        // Cap at initial configured step length; if capped, accept even if curvature not satisfied
+        if (candidate > alpha_init) {
+            res.next_alpha = alpha_init;
+            res.status     = WolfeResult::Status::ACCEPT;
+            logger.Info(std::format("Curvature not satisfied but enlarged alpha exceeds alpha_init={:.6f}. ",
+                alpha_init, alpha_init), MODULE_OPTIM);
+        } else {
+            res.next_alpha = candidate;
+            res.status     = WolfeResult::Status::TRY;
+            logger.Info(std::format("Curvature not satisfied (step too small)",
+                res.next_alpha), MODULE_OPTIM);
+        }
     }
 
     if (res.status == WolfeResult::Status::TRY && subiter == max_sub_niter - 1) {
@@ -197,6 +211,7 @@ FieldVec lbfgs_direction(int iter) {
         }
 
         // ---- First loop (backward: newest → oldest) -------------------------
+        // Skip pairs with rho = 0 (sy ≤ 0: curvature condition violated).
         std::vector<real_t> alpha(hist_size, _0_CR);
         for (int h = hist_size - 1; h >= 0; --h) {
             alpha[h] = rho[h] * field_dot(s_hist[h], q);
@@ -206,12 +221,14 @@ FieldVec lbfgs_direction(int iter) {
         }
 
         // ---- Initial Hessian scaling: γ = (s^T y) / (y^T y) ---------------
+        // Clamp γ to positive: a negative or zero γ would invert or zero the
+        // search direction (causing the 90-degree restart loop).
         auto r = q; // r ← H₀ q
         if (hist_size > 0) {
             int last  = hist_size - 1;
             real_t yy = field_dot(y_hist[last], y_hist[last]);
             real_t sy = field_dot(s_hist[last], y_hist[last]);
-            real_t gamma = (yy > _0_CR) ? (sy / yy) : _1_CR;
+            real_t gamma = (sy > _0_CR && yy > _0_CR) ? (sy / yy) : _1_CR;
             for (int p = 0; p < NPARAMS; ++p)
                 if (is_active_param[p])
                     r[p] = gamma * r[p];

@@ -198,7 +198,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                 logger.Error(std::format(
                     "x = {} out of bounds [{}, {}]", mg.xgrids(i + dcp.loc_I_start()), xinv(0, igrid), xinv(ninvx - 1, igrid)
                 ), MODULE_POSTPROC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
             wx = (mg.xgrids(i + dcp.loc_I_start()) - xinv(idx, igrid)) / (xinv(idx + 1, igrid) - xinv(idx, igrid));
             for (int j = 0; j < dcp.loc_ny(); ++j) {
@@ -207,7 +207,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                     logger.Error(std::format(
                         "y = {} out of bounds [{}, {}]", mg.ygrids(j + dcp.loc_J_start()), yinv(0, igrid), yinv(ninvy - 1, igrid)
                     ), MODULE_POSTPROC);
-                    exit(EXIT_FAILURE);
+                    mpi.abort(EXIT_FAILURE);
                 }
                 wy = (mg.ygrids(j + dcp.loc_J_start()) - yinv(idy, igrid)) / (yinv(idy + 1, igrid) - yinv(idy, igrid));
                 for (int k = 0; k < ngrid_k; ++k) {
@@ -216,7 +216,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                         logger.Error(std::format(
                             "z = {} out of bounds [{}, {}]", mg.zgrids(k), zinv(0, igrid), zinv(ninvz - 1, igrid)
                         ), MODULE_POSTPROC);
-                        exit(EXIT_FAILURE);
+                        mpi.abort(EXIT_FAILURE);
                     }
                     wz = (mg.zgrids(k) - zinv(idz, igrid)) / (zinv(idz + 1, igrid) - zinv(idz, igrid));
                     for (int n = 0; n < 8; ++n) {
@@ -267,6 +267,8 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
 Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
     const auto &mg = ModelGrid::MG();
     const auto &dcp = Decomposer::DCP();
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
 
     int idx, idy, idz, m;
     int ninvx = n_inv_I + 2;
@@ -280,28 +282,28 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
         for (int i = 0; i < dcp.loc_nx(); ++i) {
             idx = locate_bissection(xinv.col(igrid).data(), ninvx, mg.xgrids(i + dcp.loc_I_start()));
             if (idx == -1){
-                ATTLogger::logger().Error(std::format(
+                logger.Error(std::format(
                     "x = {} out of bounds [{}, {}]", mg.xgrids(i + dcp.loc_I_start()), xinv(0, igrid), xinv(ninvx - 1, igrid)
                 ), MODULE_POSTPROC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
             wx = (mg.xgrids(i + dcp.loc_I_start()) - xinv(idx, igrid)) / (xinv(idx + 1, igrid) - xinv(idx, igrid));
             for (int j = 0; j < dcp.loc_ny(); ++j) {
                 idy = locate_bissection(yinv.col(igrid).data(), ninvy, mg.ygrids(j + dcp.loc_J_start()));
                 if (idy == -1){
-                    ATTLogger::logger().Error(std::format(
+                    logger.Error(std::format(
                         "y = {} out of bounds [{}, {}]", mg.ygrids(j + dcp.loc_J_start()), yinv(0, igrid), yinv(ninvy - 1, igrid)
                     ), MODULE_POSTPROC);
-                    exit(EXIT_FAILURE);
+                    mpi.abort(EXIT_FAILURE);
                 }
                 wy = (mg.ygrids(j + dcp.loc_J_start()) - yinv(idy, igrid)) / (yinv(idy + 1, igrid) - yinv(idy, igrid));
                 for (int k = 0; k < ngrid_k; ++k) {
                     idz = locate_bissection(zinv.col(igrid).data(), ninvz, mg.zgrids(k));
                     if (idz == -1){
-                        ATTLogger::logger().Error(std::format(
+                        logger.Error(std::format(
                             "z = {} out of bounds [{}, {}]", mg.zgrids(k), zinv(0, igrid), zinv(ninvz - 1, igrid)
                         ), MODULE_POSTPROC);
-                        exit(EXIT_FAILURE);
+                        mpi.abort(EXIT_FAILURE);
                     }
                     wz = (mg.zgrids(k) - zinv(idz, igrid)) / (zinv(idz + 1, igrid) - zinv(idz, igrid));
                     real_t val = _0_CR;
@@ -353,28 +355,42 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
 
     if (sigma_h <= _0_CR || sigma_v <= _0_CR ) {
         logger.Error("Invalid sigma values for PDE-based smoothing. All sigma values must be positive.", MODULE_POSTPROC);
-        exit(EXIT_FAILURE);
+        mpi.abort(EXIT_FAILURE);
     }
     Tensor3r smoothed_buf(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     smoothed_buf = buf;  // initialize smoothed_buf with the input buf
 
-    // Determine diffusion coefficients
-    real_t cmax = std::min({dgrid_i*dgrid_i, dgrid_j*dgrid_j, dgrid_k*dgrid_k}) / 9.0;
-    if (cmax <= VERYTINY) {
+    // Compute per-direction maximal stable diffusion coefficients (dt = 1).
+    // Horizontal uses degrees², vertical uses km² — kept separate so units never mix.
+    // Stability condition for 3-D forward Euler:
+    //   ch/dx² + ch/dy² + cv/dz² ≤ 1/2
+    // With ch ≤ min(dx²,dy²)/6 and cv ≤ dz²/6 the sum is at most 3*(1/6) = 1/2. ✓
+    real_t cmax_h = std::min(dgrid_i * dgrid_i, dgrid_j * dgrid_j) / 6.0;  // deg²
+    real_t cmax_v = dgrid_k * dgrid_k / 6.0;                                // km²
+    if (cmax_h <= VERYTINY || cmax_v <= VERYTINY) {
         logger.Error("Grid spacing is too small for PDE-based smoothing.", MODULE_POSTPROC);
-        exit(EXIT_FAILURE);
-    }
-    real_t ch, cv;
-    if (sigma_v >= sigma_h) {
-        cv = cmax;
-        ch = cv * (sigma_h * sigma_h) / (sigma_v * sigma_v);
-    } else {
-        ch = cmax;
-        cv = ch * (sigma_v * sigma_v) / (sigma_h * sigma_h);
+        mpi.abort(EXIT_FAILURE);
     }
 
-    real_t dt = _1_CR;
-    int nstep = int(std::ceil(std::pow(std::max(sigma_h, sigma_v), 2) / (2 * cmax * dt)));
+    // Time step (dimensionless); stability is enforced via cmax_h/cmax_v below.
+    const real_t dt = _1_CR;
+
+    // Minimum steps required for each direction to achieve its target sigma.
+    // sigma_h is in degrees, sigma_v is in km — each compared only against
+    // its own-unit cmax, so there is no cross-unit comparison.
+    int nstep_h = static_cast<int>(std::ceil(sigma_h * sigma_h / (2.0 * cmax_h * dt)));
+    int nstep_v = static_cast<int>(std::ceil(sigma_v * sigma_v / (2.0 * cmax_v * dt)));
+    int nstep   = std::max({nstep_h, nstep_v, 1});
+
+    // Actual diffusion coefficients that achieve exactly sigma in nstep steps.
+    // Because nstep ≥ nstep_h and nstep ≥ nstep_v, both ch ≤ cmax_h and cv ≤ cmax_v,
+    // so the stability condition is guaranteed.
+    real_t ch = sigma_h * sigma_h / (2.0 * nstep * dt);  // deg²/step
+    real_t cv = sigma_v * sigma_v / (2.0 * nstep * dt);  // km²/step
+
+    logger.Debug(std::format(
+        "PDE smooth: sigma_h={:.3f} deg, sigma_v={:.3f} km, nstep={} (h:{} v:{}), ch={:.4e}, cv={:.4e}",
+        sigma_h, sigma_v, nstep, nstep_h, nstep_v, ch, cv), MODULE_POSTPROC);
 
     mpi.barrier();
 
@@ -398,6 +414,9 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
 
 Tensor3r PostProc::smooth(const Tensor3r &buf) {
     auto &IP = InputParams::IP();
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
+
     if (IP.postproc().smooth_method == 0) {
         return pde_smooth(buf);
     } else if (IP.postproc().smooth_method == 1) {
@@ -405,8 +424,8 @@ Tensor3r PostProc::smooth(const Tensor3r &buf) {
         // Here we can apply some smoothing in the inversion grid if needed (not implemented in this example)
         return inv_grid.inv2fwd(inv_buf.data());
     } else {
-        ATTLogger::logger().Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
-        exit(EXIT_FAILURE);
+        logger.Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
+        mpi.abort(EXIT_FAILURE);
     }
 }
 
@@ -450,8 +469,11 @@ void postproc::kernel_precondition(SurfGrid& sg) {
 FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
     auto &logger = ATTLogger::logger();
     auto &PP = PostProc::PP();
+    auto &IP = InputParams::IP();
 
-    logger.Info("Smoothing kernels...", MODULE_POSTPROC);
+    std::string method_name = (IP.postproc().smooth_method == 0) ? "PDE smoothing" : "multigrid smoothing";
+
+    logger.Info(std::format("Smoothing kernels with {}...", method_name), MODULE_POSTPROC);
     FieldVec ker_loc_smooth(sg.ker_loc.size());
     for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;

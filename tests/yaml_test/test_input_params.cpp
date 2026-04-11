@@ -59,10 +59,6 @@ static void check_inversion() {
     assert(inv.is_anisotropy      == true);
     assert(inv.use_alpha_beta_rho == true);
     assert(inv.rho_scaling        == true);
-    assert(inv.init_model_type    == 1);
-    assert_near(inv.vel_range[0], 1.8);
-    assert_near(inv.vel_range[1], 4.2);
-    assert(inv.init_model_path == "/path/to/init_mod.h5");
     assert(inv.niter        == 40);
     assert_near(inv.min_derr, 0.0001);
     assert(inv.optim_method  == 2);

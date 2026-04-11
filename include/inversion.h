@@ -12,6 +12,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <unsupported/Eigen/CXX11/Tensor>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 
@@ -45,7 +46,7 @@ private:
         return instance;
     }
 
-    real_t run_forward_adjoint(const bool is_calc_adj, const bool in_line_search = false);
+    real_t run_forward_adjoint(const bool is_calc_adj);
     void init_iteration();
     void steepest_descent();
     void grad_normalization(FieldVec &grads);
@@ -54,6 +55,10 @@ private:
     bool check_convergence();
     void model_update(FieldVec &dir);
     bool line_search();
+    void write_src_rec_fwd();
+    void write_obj_line();
+
+    std::ofstream obj_file_;  // objective function log; open only on main rank
 
     Tensor3r model_update_;
     FieldVec ker_curr_, ker_prev_;
@@ -61,7 +66,9 @@ private:
     Tensor3r search_direction_;
 
     std::vector<real_t> misfit_ = std::vector<real_t>(InputParams::IP().inversion().niter, _0_CR);
+    real_t misfit_trial_ = _0_CR;
     int    iter_ = 0;
     int    iter_start_ = 0;
     real_t alpha_, alpha_R_, alpha_L_;
+    bool   gradient_reuse_ = false;
 };

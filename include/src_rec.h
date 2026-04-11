@@ -34,6 +34,11 @@ struct PeriodInfo {
     int nperiod;
 };
 
+struct ResidualStats {
+    real_t mean;
+    real_t stddev;
+};
+
 class SrcRec {
 public:
     // Phase-velocity observation table
@@ -70,6 +75,12 @@ public:
 
     // gather synthetic travel times
     void gather_syn_tt();
+
+    // Compute mean and standard deviation of travel-time residuals
+    // (syn_data - observed tt) across all events held locally, then
+    // reduce across all MPI ranks to give global statistics.
+    // Returns {mean, std}. Requires gather_syn_tt() to have been called.
+    ResidualStats compute_residual_stats();
 
     // Free all shared-memory windows. Call before MPI_Finalize().
     void release_shm();

@@ -36,13 +36,13 @@ If you use SurfATT in your research, please consider citing following papers:
 
 | Library | Minimum Version | Recommended Version | Role |
 |---------|----------------|---------------------|------|
-| CMake | ≥ 3.18 | ≥ 3.25 | Build system (required) |
-| C++ compiler | GCC ≥ 13 / Clang ≥ 14 | GCC ≥ 14 / Clang ≥ 17 | C++20  (required) |
-| MPI | ≥ 3.0 | Open MPI ≥ 4.0 | Parallelism with shared-memory windows (required) |
-| HDF5 | ≥ 1.10 | ≥ 1.14 | Model I/O (required) |
-| Eigen3 | ≥ 3.4 | ≥ 3.4.0 | Linear algebra (required) |
-| yaml-cpp | ≥ 0.6 | ≥ 0.8 | Parameter file parsing (bundled fallback) |
-| spdlog | ≥ 1.5 | ≥ 1.15 | Logging (bundled fallback) |
+| CMake | ≥ 3.18 | ≥ 3.25 | Build system  |
+| C++ compiler | GCC ≥ 13 / Clang ≥ 14 | GCC ≥ 14 / Clang ≥ 17 | C++20  |
+| MPI | ≥ 3.0 | Open MPI ≥ 4.0 | Parallelism with shared-memory windows |
+| HDF5 (series version) | ≥ 1.10 | ≥ 1.14 | Model I/O |
+| Eigen3 | ≥ 3.4 | ≥ 3.4.0 | Linear algebra |
+| yaml-cpp | ≥ 0.6 | ≥ 0.8 | Parameter file parsing |
+| spdlog | ≥ 1.5 | ≥ 1.15 | Logging |
 
 ## Installation
 

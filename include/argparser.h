@@ -78,6 +78,33 @@ inline std::array<int, 2> parse_2int(const std::string& s) {
     return { std::stoi(s.substr(0, sl)), std::stoi(s.substr(sl + 1)) };
 }
 
+// "a/b/c[/d]" → {{int, int, int}, double}
+// If /d is absent, angle defaults to default_angle.
+inline std::pair<std::array<int, 3>, double> parse_3int_1double(
+    const std::string& s, double default_angle = 120.0
+) {
+    auto s1 = s.find('/');
+    auto s2 = s.find('/', s1 + 1);
+    auto s3 = s.find('/', s2 + 1);
+    if (s1 == std::string::npos || s2 == std::string::npos)
+        throw std::runtime_error("expected a/b/c or a/b/c/d format, got \"" + s + "\"");
+
+    const std::array<int, 3> nxyz = {
+        std::stoi(s.substr(0, s1)),
+        std::stoi(s.substr(s1 + 1, s2 - s1 - 1)),
+        std::stoi(s.substr(s2 + 1, (s3 == std::string::npos ? s.size() : s3) - s2 - 1))
+    };
+
+    const double angle = (s3 == std::string::npos)
+        ? default_angle
+        : std::stod(s.substr(s3 + 1));
+
+    return {
+        nxyz,
+        angle
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Argument structs
 // ---------------------------------------------------------------------------
@@ -89,6 +116,7 @@ struct TomoArgs {
 struct CbFwdArgs {
     std::array<int, 3> ncb      = {0, 0, 0};
     std::array<int, 3> ncb_ani  = {0, 0, 0};
+    double ani_angle = 120.0;  // anisotropy fast-axis angle in degrees
     double pert_vel  = 0.08;
     double pert_ani  = 0.0;   // anisotropic perturbation magnitude (gc and gs), additive
     double hmarg     = 0.0;
@@ -118,7 +146,6 @@ struct RotateModelArgs {
     std::string outfname;
     real_t angle = 0.0;
     std::optional<std::array<real_t, 2>> center;  // absent when not supplied on the command line
-    std::string keyname = "vs";
 };
 
 struct Tomo2DArgs {
@@ -164,9 +191,9 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
             "  -n nx/ny/nz             Number of anomalies along X, Y and Z\n\n"
             "optional arguments:\n"
             "  -h                      Print help message\n"
-            "  -a nx/ny/nz             Number of anisotropic anomalies along X, Y and Z (default: same as -n)\n"
+            "  -a nx/ny/nz[/angle]     Number of anisotropic anomalies; optional anisotropy angle (deg, default: 120)\n"
             "  -e tt_noise             Add random noise to travel time data (default: 0)\n"
-            "  -v                      Only perturb Vs model\n"
+            "  -v                      Only perturb Vs model, default: false\n"
             "  -m margin_degree        Margin between anomalies in degrees (default: 0)\n"
             "  -p pert_vel[/pert_ani]  Magnitude of velocity perturbations (default: 0.08)\n"
             "  -s anom_size_km         Size of top anomalies in km (default: uniform)\n";
@@ -177,9 +204,12 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
     out.only_vs = al.has("-v");
     if (auto v = al.get("-n")) out.ncb       = parse_3int(*v);
     if (auto v = al.get("-a")) {
-        out.ncb_ani   = parse_3int(*v);
+        auto [ncb_ani, ani_angle] = parse_3int_1double(*v);
+        out.ncb_ani = ncb_ani;
+        out.ani_angle = ani_angle;
     } else {
         out.ncb_ani = out.ncb;  // default: same as -n
+        out.ani_angle = 120.0;
     }
     if (auto v = al.get("-p")) {
         if (v->find('/') != std::string::npos) {
@@ -262,7 +292,6 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
             "optional arguments:\n"
             "  -a angle             Rotation angle in degrees\n"
             "  -c clat/clon         Centre of rotation (lat/lon)\n"
-            "  -k keyname           Variable name to rotate (default: \"vs\")\n"
             "  -h                   Print help message\n";
         std::exit(0);
     }
@@ -271,7 +300,6 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
     out.outfname = al.require("-o");
     if (auto v = al.get("-a")) out.angle   = std::stod(*v);
     if (auto v = al.get("-c")) out.center  = parse_2double(*v);
-    if (auto v = al.get("-k")) out.keyname = *v;
     return out;
 }
 

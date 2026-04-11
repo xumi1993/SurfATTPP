@@ -176,11 +176,9 @@ void preproc::reset_kernel_accumulators( SurfGrid& sg) {
 
 void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
     auto& IP = InputParams::IP();
-    auto& logger = ATTLogger::logger();
     auto& mpi = Parallel::mpi();
 
     if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
-        logger.Info("Computing dispersion kernels on each surface grid point...", MODULE_PREPROC);
         sg.compute_dispersion_kernel();
         
         if (IP.topo().is_consider_topo) {
@@ -188,6 +186,7 @@ void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
         }
 
         if (IP.inversion().is_anisotropy) {
+            // TODO: need to be checked.
             sg.prepare_aniso_media();
         }
     }
@@ -304,6 +303,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
             }
         }
 
+        // TODO: Need to be checked for the anisotropic case.
         // Anisotropic parameter kernels (Gc, Gs)
         if (IP.inversion().is_anisotropy) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {

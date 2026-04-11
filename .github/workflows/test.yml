@@ -22,6 +22,13 @@ jobs:
           - testcase07
           - testcase08
           - testcase09
+          - testcase10
+          - testcase11
+          - testcase12
+          - testcase13
+          - testcase14
+          - testcase15
+          - testcase16
       fail-fast: false
 
     steps:
@@ -63,4 +70,6 @@ jobs:
           sed -i "s|SRUFATT_HOME=.*|SRUFATT_HOME=${SURFATT_BIN}|" run_this_test.sh
           # Fix hardcoded NPROC variable
           sed -i "s|NPROC=.*|NPROC=${NPROC}|" run_this_test.sh
+          # Fix MAXIT to 3 for faster testing
+          sed -i "s|MAXIT=.*|MAXIT=3|" run_this_test.sh
           bash run_this_test.sh

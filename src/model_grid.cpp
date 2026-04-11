@@ -7,6 +7,7 @@
 #include "utils.h"
 #include "decomposer.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -87,17 +88,9 @@ namespace {
 
         const auto info = minpack::lmdif1(
             [&anch, &n_pi](int m, int /*n*/, const double* x, double* fvec, int& iflag) {
-                constexpr double eps = 1.0e-12;
-                if (std::abs(x[2]) < eps) {
-                    iflag = -1;
-                    return;
-                }
+                (void)iflag;
                 for (int i = 0; i < m; ++i) {
                     const double arg = x[0] * x[0] + x[1] * (static_cast<double>(anch(i)) - 1.0);
-                    if (arg < 0.0) {
-                        iflag = -1;
-                        return;
-                    }
                     const double anomfun = (std::sqrt(arg) - x[0]) / x[2];
                     fvec[i] = std::abs(anomfun - static_cast<double>(n_pi(i)));
                 }
@@ -105,8 +98,13 @@ namespace {
             maxanchor, 3,para, fitfun, tol
         );
 
-        if (info == minpack::InfoCode::ImproperInput) {
-            logger.Error("ModelGrid::dep_anom: minpack lmdif1 failed with ImproperInput", MODULE_GRID);
+        logger.Debug(std::format(
+            "Depth anomaly fit status info={} (1..4 are converged), params: {:.4f} {:.4f} {:.4f}",
+            static_cast<int>(info), para[0], para[1], para[2]
+        ), MODULE_GRID);
+
+        if (static_cast<int>(info) <= 0) {
+            logger.Error("ModelGrid::dep_anom: minpack lmdif1 failed (info <= 0)", MODULE_GRID);
             mpi.abort(EXIT_FAILURE);
         }
 
@@ -140,22 +138,17 @@ ModelGrid::ModelGrid() {
         ybeg = lat_min - dom.num_grid_margin * dgrid_j;
         yend = lat_max + dom.num_grid_margin * dgrid_j;
 
-        // Number of grid nodes (inclusive on both ends)
-        n_xyz[0] = static_cast<int>((xend - xbeg) / dgrid_i) + 1;
-        n_xyz[1] = static_cast<int>((yend - ybeg) / dgrid_j) + 1;
-        n_xyz[2] = static_cast<int>((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1;
-        // Expose grid sizes through the I2V macro variables
-        ngrid_i = n_xyz[0];
-        ngrid_j = n_xyz[1];
-        ngrid_k = n_xyz[2];
+        // Number of grid nodes (inclusive on both ends).
+        // Round first to avoid floating-point drift (e.g. 99.9999999 -> 100).
+        ngrid_i = static_cast<int>(std::llround((xend - xbeg) / dgrid_i) + 1);
+        ngrid_j = static_cast<int>(std::llround((yend - ybeg) / dgrid_j) + 1);
+        ngrid_k = static_cast<int>(std::llround((dom.depth[1] - dom.depth[0]) / dgrid_k) + 1);
+
     } else if (dom.grid_method == 1) {
         // Grid dimensions and bounding box are directly specified in the config
-        n_xyz[0] = dom.n_grid[0];
-        n_xyz[1] = dom.n_grid[1];
-        n_xyz[2] = dom.n_grid[2];
-        ngrid_i = n_xyz[0];
-        ngrid_j = n_xyz[1];
-        ngrid_k = n_xyz[2];
+        ngrid_i = dom.n_grid[0];
+        ngrid_j = dom.n_grid[1];
+        ngrid_k = dom.n_grid[2];
         xbeg = dom.lon_min_max[0];
         xend = dom.lon_min_max[1];
         ybeg = dom.lat_min_max[0];
@@ -165,12 +158,12 @@ ModelGrid::ModelGrid() {
         mpi.abort(EXIT_FAILURE);
     }
 
-    xgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[0], xbeg, xend);
-    ygrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[1], ybeg, yend);
-    zgrids = Eigen::VectorX<real_t>::LinSpaced(n_xyz[2], dom.depth[0], dom.depth[1]);
+    xgrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_i, xbeg, xend);
+    ygrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_j, ybeg, yend);
+    zgrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_k, dom.depth[0], dom.depth[1]);
 
     logger.Info(
-        std::format("Model grids: nx,ny,nz: {}, {}, {}", n_xyz[0], n_xyz[1], n_xyz[2]),
+        std::format("Model grids: nx,ny,nz: {}, {}, {}", ngrid_i, ngrid_j, ngrid_k),
         MODULE_GRID
     );
     logger.Info(
@@ -191,12 +184,12 @@ void ModelGrid::allocate_model_grids() {
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
 
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vp3d, win_vp_);
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], vs3d, win_vs_);
-    mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], rho3d, win_rho_);
+    mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vp3d, win_vp_);
+    mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vs3d, win_vs_);
+    mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, rho3d, win_rho_);
     if (IP.inversion().is_anisotropy) {
-        mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gc3d, win_gc_);
-        mpi.alloc_shared(n_xyz[0] * n_xyz[1] * n_xyz[2], gs3d, win_gs_);
+        mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gc3d, win_gc_);
+        mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gs3d, win_gs_);
     }
     // Always allocate local model slices; they are needed by fwdsurf() in both
     // FORWARD_ONLY and INVERSION_MODE.
@@ -219,8 +212,8 @@ void ModelGrid::allocate_model_grids() {
 void ModelGrid::build_1d_model_linear() {
     vs1d = Eigen::VectorX<real_t>::LinSpaced(
         zgrids.size(), 
-        InputParams::IP().inversion().vel_range[0], 
-        InputParams::IP().inversion().vel_range[1]
+        InputParams::IP().model().vel_range[0], 
+        InputParams::IP().model().vel_range[1]
     );
 }
 
@@ -239,35 +232,147 @@ void ModelGrid::load_3d_model() {
     const auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
-    H5IO f(IP.inversion().init_model_path, H5IO::RDONLY);
-    hsize_t nx = 0, ny = 0, nz = 0;
-    const hsize_t expect_n = static_cast<hsize_t>(n_xyz[0] * n_xyz[1] * n_xyz[2]);
-
-    auto check_dims = [&](const std::string &name) {
-        if (nx != static_cast<hsize_t>(n_xyz[0]) ||
-            ny != static_cast<hsize_t>(n_xyz[1]) ||
-            nz != static_cast<hsize_t>(n_xyz[2])) {
-            throw std::runtime_error(std::format(
-                "ModelGrid: dataset '{}' shape ({},{},{}) != grid ({},{},{})",
-                name, nx, ny, nz, n_xyz[0], n_xyz[1], n_xyz[2]));
-        }
-    };
+    H5IO f(IP.model().init_model_path, H5IO::RDONLY);
+    const hsize_t expect_n = static_cast<hsize_t>(ngrid_i * ngrid_j * ngrid_k);
 
     try {
+        auto read_axis = [&](const std::string &name_new, const std::string &name_old) {
+            std::vector<real_t> v;
+            std::string used_name;
+            if (f.exists(name_new)) {
+                v = f.read_vector<real_t>(name_new);
+                used_name = name_new;
+            } else if (f.exists(name_old)) {
+                v = f.read_vector<real_t>(name_old);
+                used_name = name_old;
+            } else {
+                throw std::runtime_error(std::format(
+                    "Missing coordinate axis '{}' (or legacy '{}') in initial model file",
+                    name_new, name_old));
+            }
+            if (v.size() < 2) {
+                throw std::runtime_error(std::format(
+                    "Axis '{}' must contain at least 2 nodes, got {}", used_name, v.size()));
+            }
+            Eigen::VectorX<real_t> out = Eigen::Map<Eigen::VectorX<real_t>>(v.data(), static_cast<int>(v.size()));
+            for (int i = 1; i < out.size(); ++i) {
+                if (out(i) <= out(i - 1)) {
+                    throw std::runtime_error(std::format(
+                        "Axis '{}' must be strictly increasing (index {}: {} <= {})",
+                        used_name, i, out(i), out(i - 1)));
+                }
+            }
+            return out;
+        };
+
+        const Eigen::VectorX<real_t> xsrc = read_axis("x", "xgrids");
+        const Eigen::VectorX<real_t> ysrc = read_axis("y", "ygrids");
+        const Eigen::VectorX<real_t> zsrc = read_axis("z", "zgrids");
+
+        auto axis_equal = [](const Eigen::VectorX<real_t>& a, const Eigen::VectorX<real_t>& b) {
+            if (a.size() != b.size()) return false;
+            for (int i = 0; i < a.size(); ++i) {
+                if (!real_t_equal(a(i), b(i))) return false;
+            }
+            return true;
+        };
+
+        const bool same_grid =
+            axis_equal(xsrc, xgrids) &&
+            axis_equal(ysrc, ygrids) &&
+            axis_equal(zsrc, zgrids);
+
+        auto check_target_inside_source = [&](const Eigen::VectorX<real_t>& src,
+                                              const Eigen::VectorX<real_t>& dst,
+                                              const std::string& axis_name) {
+            const real_t s0 = src(0);
+            const real_t s1 = src(src.size() - 1);
+            const real_t d0 = dst(0);
+            const real_t d1 = dst(dst.size() - 1);
+            const real_t tol = static_cast<real_t>(1.0e-6) * std::max(static_cast<real_t>(1), std::abs(s1 - s0));
+            if (d0 < s0 - tol || d1 > s1 + tol) {
+                throw std::runtime_error(std::format(
+                    "Target {} grid [{:.6f}, {:.6f}] is outside source grid [{:.6f}, {:.6f}]",
+                    axis_name, d0, d1, s0, s1));
+            }
+        };
+
+        if (!same_grid) {
+            check_target_inside_source(xsrc, xgrids, "x");
+            check_target_inside_source(ysrc, ygrids, "y");
+            check_target_inside_source(zsrc, zgrids, "z");
+        }
+
+        auto interpolate_or_copy = [&](const std::string &name, real_t *dst) {
+            hsize_t nx = 0, ny = 0, nz = 0;
+            auto src = f.read_volume<real_t>(name, nx, ny, nz);
+            if (nx != static_cast<hsize_t>(xsrc.size()) ||
+                ny != static_cast<hsize_t>(ysrc.size()) ||
+                nz != static_cast<hsize_t>(zsrc.size())) {
+                throw std::runtime_error(std::format(
+                    "Dataset '{}' shape ({},{},{}) is inconsistent with source grids ({},{},{})",
+                    name, nx, ny, nz, xsrc.size(), ysrc.size(), zsrc.size()));
+            }
+
+            if (same_grid &&
+                nx == static_cast<hsize_t>(ngrid_i) &&
+                ny == static_cast<hsize_t>(ngrid_j) &&
+                nz == static_cast<hsize_t>(ngrid_k)) {
+                std::copy(src.begin(), src.end(), dst);
+                return;
+            }
+
+            const real_t x0 = xsrc(0), x1 = xsrc(xsrc.size() - 1);
+            const real_t y0 = ysrc(0), y1 = ysrc(ysrc.size() - 1);
+            const real_t z0 = zsrc(0), z1 = zsrc(zsrc.size() - 1);
+
+            for (int i = 0; i < ngrid_i; ++i) {
+                real_t qx = xgrids(i);
+                if (qx < x0) qx = x0;
+                if (qx > x1) qx = x1;
+                for (int j = 0; j < ngrid_j; ++j) {
+                    real_t qy = ygrids(j);
+                    if (qy < y0) qy = y0;
+                    if (qy > y1) qy = y1;
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        real_t qz = zgrids(k);
+                        if (qz < z0) qz = z0;
+                        if (qz > z1) qz = z1;
+                        const real_t val = trilinear_interpolation(
+                            xsrc.data(), ysrc.data(), zsrc.data(),
+                            static_cast<int>(nx), static_cast<int>(ny), static_cast<int>(nz),
+                            src.data(),
+                            qx, qy, qz
+                        );
+                        if (std::isnan(val)) {
+                            throw std::runtime_error(std::format(
+                                "Trilinear interpolation failed for '{}' at ({:.6f},{:.6f},{:.6f})",
+                                name, qx, qy, qz));
+                        }
+                        dst[I2V(i, j, k)] = val;
+                    }
+                }
+            }
+        };
+
         // --- vs (required) ---
         {
-            auto d = f.read_volume<real_t>("vs", nx, ny, nz);
-            check_dims("vs");
-            std::copy(d.begin(), d.end(), vs3d);
-            logger.Info("Loaded 'vs' from HDF5 file.", MODULE_GRID);
+            interpolate_or_copy("vs", vs3d);
+            logger.Info(
+                same_grid ? "Loaded 'vs' from HDF5 file." :
+                            "Loaded and interpolated 'vs' onto current model grid.",
+                MODULE_GRID
+            );
         }
 
         // --- vp (optional, fallback: empirical vs2vp) ---
         if (f.exists("vp")) {
-            auto d = f.read_volume<real_t>("vp", nx, ny, nz);
-            check_dims("vp");
-            std::copy(d.begin(), d.end(), vp3d);
-            logger.Info("Loaded 'vp' from HDF5 file.", MODULE_GRID);
+            interpolate_or_copy("vp", vp3d);
+            logger.Info(
+                same_grid ? "Loaded 'vp' from HDF5 file." :
+                            "Loaded and interpolated 'vp' onto current model grid.",
+                MODULE_GRID
+            );
         } else {
             logger.Info("'vp' not found in HDF5 file, computing from empirical vs2vp.", MODULE_GRID);
             for (hsize_t i = 0; i < expect_n; ++i)
@@ -276,10 +381,12 @@ void ModelGrid::load_3d_model() {
 
         // --- rho (optional, fallback: empirical vp2rho) ---
         if (f.exists("rho")) {
-            auto d = f.read_volume<real_t>("rho", nx, ny, nz);
-            check_dims("rho");
-            std::copy(d.begin(), d.end(), rho3d);
-            logger.Info("Loaded 'rho' from HDF5 file.", MODULE_GRID);
+            interpolate_or_copy("rho", rho3d);
+            logger.Info(
+                same_grid ? "Loaded 'rho' from HDF5 file." :
+                            "Loaded and interpolated 'rho' onto current model grid.",
+                MODULE_GRID
+            );
         } else {
             logger.Info("'rho' not found in HDF5 file, computing from empirical vp2rho.", MODULE_GRID);
             for (hsize_t i = 0; i < expect_n; ++i)
@@ -289,19 +396,23 @@ void ModelGrid::load_3d_model() {
         // --- gc / gs (optional, only if is_anisotropy) ---
         if (IP.inversion().is_anisotropy) {
             if (f.exists("gc")) {
-                auto d = f.read_volume<real_t>("gc", nx, ny, nz);
-                check_dims("gc");
-                std::copy(d.begin(), d.end(), gc3d);
-                logger.Info("Loaded 'gc' from HDF5 file.", MODULE_GRID);
+                interpolate_or_copy("gc", gc3d);
+                logger.Info(
+                    same_grid ? "Loaded 'gc' from HDF5 file." :
+                                "Loaded and interpolated 'gc' onto current model grid.",
+                    MODULE_GRID
+                );
             } else {
                 logger.Info("'gc' not found in HDF5 file, initialising to zero.", MODULE_GRID);
                 std::fill(gc3d, gc3d + expect_n, _0_CR);
             }
             if (f.exists("gs")) {
-                auto d = f.read_volume<real_t>("gs", nx, ny, nz);
-                check_dims("gs");
-                std::copy(d.begin(), d.end(), gs3d);
-                logger.Info("Loaded 'gs' from HDF5 file.", MODULE_GRID);
+                interpolate_or_copy("gs", gs3d);
+                logger.Info(
+                    same_grid ? "Loaded 'gs' from HDF5 file." :
+                                "Loaded and interpolated 'gs' onto current model grid.",
+                    MODULE_GRID
+                );
             } else {
                 logger.Info("'gs' not found in HDF5 file, initialising to zero.", MODULE_GRID);
                 std::fill(gs3d, gs3d + expect_n, _0_CR);
@@ -310,7 +421,7 @@ void ModelGrid::load_3d_model() {
     } catch (const std::exception &e) {
         logger.Error(std::format(
             "ModelGrid: failed to load 3D model from HDF5 file '{}': {}",
-            IP.inversion().init_model_path, e.what()
+            IP.model().init_model_path, e.what()
         ), MODULE_GRID);
         mpi.abort(EXIT_FAILURE);
     }
@@ -337,25 +448,25 @@ void ModelGrid::build_init_model() {
     auto &mpi = Parallel::mpi();
     auto &logger = ATTLogger::logger();
 
-    if (IP.inversion().init_model_type == 0) {
+    if (IP.model().init_model_type == 0) {
         // Build a simple linear Vs gradient
         logger.Info(std::format(
             "Building linear 1-D initial model with S-wave velocity from {:.2f} to {:.2f} km/s", 
-            IP.inversion().vel_range[0], IP.inversion().vel_range[1]), MODULE_GRID
+            IP.model().vel_range[0], IP.model().vel_range[1]), MODULE_GRID
         );
         build_1d_model_linear();
-    } else if (IP.inversion().init_model_type == 1) {
+    } else if (IP.model().init_model_type == 1) {
         // Invert average dispersion curves to obtain a 1-D Vs model
         logger.Info(
             "Building 1-D initial model from surface-wave inversion of average dispersion curves",
             MODULE_GRID
         );
         build_1d_model_inversion();
-    } else if (IP.inversion().init_model_type == 2) {
+    } else if (IP.model().init_model_type == 2) {
         // Load an externally-supplied 3-D model; only main rank does the I/O
         logger.Info(std::format(
             "Building 3-D initial model from HDF5 file: {}",
-            IP.inversion().init_model_path),
+            IP.model().init_model_path),
             MODULE_GRID
         );
         if (mpi.is_main()) {
@@ -363,15 +474,16 @@ void ModelGrid::build_init_model() {
         }
         mpi.barrier();
     } else {
-        throw std::runtime_error("ModelGrid: unknown init_model_type " + std::to_string(IP.inversion().init_model_type));
+        logger.Error(std::format("Unsupported init_model_type {}", IP.model().init_model_type), MODULE_GRID);
+        mpi.abort(EXIT_FAILURE);
     }
 
-    if (IP.inversion().init_model_type != 2) {
+    if (IP.model().init_model_type != 2) {
         // Extrude the 1-D profile laterally to fill the full 3-D volume
         if (mpi.is_main()) {
-            for (int ix = 0; ix < n_xyz[0]; ++ix) {
-                for (int iy = 0; iy < n_xyz[1]; ++iy) {
-                    for (int iz = 0; iz < n_xyz[2]; ++iz) {
+            for (int ix = 0; ix < ngrid_i; ++ix) {
+                for (int iy = 0; iy < ngrid_j; ++iy) {
+                    for (int iz = 0; iz < ngrid_k; ++iz) {
                         vp3d[I2V(ix, iy, iz)] = vs2vp(vs1d(iz));
                         vs3d[I2V(ix, iy, iz)] = vs1d(iz);
                         rho3d[I2V(ix, iy, iz)] = vp2rho(vp3d[I2V(ix, iy, iz)]);  // empirical Vp→density scaling
@@ -385,10 +497,10 @@ void ModelGrid::build_init_model() {
         }
         // write() guards itself with is_main() and calls mpi.barrier() internally,
         // so it must be called by all ranks — not inside if (mpi.is_main()).
-        if (IP.output().output_initial_model) {
-            write(std::string("initial_model.h5"));
-        }
         mpi.barrier();
+    }
+    if (IP.output().output_initial_model) {
+        write(std::string("initial_model.h5"));
     }
 
     // Broadcast the model from main rank to all other ranks.
@@ -396,12 +508,12 @@ void ModelGrid::build_init_model() {
     // non-main ranks must resize it before the bcast to avoid a null-ptr crash.
     if (!mpi.is_main()) vs1d.resize(ngrid_k);
     mpi.bcast(vs1d.data(), ngrid_k);
-    mpi.sync_from_main_rank(vp3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
-    mpi.sync_from_main_rank(vs3d,  n_xyz[0] * n_xyz[1] * n_xyz[2]);
-    mpi.sync_from_main_rank(rho3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+    mpi.sync_from_main_rank(vp3d,  ngrid_i * ngrid_j * ngrid_k);
+    mpi.sync_from_main_rank(vs3d,  ngrid_i * ngrid_j * ngrid_k);
+    mpi.sync_from_main_rank(rho3d, ngrid_i * ngrid_j * ngrid_k);
     if (IP.inversion().is_anisotropy) {
-        mpi.sync_from_main_rank(gc3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
-        mpi.sync_from_main_rank(gs3d, n_xyz[0] * n_xyz[1] * n_xyz[2]);
+        mpi.sync_from_main_rank(gc3d, ngrid_i * ngrid_j * ngrid_k);
+        mpi.sync_from_main_rank(gs3d, ngrid_i * ngrid_j * ngrid_k);
     }
 }
 
@@ -409,14 +521,17 @@ std::tuple<Eigen::VectorX<real_t>, Eigen::VectorX<real_t>, Eigen::VectorX<real_t
 ModelGrid::build_perturbation_pattern(
     int nx_w, int ny_w, int nz_w, real_t hmargin, real_t anom_sz
 ) const {
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
     const int ntaper_i = static_cast<int>(hmargin / dgrid_i);
     const int ntaper_j = static_cast<int>(hmargin / dgrid_j);
     const int inner_i  = ngrid_i - 2 * ntaper_i;
     const int inner_j  = ngrid_j - 2 * ntaper_j;
 
-    if (inner_i <= 0 || inner_j <= 0)
-        throw std::runtime_error(
-            "ModelGrid::build_perturbation_pattern: hmargin too large for current grid size");
+    if (inner_i <= 0 || inner_j <= 0){
+        logger.Error("ModelGrid::build_perturbation_pattern: hmargin too large for current grid size", MODULE_GRID);
+        mpi.abort(EXIT_FAILURE);
+    }
 
     Eigen::VectorX<real_t> xp = Eigen::VectorX<real_t>::Zero(ngrid_i);
     Eigen::VectorX<real_t> yp = Eigen::VectorX<real_t>::Zero(ngrid_j);
@@ -440,7 +555,11 @@ ModelGrid::build_perturbation_pattern(
         zp = (static_cast<real_t>(nz_w) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
     } else {
         const auto para = dep_anom(zgrids, nz_w, anom_sz);
-        for (int k = 0; k < ngrid_k; ++k) {
+        logger.Info(std::format(
+            "Depth perturbation phase function parameters: p0={:.3f}, p1={:.3f}, p2={:.3f}",
+            para[0], para[1], para[2]
+        ), MODULE_GRID);
+        for (int k = 0; k < ngrid_k - 1; ++k) {
             const real_t phase = (
                 std::sqrt(para[0] * para[0] + para[1] * static_cast<real_t>(k)) - para[0]
             ) / para[2];
@@ -500,11 +619,11 @@ void ModelGrid::add_aniso_perturbation(
                 for (int k = 0; k < ngrid_k; ++k) {
                     const real_t amp = xp(i) * yp(j) * zp(k) * pert_ani;
                     if (amp > _0_CR) {
-                        gc3d[I2V(i, j, k)] = amp * std::cos(2 * angle * DEG2RAD);
-                        gs3d[I2V(i, j, k)] = amp * std::sin(2 * angle * DEG2RAD);
+                        gc3d[I2V(i, j, k)] = std::abs(amp) * std::cos(2 * angle * DEG2RAD);
+                        gs3d[I2V(i, j, k)] = std::abs(amp) * std::sin(2 * angle * DEG2RAD);
                     } else {
-                        gc3d[I2V(i, j, k)] = amp * std::cos(2 * angle * DEG2RAD);
-                        gs3d[I2V(i, j, k)] = amp * std::sin(2 * angle * DEG2RAD);
+                        gc3d[I2V(i, j, k)] = std::abs(amp) * std::cos(2 * (angle + 90) * DEG2RAD);
+                        gs3d[I2V(i, j, k)] = std::abs(amp) * std::sin(2 * (angle + 90) * DEG2RAD);
                     }
                 }
             }

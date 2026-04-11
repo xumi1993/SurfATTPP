@@ -141,6 +141,47 @@ inline real_t bilinear_interpolation(real_t* xarr, real_t* yarr,
     return result;
 }
 
+// Trilinear interpolation on a rectilinear grid.
+// values is a flat array with layout (nx, ny, nz):
+//   values[i*ny*nz + j*nz + k] = f(xarr[i], yarr[j], zarr[k])
+// Returns NaN when (x,y,z) is out of bounds.
+inline real_t trilinear_interpolation(
+    const real_t* xarr, const real_t* yarr, const real_t* zarr,
+    int nx, int ny, int nz,
+    const real_t* values,
+    real_t x, real_t y, real_t z)
+{
+    const int ix = locate_bissection(xarr, nx, x);
+    const int iy = locate_bissection(yarr, ny, y);
+    const int iz = locate_bissection(zarr, nz, z);
+    if (ix < 0 || iy < 0 || iz < 0) return NAN;
+
+    const real_t wx = (x - xarr[ix]) / (xarr[ix + 1] - xarr[ix]);
+    const real_t wy = (y - yarr[iy]) / (yarr[iy + 1] - yarr[iy]);
+    const real_t wz = (z - zarr[iz]) / (zarr[iz + 1] - zarr[iz]);
+
+    const auto idx = [ny, nz](int i, int j, int k) {
+        return i * ny * nz + j * nz + k;
+    };
+
+    const real_t c000 = values[idx(ix,     iy,     iz    )];
+    const real_t c100 = values[idx(ix + 1, iy,     iz    )];
+    const real_t c010 = values[idx(ix,     iy + 1, iz    )];
+    const real_t c110 = values[idx(ix + 1, iy + 1, iz    )];
+    const real_t c001 = values[idx(ix,     iy,     iz + 1)];
+    const real_t c101 = values[idx(ix + 1, iy,     iz + 1)];
+    const real_t c011 = values[idx(ix,     iy + 1, iz + 1)];
+    const real_t c111 = values[idx(ix + 1, iy + 1, iz + 1)];
+
+    const real_t vx00 = (1 - wx) * c000 + wx * c100;
+    const real_t vx10 = (1 - wx) * c010 + wx * c110;
+    const real_t vx01 = (1 - wx) * c001 + wx * c101;
+    const real_t vx11 = (1 - wx) * c011 + wx * c111;
+    const real_t vxy0 = (1 - wy) * vx00 + wy * vx10;
+    const real_t vxy1 = (1 - wy) * vx01 + wy * vx11;
+    return (1 - wz) * vxy0 + wz * vxy1;
+}
+
 inline real_t vs2vp(real_t vs) {
     return 0.9409 + 2.0947*vs - 0.8206*vs*vs + 0.2683*vs*vs*vs - 0.0251*vs*vs*vs*vs;
 }
@@ -421,8 +462,13 @@ inline Eigen::VectorX<real_t> interp1d(
     for (int k = 0; k < nq; ++k) {
         const real_t qx = xq(k);
 
-        if (qx < xgrid(0) || qx > xgrid(nx - 1)) {
-            yq(k) = std::numeric_limits<real_t>::quiet_NaN();
+        // Extrapolate at boundaries using constant extension (nearer endpoint value)
+        if (qx < xgrid(0)) {
+            yq(k) = y(0);
+            continue;
+        }
+        if (qx > xgrid(nx - 1)) {
+            yq(k) = y(nx - 1);
             continue;
         }
 
@@ -610,4 +656,19 @@ inline Eigen::VectorX<real_t> extract_1d_from_3d(
         data_1d(k) = data[I2V(ix, iy, k)];
     }
     return data_1d;
+}
+
+// ---------------------------------------------------------------------------
+// Convert a numeric array into fixed-precision string values for CSV output.
+// rapidcsv writing here is string-based to keep formatting explicit/consistent.
+inline std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6) {
+    std::vector<std::string> v(n);
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(prec);
+    for (int i = 0; i < n; ++i) {
+        oss.str(""); oss.clear();
+        oss << data[i];
+        v[i] = oss.str();
+    }
+    return v;
 }

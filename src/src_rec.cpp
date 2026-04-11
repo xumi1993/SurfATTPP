@@ -371,19 +371,34 @@ void SrcRec::gather_syn_tt()
 }
 
 
-// ---------------------------------------------------------------------------
-// Convert a numeric array into fixed-precision string values for CSV output.
-// rapidcsv writing here is string-based to keep formatting explicit/consistent.
-static std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6) {
-    std::vector<std::string> v(n);
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(prec);
-    for (int i = 0; i < n; ++i) {
-        oss.str(""); oss.clear();
-        oss << data[i];
-        v[i] = oss.str();
+ResidualStats SrcRec::compute_residual_stats() {
+    auto &mpi = Parallel::mpi();
+
+    real_t local_n   = _0_CR;
+    real_t local_sum = _0_CR;
+    real_t local_sq  = _0_CR;
+
+    for (const auto& [name, info] : events_local) {
+        const int n_rec = static_cast<int>(info.rec_indices.size());
+        for (int i = 0; i < n_rec; ++i) {
+            const real_t residual = info.syn_data[i] - tt[info.rec_indices[i]];
+            local_n   += _1_CR;
+            local_sum += residual;
+            local_sq  += residual * residual;
+        }
     }
-    return v;
+
+    mpi.sum_all_all_inplace(local_n);
+    mpi.sum_all_all_inplace(local_sum);
+    mpi.sum_all_all_inplace(local_sq);
+
+    if (local_n == _0_CR)
+        return {_0_CR, _0_CR};
+
+    const real_t mean = local_sum / local_n;
+    const real_t var  = local_sq  / local_n - mean * mean;
+    const real_t stddev = std::sqrt(std::max(var, _0_CR));
+    return {mean, stddev};  // ResidualStats aggregate init
 }
 
 // Write the current observation table to CSV.
@@ -401,11 +416,11 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
         if (is_fwd){
             if (tt_fwd.size() == 0) {
                 logger.Error("Forward-modeled travel times (tt_fwd) are not assigned", MODULE_SRCREC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs_, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt_fwd.data(), n_obs_, 6));
         } else {
-            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs_, 4));
+            doc.SetColumn<std::string> (0,  fmt_col(tt,     n_obs_, 6));
         }
         doc.SetColumn<std::string> (1,  staname);
         doc.SetColumn<std::string> (2,  fmt_col(stla,       n_obs_, 4));
@@ -419,11 +434,11 @@ void SrcRec::write(const std::string& filepath, const bool is_fwd){
         if (is_fwd) {
             if (vel_fwd.size() == 0) {
                 logger.Error("Forward-modeled velocities (vel_fwd) are not assigned", MODULE_SRCREC);
-                exit(EXIT_FAILURE);
+                mpi.abort(EXIT_FAILURE);
             }
-            doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs_, 4));
+            doc.SetColumn<std::string> (10, fmt_col(vel_fwd.data(), n_obs_, 6));
         } else {
-            doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs_, 4));
+            doc.SetColumn<std::string> (10, fmt_col(vel,        n_obs_, 6));
         }
         doc.SetColumnName(0,  "tt");
         doc.SetColumnName(1,  "staname");
