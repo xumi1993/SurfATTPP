@@ -57,6 +57,7 @@ private:
     bool line_search();
     void write_src_rec_fwd();
     void write_obj_line();
+    void alpha_clamp();
 
     std::ofstream obj_file_;  // objective function log; open only on main rank
 

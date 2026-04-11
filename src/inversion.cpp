@@ -490,6 +490,7 @@ void Inversion::model_update(FieldVec &dir) {
     if (IP.inversion().use_alpha_beta_rho) {
         mg.vp3d_loc = mg.vp3d_loc * (1 - alpha_ * dir[1]);
         mg.rho3d_loc = mg.rho3d_loc * (1 - alpha_ * dir[2]);
+        alpha_clamp();
     } else {
         // Empirical scaling: vs → vp → rho via Brocher (2005)
         mg.vp3d_loc  = vs2vp(mg.vs3d_loc);
@@ -500,6 +501,19 @@ void Inversion::model_update(FieldVec &dir) {
         mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
     }
     mpi.barrier();
+}
+
+void Inversion::alpha_clamp() {
+    auto &IP = InputParams::IP();
+    auto &mg = ModelGrid::MG();
+
+    const real_t ratio_min = IP.inversion().vpvs_ratio_range[0];
+    const real_t ratio_max = IP.inversion().vpvs_ratio_range[1];
+
+    // Clamp vp/vs ratio to [ratio_min, ratio_max]
+    mg.vp3d_loc = mg.vp3d_loc
+        .cwiseMax(ratio_min * mg.vs3d_loc)
+        .cwiseMin(ratio_max * mg.vs3d_loc);
 }
 
 void Inversion::write_src_rec_fwd(){
