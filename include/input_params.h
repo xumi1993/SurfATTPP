@@ -67,6 +67,7 @@ struct InversionParams {
     bool is_anisotropy;
     bool use_alpha_beta_rho;
     bool rho_scaling;
+    std::vector<real_t> vpvs_ratio_range;
     // iteration
     int    niter;
     real_t min_derr;
