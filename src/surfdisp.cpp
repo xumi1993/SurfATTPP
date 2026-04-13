@@ -292,11 +292,16 @@ DepthKernel1D depthkernel1d(const DispersionRequest& req) {
             "surfker::compute_depth_kernel: Only Rayleigh waves (iwave=2) with "
             "igr=0 (phase) or igr=1 (group) are supported");
     }
+    
+    DepthKernel1D kernel;
+    kernel.sen_vs = sen_vs;
+    kernel.sen_vp = sen_vp;
+    kernel.sen_rho = sen_rho;
 
-    return DepthKernel1D{sen_vs, sen_vp, sen_rho};
+    return kernel;
 }
 
-DepthKernelHTI1D depthkernelHTI1d(const DispersionRequest& req) {
+DepthKernel1D depthkernelHTI1d(const DispersionRequest& req) {
     validate_request(req);
 
     if (!(req.iwave == 2 && req.igr == 0)) {
@@ -361,7 +366,7 @@ DepthKernelHTI1D depthkernelHTI1d(const DispersionRequest& req) {
         }
     }
 
-    return DepthKernelHTI1D{sen_vs, sen_vp, sen_rho, sen_gc, sen_gs};
+    return DepthKernel1D{sen_vs, sen_vp, sen_rho, sen_gc, sen_gs};
 }
 
 }  // namespace surfker

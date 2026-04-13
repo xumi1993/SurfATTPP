@@ -30,22 +30,24 @@ struct DepthKernel1D {
     Eigen::MatrixX<real_t> sen_vs;    // S-wave velocity sensitivity
     Eigen::MatrixX<real_t> sen_vp;    // P-wave velocity sensitivity
     Eigen::MatrixX<real_t> sen_rho;   // Density sensitivity
-};
-
-struct DepthKernelHTI1D {
-    // Sensitivity matrices: dimensions are (n_periods, n_layers)
-    Eigen::MatrixX<real_t> sen_vs;    // S-wave velocity sensitivity
-    Eigen::MatrixX<real_t> sen_vp;    // P-wave velocity sensitivity
-    Eigen::MatrixX<real_t> sen_rho;   // Density sensitivity
     Eigen::MatrixX<real_t> sen_gc;    // cos(2psi) anisotropy sensitivity
     Eigen::MatrixX<real_t> sen_gs;    // sin(2psi) anisotropy sensitivity
 };
+
+// struct DepthKernelHTI1D {
+//     // Sensitivity matrices: dimensions are (n_periods, n_layers)
+//     Eigen::MatrixX<real_t> sen_vs;    // S-wave velocity sensitivity
+//     Eigen::MatrixX<real_t> sen_vp;    // P-wave velocity sensitivity
+//     Eigen::MatrixX<real_t> sen_rho;   // Density sensitivity
+//     Eigen::MatrixX<real_t> sen_gc;    // cos(2psi) anisotropy sensitivity
+//     Eigen::MatrixX<real_t> sen_gs;    // sin(2psi) anisotropy sensitivity
+// };
 
 // Compute Rayleigh wave depth kernels (sensitivities) for 1D model
 // Returns kernels with shape (n_periods × n_layers)
 // Throws std::runtime_error on invalid input or if Fortran backend is disabled.
 DepthKernel1D depthkernel1d(const DispersionRequest& req);
-DepthKernelHTI1D depthkernelHTI1d(const DispersionRequest& req);
+DepthKernel1D depthkernelHTI1d(const DispersionRequest& req);
 
 DispersionRequest build_disp_req(const Eigen::VectorX<real_t>& dep,
                                 const Eigen::VectorX<real_t>& vs,
