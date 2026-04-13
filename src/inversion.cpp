@@ -81,7 +81,7 @@ Inversion::Inversion() {
             } else {
                 obj_file_ << std::unitbuf;  // flush after every write operation
                 obj_file_ << std::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
-                    "iter", "misfit", "ph_mean", "ph_std", "gr_mean", "gr_std", "alpha");
+                    "iter", "misfit", "res_ph_mean", "res_ph_std", "res_gr_mean", "res_gr_std", "alpha");
             }
         }
     }
@@ -131,6 +131,10 @@ void Inversion::run_inversion() {
             logger.Info("Reusing gradient from accepted line-search step (skipping forward+adjoint).", MODULE_INV);
         }
         misfit_[iter_] = misfit_trial_;
+        logger.Info(std::format(
+            "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
+                100 * misfit_[iter_] / misfit_[0]
+        ), MODULE_INV);
 
         write_obj_line();
 
@@ -156,11 +160,6 @@ void Inversion::run_inversion() {
             logger.Error("Unsupported optimization method specified in input parameters.", MODULE_INV);
             mpi.abort(EXIT_FAILURE);
         }
-
-        logger.Info(std::format(
-            "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
-                100 * misfit_[iter_] / misfit_[0]
-        ), MODULE_INV);
 
         // Check for convergence based on misfit reduction
         if (check_convergence()) break;

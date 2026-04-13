@@ -280,7 +280,12 @@ void SurfGrid::compute_dispersion_kernel() {
             }
             auto req = surfker::build_disp_req(mg.zgrids, vs1d, vp1d, rho1d, periods,
                                     IFLSPH, IP.data().iwave, IMODE, itype_);
-            auto kernels = surfker::depthkernelHTI1d(req);
+            surfker::DepthKernel1D kernels;
+            if (itype_ == 1 && !IP.inversion().is_anisotropy) {
+                kernels = surfker::depthkernel1d(req);
+            } else {
+                kernels = surfker::depthkernelHTI1d(req);
+            }
             
             // Copy the kernels for this grid point into the corresponding location in the global sensitivity arrays.
             const int id0 = kernel_idx4(ix, iy, 0, 0, dcp.loc_ny(), ngrid_k, nperiod_);

@@ -3,12 +3,12 @@
 # data parameters
 #######################################
 data:
-  src_rec_file_ph: src_rec_file_ph.csv
-  src_rec_file_gr: src_rec_file_gr.csv
-  # src_rec_file_ph: OUTPUT_FILES/src_rec_file_forward_ph.csv
-  # src_rec_file_gr: OUTPUT_FILES/src_rec_file_forward_gr.csv
+  # src_rec_file_ph: src_rec_file_ph.csv
+  # src_rec_file_gr: src_rec_file_gr.csv
+  src_rec_file_ph: OUTPUT_FILES/src_rec_file_forward_PH.csv
+  src_rec_file_gr: OUTPUT_FILES/src_rec_file_forward_GR.csv
   iwave: 2 # 1 Love wave, 2 Rayleigh wave
-  vel_type: [True, True] # use phase velocity, group velocity or both
+  vel_type: [True, False] # use phase velocity, group velocity or both
   weights: [0.5, 0.5] # weights for phase and group velocity
 
 output:
@@ -43,7 +43,7 @@ topo:
 postproc:
   kdensity_coe: 0  # Kdensity_coe is used to rescale the final kernel:  kernel -> kernel / pow(density of kernel, Kdensity_coe).
   independent_smooth_ani: False
-  smooth_method: 1
+  smooth_method: 0
   smooth_method_0:
     sigma: [0.1, 2]
     sigma_ani: [0.1, 2]
