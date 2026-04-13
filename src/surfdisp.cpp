@@ -361,9 +361,10 @@ DepthKernel1D depthkernel_love_group(const DispersionRequest& req) {
 
     // Match legacy implementation: +/-5% period perturbation for Love group kernels.
     Eigen::VectorXd t1(kmax), t2(kmax);
+    double dt = 0.01;  // Fractional period increment
     for (int i = 0; i < kmax; ++i) {
-        t1(i) = t(i) * (1.0 + 0.05);
-        t2(i) = t(i) * (1.0 - 0.05);
+        t1(i) = t(i) * (1.0 + 0.5 * dt);
+        t2(i) = t(i) * (1.0 - 0.5 * dt);
     }
 
     Eigen::VectorXd cp(kmax), cp1(kmax), cp2(kmax);
