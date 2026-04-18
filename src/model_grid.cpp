@@ -678,14 +678,14 @@ void ModelGrid::write(const std::string &subname) {
         f.write_vector("x", xgrids);
         f.write_vector("y", ygrids);
         f.write_vector("z", zgrids);
-        f.write_volume("vs", std::vector<real_t>(vs3d, vs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+        f.write_volume("vs", vs3d, ngrid_i, ngrid_j, ngrid_k);
         if (IP.inversion().use_alpha_beta_rho) {
-            f.write_volume("vp", std::vector<real_t>(vp3d, vp3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("rho", std::vector<real_t>(rho3d, rho3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("vp", vp3d, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("rho", rho3d, ngrid_i, ngrid_j, ngrid_k);
         }
         if (IP.inversion().is_anisotropy) {
-            f.write_volume("gc", std::vector<real_t>(gc3d, gc3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("gs", std::vector<real_t>(gs3d, gs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("gc", gc3d, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("gs", gs3d, ngrid_i, ngrid_j, ngrid_k);
         }
     }
     mpi.barrier();
@@ -698,4 +698,6 @@ void ModelGrid::release_shm(){
     mpi.free_shared(vp3d, win_vp_);
     mpi.free_shared(vs3d, win_vs_);
     mpi.free_shared(rho3d, win_rho_);
+    if (win_gc_ != MPI_WIN_NULL) mpi.free_shared(gc3d, win_gc_);
+    if (win_gs_ != MPI_WIN_NULL) mpi.free_shared(gs3d, win_gs_);
 }
