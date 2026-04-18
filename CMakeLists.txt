@@ -22,7 +22,7 @@ configure_file(
   ${PROJECT_SOURCE_DIR}/include/version.h
 )
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
@@ -48,7 +48,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
 
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
   # Classic Intel C++ Compiler (icpc); does NOT support -Wtautological-constant-compare.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -diag-warning -DEIGEN_STRONG_INLINE=inline")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -diag-disable=10441,11016 -DEIGEN_STRONG_INLINE=inline")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
 
 else ()
@@ -71,8 +71,8 @@ elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
 
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
   # Classic Intel Fortran Compiler (ifort)
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -extend-source")
-  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -extend-source")
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -diag-disable=10441 -extend-source")
+  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -diag-disable=10441 -extend-source")
 
 else ()
   # Fallback defaults for other Fortran compilers, defaulting to GNU-style formatting.
