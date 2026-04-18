@@ -7,7 +7,6 @@
 #include "utils.h"
 
 #include <cmath>
-#include <format>
 
 
 int main(int argc, char* argv[])
@@ -38,7 +37,7 @@ int main(int argc, char* argv[])
     int ngrid_j = static_cast<int>(y_vec.size());
     int ngrid_k = static_cast<int>(z_vec.size());
     int nelem = ngrid_i * ngrid_j * ngrid_k;
-    logger.Info(std::format("Loaded model grid: {} x {} x {}", ngrid_i, ngrid_j, ngrid_k), MODULE_MAIN);
+    logger.Info(fmt::format("Loaded model grid: {} x {} x {}", ngrid_i, ngrid_j, ngrid_k), MODULE_MAIN);
 
     // read model properties
     hsize_t ni = 0, nj = 0, nk = 0;
@@ -114,6 +113,6 @@ int main(int argc, char* argv[])
         doc.SetColumnName(5, "theta");
     }
     doc.Save(args.outfname);
-    logger.Info(std::format("CSV written to {}", args.outfname), MODULE_MAIN);
+    logger.Info(fmt::format("CSV written to {}", args.outfname), MODULE_MAIN);
     return 0;
 }

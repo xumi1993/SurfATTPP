@@ -195,7 +195,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
         for (int i = 0; i < dcp.loc_nx(); ++i) {
             idx = locate_bissection(xinv.col(igrid).data(), ninvx, mg.xgrids(i + dcp.loc_I_start()));
             if (idx == -1){
-                logger.Error(std::format(
+                logger.Error(fmt::format(
                     "x = {} out of bounds [{}, {}]", mg.xgrids(i + dcp.loc_I_start()), xinv(0, igrid), xinv(ninvx - 1, igrid)
                 ), MODULE_POSTPROC);
                 mpi.abort(EXIT_FAILURE);
@@ -204,7 +204,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
             for (int j = 0; j < dcp.loc_ny(); ++j) {
                 idy = locate_bissection(yinv.col(igrid).data(), ninvy, mg.ygrids(j + dcp.loc_J_start()));
                 if (idy == -1){
-                    logger.Error(std::format(
+                    logger.Error(fmt::format(
                         "y = {} out of bounds [{}, {}]", mg.ygrids(j + dcp.loc_J_start()), yinv(0, igrid), yinv(ninvy - 1, igrid)
                     ), MODULE_POSTPROC);
                     mpi.abort(EXIT_FAILURE);
@@ -213,7 +213,7 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                 for (int k = 0; k < ngrid_k; ++k) {
                     idz = locate_bissection(zinv.col(igrid).data(), ninvz, mg.zgrids(k));
                     if (idz == -1){
-                        logger.Error(std::format(
+                        logger.Error(fmt::format(
                             "z = {} out of bounds [{}, {}]", mg.zgrids(k), zinv(0, igrid), zinv(ninvz - 1, igrid)
                         ), MODULE_POSTPROC);
                         mpi.abort(EXIT_FAILURE);
@@ -282,7 +282,7 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
         for (int i = 0; i < dcp.loc_nx(); ++i) {
             idx = locate_bissection(xinv.col(igrid).data(), ninvx, mg.xgrids(i + dcp.loc_I_start()));
             if (idx == -1){
-                logger.Error(std::format(
+                logger.Error(fmt::format(
                     "x = {} out of bounds [{}, {}]", mg.xgrids(i + dcp.loc_I_start()), xinv(0, igrid), xinv(ninvx - 1, igrid)
                 ), MODULE_POSTPROC);
                 mpi.abort(EXIT_FAILURE);
@@ -291,7 +291,7 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
             for (int j = 0; j < dcp.loc_ny(); ++j) {
                 idy = locate_bissection(yinv.col(igrid).data(), ninvy, mg.ygrids(j + dcp.loc_J_start()));
                 if (idy == -1){
-                    logger.Error(std::format(
+                    logger.Error(fmt::format(
                         "y = {} out of bounds [{}, {}]", mg.ygrids(j + dcp.loc_J_start()), yinv(0, igrid), yinv(ninvy - 1, igrid)
                     ), MODULE_POSTPROC);
                     mpi.abort(EXIT_FAILURE);
@@ -300,7 +300,7 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
                 for (int k = 0; k < ngrid_k; ++k) {
                     idz = locate_bissection(zinv.col(igrid).data(), ninvz, mg.zgrids(k));
                     if (idz == -1){
-                        logger.Error(std::format(
+                        logger.Error(fmt::format(
                             "z = {} out of bounds [{}, {}]", mg.zgrids(k), zinv(0, igrid), zinv(ninvz - 1, igrid)
                         ), MODULE_POSTPROC);
                         mpi.abort(EXIT_FAILURE);
@@ -388,7 +388,7 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
     real_t ch = sigma_h * sigma_h / (2.0 * nstep * dt);  // deg²/step
     real_t cv = sigma_v * sigma_v / (2.0 * nstep * dt);  // km²/step
 
-    logger.Debug(std::format(
+    logger.Debug(fmt::format(
         "PDE smooth: sigma_h={:.3f} deg, sigma_v={:.3f} km, nstep={} (h:{} v:{}), ch={:.4e}, cv={:.4e}",
         sigma_h, sigma_v, nstep, nstep_h, nstep_v, ch, cv), MODULE_POSTPROC);
 
@@ -473,7 +473,7 @@ FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
 
     std::string method_name = (IP.postproc().smooth_method == 0) ? "PDE smoothing" : "multigrid smoothing";
 
-    logger.Info(std::format("Smoothing kernels with {}...", method_name), MODULE_POSTPROC);
+    logger.Info(fmt::format("Smoothing kernels with {}...", method_name), MODULE_POSTPROC);
     FieldVec ker_loc_smooth(sg.ker_loc.size());
     for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;

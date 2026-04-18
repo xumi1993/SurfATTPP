@@ -171,7 +171,7 @@ void SurfGrid::build_media() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    logger.Info(std::format("Building media matrix for {}...", type_name()), MODULE_GRID);
+    logger.Info(fmt::format("Building media matrix for {}...", type_name()), MODULE_GRID);
     int n_elem = ngrid_i * ngrid_j * nperiod_;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
@@ -201,7 +201,7 @@ void SurfGrid::fwdsurf(){
     auto &sr = (itype_ == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
-    logger.Info(std::format(
+    logger.Info(fmt::format(
         "Computing {} velocity dispersion from 3d velocity model...", type_name()),
         MODULE_GRID
     );

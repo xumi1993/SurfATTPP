@@ -35,7 +35,7 @@ void SrcRec::load(const std::string& filepath)
         try {
             doc = rapidcsv::Document(filepath, rapidcsv::LabelParams(0, -1));
         } catch (const std::ios_base::failure &e) {
-            logger.Error(std::format(
+            logger.Error(fmt::format(
                 "SrcRec::load: failed to open file {}: {}", filepath, e.what()
             ), MODULE_SRCREC);
             mpi.abort(EXIT_FAILURE);
@@ -164,7 +164,7 @@ void SrcRec::get_events(){
                 int n_rec = info.rec_indices.size();
                 if (n_rec > 0) {
                     info.syn_data.setZero(n_rec);  // placeholder for synthetic data
-                    std::string key = std::format("{}_{:d}", src, iper);
+                    std::string key = fmt::format("{}_{:d}", src, iper);
                     events[key] = info;
                     src_name_list.push_back(key);
                 }
@@ -182,7 +182,7 @@ void SrcRec::get_events(){
     // Distribute event records to their target ranks.
     // We broadcast event names (small metadata), then send larger payloads
     // (evla/evlo/receiver-index list) only to the selected destination rank.
-    logger.Info(std::format(
+    logger.Info(fmt::format(
         "Distributing {} events to {} ranks", nsrc_total_, mpi.size()),
         MODULE_SRCREC
     );

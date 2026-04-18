@@ -81,7 +81,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
         real_t evlo = evt.second.evlo;
         int iper = evt.second.iper;
 
-        logger.Debug(std::format("Rank:{}, Computing travel time for event: {} ",
+        logger.Debug(fmt::format("Rank:{}, Computing travel time for event: {} ",
             mpi.rank(), evt.first), 
             MODULE_PREPROC, false
         );

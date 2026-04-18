@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-set(CMAKE_PROJECT_NAME "SurfATT")
-project( ${CMAKE_PROJECT_NAME} VERSION 2.0.0 LANGUAGES CXX Fortran)
+project( SurfATT VERSION 2.0.0 LANGUAGES CXX Fortran)
 
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
@@ -36,22 +35,47 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native")
+message(STATUS "Detecting CXX Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -Wno-type-limits")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
 
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -ffixed-line-length-none")
-  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g3 -ffixed-line-length-none")
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "Intel")
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -xHost -DEIGEN_STRONG_INLINE=inline")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+  # New Intel DPC++/C++ Compiler (icpx) based on LLVM; supports Clang-style warnings.
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -Wno-tautological-constant-compare -DEIGEN_STRONG_INLINE=inline")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
 
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -xHost -extend-source")
-  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -extend-source")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
+  # Classic Intel C++ Compiler (icpc); does NOT support -Wtautological-constant-compare.
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -diag-warning -DEIGEN_STRONG_INLINE=inline")
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
+
 else ()
+  # Fallback defaults for other compilers (e.g., MSVC, native Clang, etc.).
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
+endif()
 
+# Note: Ensure the project enables Fortran support (e.g., project(MyProject LANGUAGES CXX Fortran)) to retrieve this ID.
+message(STATUS "Detecting Fortran Compiler: ${CMAKE_Fortran_COMPILER_ID}")
+
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -ffixed-line-length-none")
+  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g3 -ffixed-line-length-none")
+
+elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
+  # New Intel Fortran Compiler (ifx)
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -extend-source")
+  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -extend-source")
+
+elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
+  # Classic Intel Fortran Compiler (ifort)
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -extend-source")
+  set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -extend-source")
+
+else ()
+  # Fallback defaults for other Fortran compilers, defaulting to GNU-style formatting.
   set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -ffixed-line-length-none")
   set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g3 -ffixed-line-length-none")
 endif()
@@ -80,11 +104,7 @@ message(STATUS "MPI_CXX_INCLUDE_DIRS: ${MPI_CXX_INCLUDE_DIRS}")
 # find HDF5 parallel
 message(STATUS "Running CMAKE FindHDF5.cmake...")
 # set parallel HDF5 default
-find_package(HDF5 REQUIRED COMPONENTS C CXX CONFIG QUIET)
-if (NOT HDF5_FOUND)
-  message(STATUS "HDF5 not found with CONFIG mode, try without CONFIG mode...")
-  find_package(HDF5 REQUIRED COMPONENTS C CXX)
-endif()
+find_package(HDF5 REQUIRED COMPONENTS C CXX)
 if(HDF5_FOUND)
   if(TARGET hdf5::hdf5_cpp-shared AND TARGET hdf5::hdf5-shared)
       set(MY_HDF5_LIBS hdf5::hdf5_cpp-shared hdf5::hdf5-shared)
