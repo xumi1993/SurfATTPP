@@ -153,6 +153,9 @@ ModelGrid::ModelGrid() {
         xend = dom.lon_min_max[1];
         ybeg = dom.lat_min_max[0];
         yend = dom.lat_min_max[1];
+        dgrid_i = (xend - xbeg) / static_cast<real_t>(ngrid_i - 1);
+        dgrid_j = (yend - ybeg) / static_cast<real_t>(ngrid_j - 1);
+        dgrid_k = (dom.depth[1] - dom.depth[0]) / static_cast<real_t>(ngrid_k - 1);
     } else {
         logger.Error(fmt::format("Unsupported grid_method {}", dom.grid_method), MODULE_GRID);
         mpi.abort(EXIT_FAILURE);
