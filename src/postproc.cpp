@@ -1,20 +1,43 @@
 #include "postproc.h"
 #include "logger.h"
 #include "decomposer.h"
+#include "model_grid.h"
 #include "utils.h"
 
 namespace{
+    // -----------------------------------------------------------------------
+    // Spherical Laplacian for (longitude, latitude, depth) coordinates.
+    //
+    // The Laplace-Beltrami operator on a sphere in geographic coordinates
+    // (φ = longitude, λ = latitude, z = depth with r = R_e − z) is:
+    //
+    //   ∇²u = (1/cos²λ) ∂²u/∂φ²            … longitude
+    //        + ∂²u/∂λ²  − tan(λ) ∂u/∂λ      … latitude  (*)
+    //        + ∂²u/∂z²  − [2/(R_e−z)] ∂u/∂z  … depth     (**)
+    //
+    // (*) The −tan(λ) term arises from the divergence of meridians on the
+    //     sphere.  When angles are expressed in degrees an extra π/180
+    //     factor appears (see derivation below).
+    //
+    // (**) The radial 2/r term is very small at seismological depths
+    //      (≲0.03 %/km) but is included for correctness.
+    //
+    // Degree-space derivation for the tan term:
+    //   Let Λ = latitude in degrees, λ = Λ·π/180.
+    //   ∂/∂λ = (180/π) ∂/∂Λ  ⟹
+    //   ∂²u/∂λ² − tan λ ∂u/∂λ
+    //     = (180/π)² [∂²u/∂Λ² − (π/180) tan λ  ∂u/∂Λ]
+    //
+    //   The (180/π)² cancels with the same factor in ∂²u/∂Λ², so the
+    //   finite-difference form per unit ch (deg²/step) is simply:
+    //     ch * [ d²u/dΛ² − (π/180)·tan(λ)·du/dΛ ]
+    // -----------------------------------------------------------------------
     Tensor3r compute_laplacian_3d_standard(const real_t ch, const real_t cv) {
         auto &dcp = Decomposer::DCP();
+        const auto &mg = ModelGrid::MG();
 
         Tensor3r lap(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         lap.setZero();
-
-        real_t dphi2_inv = _1_CR / (dgrid_i * dgrid_i); // ix: latitude (phi)
-        real_t dtheta2_inv = _1_CR / (dgrid_j * dgrid_j); // iy: longitude (theta)
-        real_t dR2_inv = _1_CR / (dgrid_k * dgrid_k); // k: depth (R)
-        real_t inv_2dR = _1_CR / (_2_CR * dgrid_k);
-        real_t inv_2dtheta = _1_CR / (_2_CR * dgrid_j);
 
         int ix_start, iy_start;
         int ib, ie, jb, je;
@@ -45,50 +68,49 @@ namespace{
             je = dcp.loc_ny() - 1;
         }
 
-        // real_t dx2_inv = _1_CR / (dgrid_i * dgrid_i);
-        // real_t dy2_inv = _1_CR / (dgrid_j * dgrid_j);
-        // real_t dz2_inv = _1_CR / (dgrid_k * dgrid_k);
-        // Compute standard 7-point Laplacian
+        real_t dx2_inv = _1_CR / (dgrid_i * dgrid_i);
+        real_t dy2_inv = _1_CR / (dgrid_j * dgrid_j);
+        real_t dz2_inv = _1_CR / (dgrid_k * dgrid_k);
+        real_t dy_inv_half = _1_CR / (_2_CR * dgrid_j);   // 1/(2·dΛ) for central diff
+        real_t dz_inv_half = _1_CR / (_2_CR * dgrid_k);   // 1/(2·dz) for central diff
+
+        // Compute spherical Laplacian
         for (int ix = ib; ix < ie; ++ix) {
             for (int iy = jb; iy < je; ++iy) {
-                // get latitude for coordinate correction in x-direction second derivative
-                real_t lat_rad = dcp.y_loc_expd(iy) * DEG2RAD;
-                real_t theta_rad = PI_OVER_2 - lat_rad;
-                real_t sin_theta = std::sin(theta_rad);
-                real_t cot_theta = std::cos(theta_rad) / sin_theta;
+                real_t lat_rad = dcp.y_loc_expd(iy+iy_start) * DEG2RAD;
+                real_t cos_lat = std::cos(lat_rad);
+                real_t dy2_corr_inv = _1_CR / (cos_lat * cos_lat);   // 1/cos²(λ)
+                real_t tan_lat = std::tan(lat_rad);                   // tan(λ)
 
-                // real_t dy2_corr_inv = _1_CR / std::pow(std::cos(dcp.y_loc_expd(iy) * DEG2RAD), 2);  // correction for spherical coordinates
-                for (int k = 0; k < ngrid_k-1; ++k) {
+                for (int k = 0; k < ngrid_k; ++k) {
                     real_t center = dcp.expd_field(ix+ix_start, iy+iy_start, k);
 
-                    // Convert depth to radius
-                    real_t R_depth = k * dgrid_k; // 
-                    real_t r = R_EARTH - R_depth;
-                    real_t r2_inv = _1_CR / (r * r);
-                    
-                    // Radial direction 
-                    // d2u/dr2 + (2/r)*du/dr
-                    real_t d2u_dR2 = (dcp.expd_field(ix+ix_start, iy+iy_start, k+1) + 
-                                    dcp.expd_field(ix+ix_start, iy+iy_start, k-1) - _2_CR * center) * dR2_inv;
-                    real_t du_dR = (dcp.expd_field(ix+ix_start, iy+iy_start, k+1) - 
-                                    dcp.expd_field(ix+ix_start, iy+iy_start, k-1)) * inv_2dR;
-                    real_t radial_part = cv * (d2u_dR2 - (_2_CR / r) * du_dR);
+                    // --- Longitude: ch / cos²(λ) · d²u/dφ² ---
+                    real_t d2u_dx2 = ch * dx2_inv * dy2_corr_inv * (
+                        dcp.expd_field(ix+ix_start+1, iy+iy_start, k) + 
+                        dcp.expd_field(ix+ix_start-1, iy+iy_start, k) - 
+                        _2_CR * center
+                    );
 
-                    // theta direction (longitude)
-                    // (1/r^2) * [d2u/dtheta2 + cot(theta)*du/dtheta]
-                    real_t d2u_dtheta2 = (dcp.expd_field(ix+ix_start, iy+iy_start+1, k) + 
-                                        dcp.expd_field(ix+ix_start, iy+iy_start-1, k) - _2_CR * center) * dtheta2_inv;
-                    real_t du_dtheta = (dcp.expd_field(ix+ix_start, iy+iy_start+1, k) - 
-                                        dcp.expd_field(ix+ix_start, iy+iy_start-1, k)) * inv_2dtheta;
-                    real_t theta_part = ch * r2_inv * (d2u_dtheta2 + cot_theta * du_dtheta);
+                    // --- Latitude: ch · [d²u/dλ² − (π/180)·tan(λ)·du/dλ] ---
+                    real_t u_jp1 = dcp.expd_field(ix+ix_start, iy+iy_start+1, k);
+                    real_t u_jm1 = dcp.expd_field(ix+ix_start, iy+iy_start-1, k);
 
-                    // --- Phi direction (longitude) ---
-                    // (1 / (r^2 * sin^2(theta))) * d2u/dphi2
-                    real_t d2u_dphi2 = (dcp.expd_field(ix+ix_start+1, iy+iy_start, k) + 
-                                        dcp.expd_field(ix+ix_start-1, iy+iy_start, k) - _2_CR * center) * dphi2_inv;
-                    real_t phi_part = ch * r2_inv * (_1_CR / (sin_theta * sin_theta)) * d2u_dphi2;
+                    real_t d2u_dy2 = ch * dy2_inv * (u_jp1 + u_jm1 - _2_CR * center);
+                    real_t du_dy   = ch * DEG2RAD * tan_lat * dy_inv_half * (u_jp1 - u_jm1);
+                    // subtract the spherical correction (−tan·du/dλ → +tan·du/dΛ·π/180 changes sign)
+                    real_t lat_term = d2u_dy2 - du_dy;
 
-                    lap(ix, iy, k) = radial_part + theta_part + phi_part;
+                    // --- Depth: cv · [d²u/dz² − 2/(R−z) · du/dz] ---
+                    real_t u_kp1 = dcp.expd_field(ix+ix_start, iy+iy_start, k+1);
+                    real_t u_km1 = dcp.expd_field(ix+ix_start, iy+iy_start, k-1);
+
+                    real_t d2u_dz2 = cv * dz2_inv * (u_kp1 + u_km1 - _2_CR * center);
+                    real_t r_inv = _2_CR / (R_EARTH - mg.zgrids(k));  // 2/(R_e − z)
+                    real_t du_dz   = cv * r_inv * dz_inv_half * (u_kp1 - u_km1);
+                    real_t depth_term = d2u_dz2 - du_dz;
+
+                    lap(ix, iy, k) = d2u_dx2 + lat_term + depth_term;
                 }
             }
         }
@@ -381,11 +403,20 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
 
     // Compute per-direction maximal stable diffusion coefficients (dt = 1).
     // Horizontal uses degrees², vertical uses km² — kept separate so units never mix.
-    // Stability condition for 3-D forward Euler:
-    //   ch/dx² + ch/dy² + cv/dz² ≤ 1/2
-    // With ch ≤ min(dx²,dy²)/6 and cv ≤ dz²/6 the sum is at most 3*(1/6) = 1/2. ✓
-    real_t cmax_h = std::min(dgrid_i * dgrid_i, dgrid_j * dgrid_j) / 6.0;  // deg²
-    real_t cmax_v = dgrid_k * dgrid_k / 6.0;                                // km²
+    // Stability condition for 3-D forward Euler with spherical metric:
+    //   ch/(dx²·cos²λ) + ch/dy² + cv/dz² ≤ 1/2
+    // The 1/cos²λ factor on the longitude term is largest at the highest |latitude|
+    // in the domain, so we must use cos²(lat_max) in the stability bound.
+    const auto &mg = ModelGrid::MG();
+    real_t lat_max = std::max(std::abs(mg.ygrids(0)),
+                              std::abs(mg.ygrids(ngrid_j - 1)));
+    // Clamp to avoid cos²→0 at the poles (cap at 89°)
+    lat_max = std::min(lat_max, static_cast<real_t>(89.0));
+    real_t cos2_lat_max = std::pow(std::cos(lat_max * DEG2RAD), 2);
+
+    // dx_eff² = dx² · cos²(lat_max):  effective longitude spacing at worst latitude
+    real_t cmax_h = std::min(dgrid_i * dgrid_i * cos2_lat_max, dgrid_j * dgrid_j) / 6.0;  // deg²
+    real_t cmax_v = dgrid_k * dgrid_k / 6.0;  // km²
     if (cmax_h <= VERYTINY || cmax_v <= VERYTINY) {
         logger.Error("Grid spacing is too small for PDE-based smoothing.", MODULE_POSTPROC);
         mpi.abort(EXIT_FAILURE);
@@ -492,7 +523,7 @@ FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
 
     std::string method_name = (IP.postproc().smooth_method == 0) ? "PDE smoothing" : "multigrid smoothing";
 
-    logger.Info(fmt::format("Smoothing kernels with {}...", method_name), MODULE_POSTPROC);
+    logger.Info(fmt::format("Regularizing kernels with {}...", method_name), MODULE_POSTPROC);
     FieldVec ker_loc_smooth(sg.ker_loc.size());
     for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;
