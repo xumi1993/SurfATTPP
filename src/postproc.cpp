@@ -10,6 +10,12 @@ namespace{
         Tensor3r lap(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         lap.setZero();
 
+        real_t dphi2_inv = _1_CR / (dgrid_i * dgrid_i); // ix: latitude (phi)
+        real_t dtheta2_inv = _1_CR / (dgrid_j * dgrid_j); // iy: longitude (theta)
+        real_t dR2_inv = _1_CR / (dgrid_k * dgrid_k); // k: depth (R)
+        real_t inv_2dR = _1_CR / (_2_CR * dgrid_k);
+        real_t inv_2dtheta = _1_CR / (_2_CR * dgrid_j);
+
         int ix_start, iy_start;
         int ib, ie, jb, je;
 
@@ -39,37 +45,50 @@ namespace{
             je = dcp.loc_ny() - 1;
         }
 
-        real_t dx2_inv = _1_CR / (dgrid_i * dgrid_i);
-        real_t dy2_inv = _1_CR / (dgrid_j * dgrid_j);
-        real_t dz2_inv = _1_CR / (dgrid_k * dgrid_k);
+        // real_t dx2_inv = _1_CR / (dgrid_i * dgrid_i);
+        // real_t dy2_inv = _1_CR / (dgrid_j * dgrid_j);
+        // real_t dz2_inv = _1_CR / (dgrid_k * dgrid_k);
         // Compute standard 7-point Laplacian
         for (int ix = ib; ix < ie; ++ix) {
             for (int iy = jb; iy < je; ++iy) {
-                real_t dy2_corr_inv = _1_CR / std::pow(std::cos(dcp.y_loc_expd(iy) * DEG2RAD), 2);  // correction for spherical coordinates
-                for (int k = 0; k < ngrid_k; ++k) {
+                // get latitude for coordinate correction in x-direction second derivative
+                real_t lat_rad = dcp.y_loc_expd(iy) * DEG2RAD;
+                real_t theta_rad = PI_OVER_2 - lat_rad; // 假设 y_loc 是纬度
+                real_t sin_theta = std::sin(theta_rad);
+                real_t cot_theta = std::cos(theta_rad) / sin_theta;
+
+                // real_t dy2_corr_inv = _1_CR / std::pow(std::cos(dcp.y_loc_expd(iy) * DEG2RAD), 2);  // correction for spherical coordinates
+                for (int k = 0; k < ngrid_k-1; ++k) {
                     real_t center = dcp.expd_field(ix+ix_start, iy+iy_start, k);
 
-                    // X-direction second derivative: ch * (u[i+1] + u[i-1] - 2*u[i]) / dx²
-                    real_t d2u_dx2 = ch * dx2_inv *(
-                        dcp.expd_field(ix+ix_start+1, iy+iy_start, k) + 
-                        dcp.expd_field(ix+ix_start-1, iy+iy_start, k) - 
-                        _2_CR * center
-                    );
+                    // Convert depth to radius
+                    real_t R_depth = k * dgrid_k; // 
+                    real_t r = R_EARTH - R_depth;
+                    real_t r2_inv = _1_CR / (r * r);
+                    
+                    // Radial direction 
+                    // d2u/dr2 + (2/r)*du/dr
+                    real_t d2u_dR2 = (dcp.expd_field(ix+ix_start, iy+iy_start, k+1) + 
+                                    dcp.expd_field(ix+ix_start, iy+iy_start, k-1) - _2_CR * center) * dR2_inv;
+                    real_t du_dR = (dcp.expd_field(ix+ix_start, iy+iy_start, k+1) - 
+                                    dcp.expd_field(ix+ix_start, iy+iy_start, k-1)) * inv_2dR;
+                    real_t radial_part = cv * (d2u_dR2 - (_2_CR / r) * du_dR);
 
-                    // Y-direction second derivative: ch * (u[j+1] + u[j-1] - 2*u[j]) / (dy² * cos²(y))
-                    real_t d2u_dy2 = ch * dy2_corr_inv * dy2_inv * (
-                        dcp.expd_field(ix+ix_start, iy+iy_start+1, k) + 
-                        dcp.expd_field(ix+ix_start, iy+iy_start-1, k) - 
-                        _2_CR * center
-                    );
+                    // theta direction (longitude)
+                    // (1/r^2) * [d2u/dtheta2 + cot(theta)*du/dtheta]
+                    real_t d2u_dtheta2 = (dcp.expd_field(ix+ix_start, iy+iy_start+1, k) + 
+                                        dcp.expd_field(ix+ix_start, iy+iy_start-1, k) - _2_CR * center) * dtheta2_inv;
+                    real_t du_dtheta = (dcp.expd_field(ix+ix_start, iy+iy_start+1, k) - 
+                                        dcp.expd_field(ix+ix_start, iy+iy_start-1, k)) * inv_2dtheta;
+                    real_t theta_part = ch * r2_inv * (d2u_dtheta2 + cot_theta * du_dtheta);
 
-                    // Z-direction second derivative: cv * (u[k+1] + u[k-1] - 2*u[k]) / dz²
-                    real_t d2u_dz2 = cv * dz2_inv * (
-                        dcp.expd_field(ix+ix_start, iy+iy_start, k+1) + 
-                        dcp.expd_field(ix+ix_start, iy+iy_start, k-1) - 
-                        _2_CR * center
-                    );
-                    lap(ix, iy, k) = d2u_dx2 + d2u_dy2 + d2u_dz2;
+                    // --- Phi direction (longitude) ---
+                    // (1 / (r^2 * sin^2(theta))) * d2u/dphi2
+                    real_t d2u_dphi2 = (dcp.expd_field(ix+ix_start+1, iy+iy_start, k) + 
+                                        dcp.expd_field(ix+ix_start-1, iy+iy_start, k) - _2_CR * center) * dphi2_inv;
+                    real_t phi_part = ch * r2_inv * (_1_CR / (sin_theta * sin_theta)) * d2u_dphi2;
+
+                    lap(ix, iy, k) = radial_part + theta_part + phi_part;
                 }
             }
         }
