@@ -53,7 +53,7 @@ namespace{
             for (int iy = jb; iy < je; ++iy) {
                 // get latitude for coordinate correction in x-direction second derivative
                 real_t lat_rad = dcp.y_loc_expd(iy) * DEG2RAD;
-                real_t theta_rad = PI_OVER_2 - lat_rad; // 假设 y_loc 是纬度
+                real_t theta_rad = PI_OVER_2 - lat_rad;
                 real_t sin_theta = std::sin(theta_rad);
                 real_t cot_theta = std::cos(theta_rad) / sin_theta;
 
