@@ -689,6 +689,14 @@ void ModelGrid::write(const std::string &subname) {
         if (IP.inversion().is_anisotropy) {
             f.write_volume("gc", gc3d, ngrid_i, ngrid_j, ngrid_k);
             f.write_volume("gs", gs3d, ngrid_i, ngrid_j, ngrid_k);
+            std::vector<real_t> g0(ngrid_i * ngrid_j * ngrid_k);
+            std::vector<real_t> theta(ngrid_i * ngrid_j * ngrid_k);
+            for (int i = 0; i < ngrid_i * ngrid_j * ngrid_k; ++i) {
+                g0[i] = std::sqrt(gc3d[i] * gc3d[i] + gs3d[i] * gs3d[i]);
+                theta[i] = _0_5_CR * std::atan2(gs3d[i], gc3d[i]) * RAD2DEG;
+            }
+            f.write_volume("g0", g0, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("theta", theta, ngrid_i, ngrid_j, ngrid_k);
         }
     }
     mpi.barrier();

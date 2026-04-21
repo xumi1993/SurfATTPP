@@ -523,17 +523,15 @@ void Inversion::write_src_rec_fwd(){
         int itype = static_cast<int>(tp);
         if (!IP.data().vel_type[itype]) continue;
         auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
-
-        std::string sfx = surfTypeStr[itype];
-        if (run_mode != FORWARD_ONLY) {
-            sfx += fmt::format("_{:03d}", iter_);
-        }
         // gather synthetic travel times to the main rank for output and inversion steps
-        if (run_mode == FORWARD_ONLY || (IP.output().output_in_process_data)) {
+        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data || 
+            (run_mode == INVERSION_MODE && iter_ == IP.inversion().niter - 1) ||
+            (run_mode == INVERSION_MODE && iter_ == 0)) {
             logger.Info(fmt::format(
                 "Gathering synthetic {} travel times to the main rank for output...", surfTypeStr[itype]), MODULE_PREPROC
             );
             sr.gather_syn_tt();
+            std::string sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
             sr.write(
                 fmt::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, sfx), true
             );
