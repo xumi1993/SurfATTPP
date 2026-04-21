@@ -533,7 +533,7 @@ void Inversion::write_src_rec_fwd(){
             sr.gather_syn_tt();
             std::string sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
             sr.write(
-                fmt::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, sfx), true
+                fmt::format("{}/{}_{}.csv", IP.output().output_path, FORWARD_FILE_PREFIX, sfx), true
             );
         }
     }

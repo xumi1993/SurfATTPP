@@ -46,6 +46,7 @@ const std::string INIT_MODEL_FNAME = "initial_model.h5";
 const std::string TARGET_MODEL_FNAME = "target_model.h5";
 const std::string MODEL_ITER_FNAME      = "model_iter.h5";
 const std::string OBJ_FNAME             = "objective_function.txt";
+const std::string FORWARD_FILE_PREFIX = "src_rec_file_forward";
 inline std::string input_file;  // set by parse_options()
 inline std::string db_fname;    // set by inversion constructor
 
