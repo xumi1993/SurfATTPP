@@ -531,7 +531,9 @@ void Inversion::write_src_rec_fwd(){
                 "Gathering synthetic {} travel times to the main rank for output...", surfTypeStr[itype]), MODULE_PREPROC
             );
             sr.gather_syn_tt();
-            std::string sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
+            std::string sfx = surfTypeStr[itype];
+            if (run_mode == INVERSION_MODE)
+                sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
             sr.write(
                 fmt::format("{}/{}_{}.csv", IP.output().output_path, FORWARD_FILE_PREFIX, sfx), true
             );
