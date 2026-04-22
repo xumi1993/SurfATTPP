@@ -58,7 +58,7 @@ namespace {
         anch(0) = _1_CR;
         n_pi(0) = _0_CR;
         logger.Debug(
-            std::format(
+            fmt::format(
                 "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
                 (anch(0) - _1_CR) * dz,
                 n_pi(0) * static_cast<real_t>(2)
@@ -73,7 +73,7 @@ namespace {
             n_pi(i) = n_pi(i - 1) + static_cast<real_t>(0.25);
 
             logger.Debug(
-                std::format(
+                fmt::format(
                     "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
                     (anch(i) - _1_CR) * dz,
                     n_pi(i) * static_cast<real_t>(2)
@@ -98,7 +98,7 @@ namespace {
             maxanchor, 3,para, fitfun, tol
         );
 
-        logger.Debug(std::format(
+        logger.Debug(fmt::format(
             "Depth anomaly fit status info={} (1..4 are converged), params: {:.4f} {:.4f} {:.4f}",
             static_cast<int>(info), para[0], para[1], para[2]
         ), MODULE_GRID);
@@ -153,8 +153,11 @@ ModelGrid::ModelGrid() {
         xend = dom.lon_min_max[1];
         ybeg = dom.lat_min_max[0];
         yend = dom.lat_min_max[1];
+        dgrid_i = (xend - xbeg) / static_cast<real_t>(ngrid_i - 1);
+        dgrid_j = (yend - ybeg) / static_cast<real_t>(ngrid_j - 1);
+        dgrid_k = (dom.depth[1] - dom.depth[0]) / static_cast<real_t>(ngrid_k - 1);
     } else {
-        logger.Error(std::format("Unsupported grid_method {}", dom.grid_method), MODULE_GRID);
+        logger.Error(fmt::format("Unsupported grid_method {}", dom.grid_method), MODULE_GRID);
         mpi.abort(EXIT_FAILURE);
     }
 
@@ -163,15 +166,15 @@ ModelGrid::ModelGrid() {
     zgrids = Eigen::VectorX<real_t>::LinSpaced(ngrid_k, dom.depth[0], dom.depth[1]);
 
     logger.Info(
-        std::format("Model grids: nx,ny,nz: {}, {}, {}", ngrid_i, ngrid_j, ngrid_k),
+        fmt::format("Model grids: nx,ny,nz: {}, {}, {}", ngrid_i, ngrid_j, ngrid_k),
         MODULE_GRID
     );
     logger.Info(
-        std::format("Longitude range: {:.3f} to {:.3f}", xbeg, xend),
+        fmt::format("Longitude range: {:.3f} to {:.3f}", xbeg, xend),
         MODULE_GRID
     );
     logger.Info(
-        std::format("Latitude range: {:.3f} to {:.3f}", ybeg, yend),
+        fmt::format("Latitude range: {:.3f} to {:.3f}", ybeg, yend),
         MODULE_GRID
     );
     allocate_model_grids();
@@ -246,18 +249,18 @@ void ModelGrid::load_3d_model() {
                 v = f.read_vector<real_t>(name_old);
                 used_name = name_old;
             } else {
-                throw std::runtime_error(std::format(
+                throw std::runtime_error(fmt::format(
                     "Missing coordinate axis '{}' (or legacy '{}') in initial model file",
                     name_new, name_old));
             }
             if (v.size() < 2) {
-                throw std::runtime_error(std::format(
+                throw std::runtime_error(fmt::format(
                     "Axis '{}' must contain at least 2 nodes, got {}", used_name, v.size()));
             }
             Eigen::VectorX<real_t> out = Eigen::Map<Eigen::VectorX<real_t>>(v.data(), static_cast<int>(v.size()));
             for (int i = 1; i < out.size(); ++i) {
                 if (out(i) <= out(i - 1)) {
-                    throw std::runtime_error(std::format(
+                    throw std::runtime_error(fmt::format(
                         "Axis '{}' must be strictly increasing (index {}: {} <= {})",
                         used_name, i, out(i), out(i - 1)));
                 }
@@ -291,7 +294,7 @@ void ModelGrid::load_3d_model() {
             const real_t d1 = dst(dst.size() - 1);
             const real_t tol = static_cast<real_t>(1.0e-6) * std::max(static_cast<real_t>(1), std::abs(s1 - s0));
             if (d0 < s0 - tol || d1 > s1 + tol) {
-                throw std::runtime_error(std::format(
+                throw std::runtime_error(fmt::format(
                     "Target {} grid [{:.6f}, {:.6f}] is outside source grid [{:.6f}, {:.6f}]",
                     axis_name, d0, d1, s0, s1));
             }
@@ -309,7 +312,7 @@ void ModelGrid::load_3d_model() {
             if (nx != static_cast<hsize_t>(xsrc.size()) ||
                 ny != static_cast<hsize_t>(ysrc.size()) ||
                 nz != static_cast<hsize_t>(zsrc.size())) {
-                throw std::runtime_error(std::format(
+                throw std::runtime_error(fmt::format(
                     "Dataset '{}' shape ({},{},{}) is inconsistent with source grids ({},{},{})",
                     name, nx, ny, nz, xsrc.size(), ysrc.size(), zsrc.size()));
             }
@@ -345,7 +348,7 @@ void ModelGrid::load_3d_model() {
                             qx, qy, qz
                         );
                         if (std::isnan(val)) {
-                            throw std::runtime_error(std::format(
+                            throw std::runtime_error(fmt::format(
                                 "Trilinear interpolation failed for '{}' at ({:.6f},{:.6f},{:.6f})",
                                 name, qx, qy, qz));
                         }
@@ -419,7 +422,7 @@ void ModelGrid::load_3d_model() {
             }
         }
     } catch (const std::exception &e) {
-        logger.Error(std::format(
+        logger.Error(fmt::format(
             "ModelGrid: failed to load 3D model from HDF5 file '{}': {}",
             IP.model().init_model_path, e.what()
         ), MODULE_GRID);
@@ -450,7 +453,7 @@ void ModelGrid::build_init_model() {
 
     if (IP.model().init_model_type == 0) {
         // Build a simple linear Vs gradient
-        logger.Info(std::format(
+        logger.Info(fmt::format(
             "Building linear 1-D initial model with S-wave velocity from {:.2f} to {:.2f} km/s", 
             IP.model().vel_range[0], IP.model().vel_range[1]), MODULE_GRID
         );
@@ -464,7 +467,7 @@ void ModelGrid::build_init_model() {
         build_1d_model_inversion();
     } else if (IP.model().init_model_type == 2) {
         // Load an externally-supplied 3-D model; only main rank does the I/O
-        logger.Info(std::format(
+        logger.Info(fmt::format(
             "Building 3-D initial model from HDF5 file: {}",
             IP.model().init_model_path),
             MODULE_GRID
@@ -474,7 +477,7 @@ void ModelGrid::build_init_model() {
         }
         mpi.barrier();
     } else {
-        logger.Error(std::format("Unsupported init_model_type {}", IP.model().init_model_type), MODULE_GRID);
+        logger.Error(fmt::format("Unsupported init_model_type {}", IP.model().init_model_type), MODULE_GRID);
         mpi.abort(EXIT_FAILURE);
     }
 
@@ -555,7 +558,7 @@ ModelGrid::build_perturbation_pattern(
         zp = (static_cast<real_t>(nz_w) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
     } else {
         const auto para = dep_anom(zgrids, nz_w, anom_sz);
-        logger.Info(std::format(
+        logger.Info(fmt::format(
             "Depth perturbation phase function parameters: p0={:.3f}, p1={:.3f}, p2={:.3f}",
             para[0], para[1], para[2]
         ), MODULE_GRID);
@@ -673,19 +676,27 @@ void ModelGrid::write(const std::string &subname) {
     auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
     if (mpi.is_main()) {
-        std::string filename = std::format("{}/{}", IP.output().output_path, subname);
+        std::string filename = fmt::format("{}/{}", IP.output().output_path, subname);
         H5IO f(filename, H5IO::TRUNC);
         f.write_vector("x", xgrids);
         f.write_vector("y", ygrids);
         f.write_vector("z", zgrids);
-        f.write_volume("vs", std::vector<real_t>(vs3d, vs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+        f.write_volume("vs", vs3d, ngrid_i, ngrid_j, ngrid_k);
         if (IP.inversion().use_alpha_beta_rho) {
-            f.write_volume("vp", std::vector<real_t>(vp3d, vp3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("rho", std::vector<real_t>(rho3d, rho3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("vp", vp3d, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("rho", rho3d, ngrid_i, ngrid_j, ngrid_k);
         }
         if (IP.inversion().is_anisotropy) {
-            f.write_volume("gc", std::vector<real_t>(gc3d, gc3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("gs", std::vector<real_t>(gs3d, gs3d + ngrid_i * ngrid_j * ngrid_k), ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("gc", gc3d, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("gs", gs3d, ngrid_i, ngrid_j, ngrid_k);
+            std::vector<real_t> g0(ngrid_i * ngrid_j * ngrid_k);
+            std::vector<real_t> theta(ngrid_i * ngrid_j * ngrid_k);
+            for (int i = 0; i < ngrid_i * ngrid_j * ngrid_k; ++i) {
+                g0[i] = std::sqrt(gc3d[i] * gc3d[i] + gs3d[i] * gs3d[i]);
+                theta[i] = _0_5_CR * std::atan2(gs3d[i], gc3d[i]) * RAD2DEG;
+            }
+            f.write_volume("g0", g0, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("theta", theta, ngrid_i, ngrid_j, ngrid_k);
         }
     }
     mpi.barrier();
@@ -698,4 +709,6 @@ void ModelGrid::release_shm(){
     mpi.free_shared(vp3d, win_vp_);
     mpi.free_shared(vs3d, win_vs_);
     mpi.free_shared(rho3d, win_rho_);
+    mpi.free_shared(gc3d, win_gc_);
+    mpi.free_shared(gs3d, win_gs_);
 }

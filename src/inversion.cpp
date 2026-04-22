@@ -31,13 +31,13 @@ Inversion::Inversion() {
     // initialize gradient
     if (run_mode == INVERSION_MODE) {
         // initialize HDF5 file for storing model and gradient history (used by LBFGS)
-        db_fname = std::format("{}/{}", IP.output().output_path, MODEL_ITER_FNAME);
+        db_fname = fmt::format("{}/{}", IP.output().output_path, MODEL_ITER_FNAME);
 
         if (mpi.is_main()) {
             try {
                 H5IO f(db_fname, H5IO::TRUNC);
             } catch (const std::exception &e) {
-                logger.Error(std::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
+                logger.Error(fmt::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
                 logger.Error("Check if the output path exists and is writable, or delete the existing file.", MODULE_INV);
                 mpi.abort(EXIT_FAILURE);
             }
@@ -73,14 +73,14 @@ Inversion::Inversion() {
 
         // Open objective function log on main rank
         if (mpi.is_main() && run_mode == INVERSION_MODE) {
-            const std::string obj_path = std::format("{}/{}", IP.output().output_path, OBJ_FNAME);
+            const std::string obj_path = fmt::format("{}/{}", IP.output().output_path, OBJ_FNAME);
             obj_file_.open(obj_path);
             if (!obj_file_) {
-                logger.Error(std::format("Cannot open {} for writing", obj_path), MODULE_INV);
+                logger.Error(fmt::format("Cannot open {} for writing", obj_path), MODULE_INV);
                 mpi.abort(EXIT_FAILURE);
             } else {
                 obj_file_ << std::unitbuf;  // flush after every write operation
-                obj_file_ << std::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
+                obj_file_ << fmt::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
                     "iter", "misfit", "res_ph_mean", "res_ph_std", "res_gr_mean", "res_gr_std", "alpha");
             }
         }
@@ -105,7 +105,7 @@ void Inversion::write_obj_line()
     auto gr_stats = SrcRec::SR_gr().compute_residual_stats();
 
     if (mpi.is_main() && obj_file_)
-        obj_file_ << std::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
+        obj_file_ << fmt::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
             iter_, misfit_[iter_], ph_stats.mean, ph_stats.stddev, gr_stats.mean, gr_stats.stddev, alpha_);
 }
 
@@ -116,7 +116,7 @@ void Inversion::run_inversion() {
     auto &logger = ATTLogger::logger();
 
     for ( iter_ = 0; iter_ < IP.inversion().niter; ++iter_ ) {
-        logger.Info(std::format("Starting inversion {}th iteration ...", iter_), MODULE_INV);
+        logger.Info(fmt::format("Starting inversion {}th iteration ...", iter_), MODULE_INV);
         // Initialize the iteration: distribute the current model to local subdomains, reset model update and search direction
         init_iteration();
 
@@ -131,7 +131,7 @@ void Inversion::run_inversion() {
             logger.Info("Reusing gradient from accepted line-search step (skipping forward+adjoint).", MODULE_INV);
         }
         misfit_[iter_] = misfit_trial_;
-        logger.Info(std::format(
+        logger.Info(fmt::format(
             "Completed inversion {}th iteration with misfit = {:.4f} ({:.2f}%)", iter_, misfit_[iter_],
                 100 * misfit_[iter_] / misfit_[0]
         ), MODULE_INV);
@@ -150,7 +150,7 @@ void Inversion::run_inversion() {
             while (true) {
                 if ( !line_search() ) break;
                 iter_start_ = iter_;
-                logger.Info(std::format(
+                logger.Info(fmt::format(
                     "Restarting count of L-BFGS from {:03d}", iter_start_
                 ), MODULE_INV);
             }
@@ -227,13 +227,13 @@ bool Inversion::check_convergence() {
             sum_misfit_curr /= BREAK_ITER;
             real_t misfit_reduction = 100 * (sum_misfit_prev - sum_misfit_curr) / sum_misfit_prev;
             if (misfit_reduction < 0) {
-                logger.Info(std::format("Misfit increased in the last {} iterations.", BREAK_ITER), MODULE_INV);
+                logger.Info(fmt::format("Misfit increased in the last {} iterations.", BREAK_ITER), MODULE_INV);
                 break_flag = true;
             } else if (misfit_reduction < IP.inversion().min_derr) {
-                logger.Info(std::format("Convergence achieved with misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
+                logger.Info(fmt::format("Convergence achieved with misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
                 break_flag = true;
             } else {
-                logger.Info(std::format("Misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
+                logger.Info(fmt::format("Misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
                 break_flag = false;
             }
         }
@@ -331,7 +331,7 @@ void Inversion::store_model() {
     if (!mpi.is_main()) return;
 
     H5IO f(db_fname, H5IO::RDWR);
-    const std::string sfx = std::format("_{:03d}", iter_);
+    const std::string sfx = fmt::format("_{:03d}", iter_);
 
     // Use TensorMap to wrap the raw global pointer without copying
     using TMap = Eigen::TensorMap<Tensor3r>;
@@ -362,7 +362,7 @@ void Inversion::store_gradient() {
     if (!mpi.is_main()) return;
 
     H5IO f(db_fname, H5IO::RDWR);
-    const std::string sfx = std::format("_{:03d}", iter_);
+    const std::string sfx = fmt::format("_{:03d}", iter_);
 
     for (int i = 0; i < NPARAMS; ++i) {
         if (is_active_param[i])
@@ -377,16 +377,16 @@ void Inversion::steepest_descent() {
 
     grad_normalization(gradient_);
 
-    logger.Info(std::format("Steepest descent optimization with step length {:.6f}", alpha_), MODULE_INV);
+    logger.Info(fmt::format("Steepest descent optimization with step length {:.6f}", alpha_), MODULE_INV);
     if (iter_ > 0 && misfit_[iter_] >= misfit_[iter_ - 1]) {
         // If misfit increased, reduce step size and revert to previous model
         // (not implemented yet: would need to store previous model and restore it here)
         logger.Info(
-            std::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_-1], misfit_[iter_]),
+            fmt::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_-1], misfit_[iter_]),
             MODULE_INV
         );
         alpha_ *= IP.inversion().maxshrink;
-        logger.Info(std::format("Reducing step length to {:.6f}", alpha_), MODULE_INV);
+        logger.Info(fmt::format("Reducing step length to {:.6f}", alpha_), MODULE_INV);
     }
     // Pass gradient directly; model_update applies model -= alpha * gradient (descent).
     model_update(gradient_);
@@ -415,7 +415,7 @@ bool Inversion::line_search() {
 
     if ( iter_ > iter_start_ ) {
         real_t desc_angle = optimize::calc_descent_angle(search_dir, gradient_);
-        logger.Info(std::format("Angle between direction and negative gradient: {:.4f} degrees",
+        logger.Info(fmt::format("Angle between direction and negative gradient: {:.4f} degrees",
             desc_angle), MODULE_INV
         );
         if (desc_angle > MAX_DESC_ANGLE) {
@@ -431,7 +431,7 @@ bool Inversion::line_search() {
     alpha_R_ = _0_CR;
     alpha_L_ = _0_CR;
     for ( sub_iter = 0; sub_iter < IP.inversion().max_sub_niter; ++sub_iter ) {
-        logger.Info(std::format(
+        logger.Info(fmt::format(
             "Line search sub-iteration {}: testing step length alpha = {:.6f}", sub_iter, alpha_
         ), MODULE_INV);
 
@@ -460,11 +460,11 @@ bool Inversion::line_search() {
         );
 
         if (wolfe_res.status == optimize::WolfeResult::Status::ACCEPT) {
-            logger.Info(std::format("Line search accepted with alpha = {:.6f}", alpha_), MODULE_INV);
+            logger.Info(fmt::format("Line search accepted with alpha = {:.6f}", alpha_), MODULE_INV);
             break_flag = true;
         } else if (wolfe_res.status == optimize::WolfeResult::Status::TRY) {
             alpha_ = wolfe_res.next_alpha;
-            logger.Info(std::format("Line search trying next alpha = {:.6f}", alpha_), MODULE_INV);
+            logger.Info(fmt::format("Line search trying next alpha = {:.6f}", alpha_), MODULE_INV);
             break_flag = false;
         } else {
             logger.Info("Line search failed to find a suitable step length.", MODULE_INV);
@@ -523,19 +523,19 @@ void Inversion::write_src_rec_fwd(){
         int itype = static_cast<int>(tp);
         if (!IP.data().vel_type[itype]) continue;
         auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
-
-        std::string sfx = surfTypeStr[itype];
-        if (run_mode != FORWARD_ONLY) {
-            sfx += std::format("_{:03d}", iter_);
-        }
         // gather synthetic travel times to the main rank for output and inversion steps
-        if (run_mode == FORWARD_ONLY || (IP.output().output_in_process_data)) {
-            logger.Info(std::format(
+        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data || 
+            (run_mode == INVERSION_MODE && iter_ == IP.inversion().niter - 1) ||
+            (run_mode == INVERSION_MODE && iter_ == 0)) {
+            logger.Info(fmt::format(
                 "Gathering synthetic {} travel times to the main rank for output...", surfTypeStr[itype]), MODULE_PREPROC
             );
             sr.gather_syn_tt();
+            std::string sfx = surfTypeStr[itype];
+            if (run_mode == INVERSION_MODE)
+                sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
             sr.write(
-                std::format("{}/src_rec_file_forward_{}.csv", IP.output().output_path, sfx), true
+                fmt::format("{}/{}_{}.csv", IP.output().output_path, FORWARD_FILE_PREFIX, sfx), true
             );
         }
     }

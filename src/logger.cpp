@@ -11,7 +11,7 @@ void ATTLogger::init(const std::string &logger_file, int log_level, bool console
     get_instance_ptr() -> Info(
         "------------------------------------------------------", MODULE_MAIN);
     get_instance_ptr() -> Info(
-        std::format("----------  SurfATT {}, commit: {}.  ---------", get_version_number(), GIT_COMMIT), MODULE_MAIN);
+        fmt::format("----------  SurfATT {}, commit: {}.  ---------", get_version_number(), GIT_COMMIT), MODULE_MAIN);
     get_instance_ptr() -> Info(
         "------------------------------------------------------", MODULE_MAIN);
 }

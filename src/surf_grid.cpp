@@ -147,16 +147,15 @@ void SurfGrid::build_media_matrix_with_topo() {
     }
 
     // Same fix: reduce to private buffers first, then have node_main write to shared memory.
-    std::vector<real_t> full_angle(n_elem), full_a(n_elem), full_b(n_elem), full_c(n_elem);
-    mpi.sum_all_all(tmp_angle.data(), full_angle.data(), n_elem);
-    mpi.sum_all_all(tmp_a.data(),     full_a.data(),     n_elem);
-    mpi.sum_all_all(tmp_b.data(),     full_b.data(),     n_elem);
-    mpi.sum_all_all(tmp_c.data(),     full_c.data(),     n_elem);
+    mpi.sum_all_all_vect_inplace(tmp_angle);
+    mpi.sum_all_all_vect_inplace(tmp_a);
+    mpi.sum_all_all_vect_inplace(tmp_b);
+    mpi.sum_all_all_vect_inplace(tmp_c);
     if (mpi.is_node_main()) {
-        std::copy(full_angle.begin(), full_angle.end(), topo_angle);
-        std::copy(full_a.begin(),     full_a.end(),     a);
-        std::copy(full_b.begin(),     full_b.end(),     b);
-        std::copy(full_c.begin(),     full_c.end(),     c);
+        std::copy(tmp_angle.begin(), tmp_angle.end(), topo_angle);
+        std::copy(tmp_a.begin(),     tmp_a.end(),     a);
+        std::copy(tmp_b.begin(),     tmp_b.end(),     b);
+        std::copy(tmp_c.begin(),     tmp_c.end(),     c);
     }
     mpi.barrier();
     mpi.sync_from_main_rank(topo_angle, n_elem);
@@ -171,7 +170,7 @@ void SurfGrid::build_media() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    logger.Info(std::format("Building media matrix for {}...", type_name()), MODULE_GRID);
+    logger.Info(fmt::format("Building media matrix for {}...", type_name()), MODULE_GRID);
     int n_elem = ngrid_i * ngrid_j * nperiod_;
     if (IP.topo().is_consider_topo) {
         build_media_matrix_with_topo();
@@ -201,7 +200,7 @@ void SurfGrid::fwdsurf(){
     auto &sr = (itype_ == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
-    logger.Info(std::format(
+    logger.Info(fmt::format(
         "Computing {} velocity dispersion from 3d velocity model...", type_name()),
         MODULE_GRID
     );
@@ -238,10 +237,9 @@ void SurfGrid::fwdsurf(){
     // problem: svel is MPI shared memory; all node-local ranks point to the same
     // physical address, so MPI_Allreduce writing directly to svel would accumulate
     // the result nranks times instead of once.
-    std::vector<real_t> svel_full(n_elem, _0_CR);
-    mpi.sum_all_all(tmp_svel.data(), svel_full.data(), n_elem);
+    mpi.sum_all_all_vect_inplace(tmp_svel);
     if (mpi.is_node_main()) {
-        std::copy(svel_full.begin(), svel_full.end(), svel);
+        std::copy(tmp_svel.begin(), tmp_svel.end(), svel);
     }
     mpi.barrier();
 }

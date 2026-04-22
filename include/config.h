@@ -46,6 +46,7 @@ const std::string INIT_MODEL_FNAME = "initial_model.h5";
 const std::string TARGET_MODEL_FNAME = "target_model.h5";
 const std::string MODEL_ITER_FNAME      = "model_iter.h5";
 const std::string OBJ_FNAME             = "objective_function.txt";
+const std::string FORWARD_FILE_PREFIX = "src_rec_file_forward";
 inline std::string input_file;  // set by parse_options()
 inline std::string db_fname;    // set by inversion constructor
 
@@ -66,6 +67,7 @@ constexpr real_t _9999_CR   = 9999.0;
 constexpr real_t _M_1_CR    = -1.0;
 constexpr real_t DEG2RAD   = PI/180.0;
 constexpr real_t RAD2DEG   = 180.0/PI;
+constexpr real_t PI_OVER_2 = PI / 2.0;
 constexpr real_t VERYTINY = 1e-12;
 constexpr real_t VERYHUGE = 1e+12;   
 
