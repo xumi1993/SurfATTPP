@@ -57,6 +57,7 @@ public:
     void barrier();
     double wtime() const { return MPI_Wtime(); }
     void wait(MPI_Request &req);
+    double elapsed_time() const { return MPI_Wtime() - start_time_; }
 
     // ---- Broadcast (from rank 0) -------------------------------------------
     // scalar
@@ -341,6 +342,7 @@ private:
     int      local_rank_{0}, local_size_{1};
     MPI_Comm comm_{MPI_COMM_WORLD};
     MPI_Comm node_comm_{MPI_COMM_NULL};
+    double   start_time_{0.0};
 
     // rank_map_[i] = {global_rank, local_rank_within_node}
     std::vector<int> rank_map_;

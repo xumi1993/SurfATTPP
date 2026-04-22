@@ -70,5 +70,8 @@ int main(int argc, char* argv[])
     SrcRec::SR_ph().release_shm();
     SrcRec::SR_gr().release_shm();
 
+    double total_time = Parallel::mpi().elapsed_time();
+    ATTLogger::logger().Info(fmt::format("Total runtime: {:.2f} seconds", total_time), MODULE_MAIN);
+
     return 0;
 }
