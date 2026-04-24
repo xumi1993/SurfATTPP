@@ -384,12 +384,13 @@ void ModelGrid::load_3d_model() {
             }
         };
 
-        // --- vs (required) ---
+        // --- vs or vsv (required) ---
         {
-            interpolate_or_copy("vs", vs3d);
+            std::string key = IP.inversion().model_para_type == MODEL_RADIAL_ANI ? "vsv" : "vs";
+            interpolate_or_copy(key, vs3d);
             logger.Info(
-                same_grid ? "Loaded 'vs' from HDF5 file." :
-                            "Loaded and interpolated 'vs' onto current model grid.",
+                same_grid ? "Loaded '" + key + "' from HDF5 file." :
+                            "Loaded and interpolated '" + key + "' onto current model grid.",
                 MODULE_GRID
             );
         }
