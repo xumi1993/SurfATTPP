@@ -66,6 +66,7 @@ private:
     void alpha_clamp();
 
     std::ofstream obj_file_;  // objective function log; open only on main rank
+    std::string   xdmf_fname_;
 
     Tensor3r model_update_;
     FieldVec ker_curr_, ker_prev_;

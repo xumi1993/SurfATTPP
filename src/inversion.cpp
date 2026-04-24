@@ -5,6 +5,7 @@
 #include "h5io.h"
 #include "optimize.h"
 #include "src_rec.h"
+#include "xdmf.h"
 #include <fstream>
 
 static void distribute_model_para(){
@@ -39,13 +40,18 @@ Inversion::Inversion() {
 
         if (mpi.is_main()) {
             try {
+                auto &mg = ModelGrid::MG();
                 H5IO f(db_fname, H5IO::TRUNC);
+                f.write_vector("x", mg.xgrids);
+                f.write_vector("y", mg.ygrids);
+                f.write_vector("z", mg.zgrids);
             } catch (const std::exception &e) {
                 logger.Error(fmt::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
                 logger.Error("Check if the output path exists and is writable, or delete the existing file.", MODULE_INV);
                 mpi.abort(EXIT_FAILURE);
             }
         }
+        xdmf_fname_ = fmt::format("{}/model_iter.xdmf", IP.output().output_path);
 
         // Create empty datasets for model and gradient history. These will be resized and filled during the inversion iterations.
         is_active_param[0] = true; // vs is always active
@@ -405,6 +411,7 @@ void Inversion::store_model() {
         f.write_tensor("model_gc" + sfx, TMap(mg.gc3d, ngrid_i, ngrid_j, ngrid_k));
         f.write_tensor("model_gs" + sfx, TMap(mg.gs3d, ngrid_i, ngrid_j, ngrid_k));
     }
+    xdmf::write_model_iter(xdmf_fname_, iter_);
 }
 
 // Save the current (normalised) gradient to db_fname.
