@@ -13,10 +13,10 @@
 
 struct DataParams {
     // Per-wave-type source-receiver files (phase / group each)
-    std::string src_rec_rl_file_ph;   // Rayleigh, phase velocity
-    std::string src_rec_rl_file_gr;   // Rayleigh, group velocity
-    std::string src_rec_lv_file_ph;   // Love, phase velocity
-    std::string src_rec_lv_file_gr;   // Love, group velocity
+    std::string src_rec_file_rl_ph;   // Rayleigh, phase velocity
+    std::string src_rec_file_rl_gr;   // Rayleigh, group velocity
+    std::string src_rec_file_lv_ph;   // Love, phase velocity
+    std::string src_rec_file_lv_gr;   // Love, group velocity
 
     std::vector<bool>   wave_type = {true, false};   // [use_rayleigh, use_love]
     std::vector<bool>   vel_type  = {true, false};   // [use_phase, use_group]
@@ -29,8 +29,8 @@ struct DataParams {
     // Resolve the src_rec CSV path for a given (wave, vel) pair.
     const std::string& file_of(WaveType wt, surfType vt) const {
         if (wt == WaveType::RL)
-            return (vt == surfType::PH) ? src_rec_rl_file_ph : src_rec_rl_file_gr;
-        return (vt == surfType::PH) ? src_rec_lv_file_ph : src_rec_lv_file_gr;
+            return (vt == surfType::PH) ? src_rec_file_rl_ph : src_rec_file_rl_gr;
+        return (vt == surfType::PH) ? src_rec_file_lv_ph : src_rec_file_lv_gr;
     }
 };
 

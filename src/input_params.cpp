@@ -1,5 +1,6 @@
 #include "input_params.h"
 
+#include <iostream>
 #include <sstream>
 
 // ---------------------------------------------------------------------------
@@ -34,10 +35,10 @@ static T opt(const YAML::Node &n, const std::string &field, T def) {
 // ---------------------------------------------------------------------------
 
 void InputParams::load_data(const YAML::Node &n) {
-    data_.src_rec_rl_file_ph = opt<std::string>(n, "src_rec_rl_file_ph", "");
-    data_.src_rec_rl_file_gr = opt<std::string>(n, "src_rec_rl_file_gr", "");
-    data_.src_rec_lv_file_ph = opt<std::string>(n, "src_rec_lv_file_ph", "");
-    data_.src_rec_lv_file_gr = opt<std::string>(n, "src_rec_lv_file_gr", "");
+    data_.src_rec_file_rl_ph = opt<std::string>(n, "src_rec_file_rl_ph", "");
+    data_.src_rec_file_rl_gr = opt<std::string>(n, "src_rec_file_rl_gr", "");
+    data_.src_rec_file_lv_ph = opt<std::string>(n, "src_rec_file_lv_ph", "");
+    data_.src_rec_file_lv_gr = opt<std::string>(n, "src_rec_file_lv_gr", "");
 
     data_.wave_type = opt<std::vector<bool>>(n, "wave_type", {true, false});
     data_.vel_type  = req<std::vector<bool>>(n, "vel_type");
@@ -58,8 +59,8 @@ void InputParams::load_data(const YAML::Node &n) {
     // Require a file path for every activated (wave, vel) combination.
     auto file_of = [&](WaveType wt, surfType vt) -> const std::string& {
         if (wt == WaveType::RL)
-            return (vt == surfType::PH) ? data_.src_rec_rl_file_ph : data_.src_rec_rl_file_gr;
-        return (vt == surfType::PH) ? data_.src_rec_lv_file_ph : data_.src_rec_lv_file_gr;
+            return (vt == surfType::PH) ? data_.src_rec_file_rl_ph : data_.src_rec_file_rl_gr;
+        return (vt == surfType::PH) ? data_.src_rec_file_lv_ph : data_.src_rec_file_lv_gr;
     };
     for (auto [wt, vt] : data_.active_data) {
         if (file_of(wt, vt).empty()) {
@@ -198,24 +199,45 @@ InputParams::InputParams(const std::string &filepath)
 void InputParams::validate() {
     const bool use_rl = data_.wave_type.size() > 0 && data_.wave_type[0];
     const bool use_lv = data_.wave_type.size() > 1 && data_.wave_type[1];
+    const bool use_ph = data_.vel_type.size()  > 0 && data_.vel_type[0];
+    const bool use_gr = data_.vel_type.size()  > 1 && data_.vel_type[1];
     const int  mpt    = inversion_.model_para_type;
+    const bool abr    = inversion_.use_alpha_beta_rho;
+    auto &mpi = Parallel::mpi();
+
+
+    if (abr && mpt == use_lv) {
+        std::cout << "InputParams: alpha-beta-rho parametrisation is not compatible with love-wave inverision " << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (use_gr && mpt != MODEL_ISO) {
+        std::cout << "InputParams: group velocity data is not compatible with anisotropic inversion "
+                  << "(set model_para_type to 0 for isotropic)" << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (!(use_ph && use_rl) && mpt == MODEL_AZI_ANI) {
+        std::cout << "InputParams: azimuthal anisotropy is not compatible with love-wave or group velocity inversion " << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
 
     if (!use_rl && !use_lv) {
-        throw std::runtime_error(
-            "InputParams: wave_type has no active component "
-            "(set at least one of [use_rayleigh, use_love] to true)");
+        std::cout << "InputParams: wave_type has no active component "
+                  << "(set at least one of [use_rayleigh, use_love] to true)" << std::endl;
+        mpi.abort(EXIT_FAILURE);
     }
 
     if (mpt == MODEL_RADIAL_ANI && !(use_rl && use_lv)) {
-        throw std::runtime_error(
-            "InputParams: radial anisotropy requires both Rayleigh and Love data "
-            "(wave_type must be [true, true])");
+        std::cout << "InputParams: radial anisotropy requires both Rayleigh and Love data "
+                  << "(wave_type must be [true, true])" << std::endl;
+        mpi.abort(EXIT_FAILURE);
     }
 
     if (mpt != MODEL_RADIAL_ANI && use_rl && use_lv) {
-        throw std::runtime_error(
-            "InputParams: joint Love+Rayleigh inversion is only valid for "
-            "radial anisotropy (set model_para_type to 2)");
+        std::cout << "InputParams: joint Love+Rayleigh inversion is only valid for radial anisotropy "
+                  << "(set model_para_type to 2 for radial anisotropy)" << std::endl;
+        mpi.abort(EXIT_FAILURE);
     }
 }
 
@@ -244,10 +266,10 @@ bool InputParams::has(const std::string &key) const {
 // Convenience: resize a vector on non-main ranks then broadcast its data.
 void InputParams::bcast_data() {
     auto &mpi = Parallel::mpi();
-    mpi.bcast(data_.src_rec_rl_file_ph);
-    mpi.bcast(data_.src_rec_rl_file_gr);
-    mpi.bcast(data_.src_rec_lv_file_ph);
-    mpi.bcast(data_.src_rec_lv_file_gr);
+    mpi.bcast(data_.src_rec_file_rl_ph);
+    mpi.bcast(data_.src_rec_file_rl_gr);
+    mpi.bcast(data_.src_rec_file_lv_ph);
+    mpi.bcast(data_.src_rec_file_lv_gr);
     mpi.bcast_bool_vec(data_.wave_type);
     mpi.bcast_bool_vec(data_.vel_type);
     mpi.bcast_vec(data_.weights);
