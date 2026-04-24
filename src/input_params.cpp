@@ -116,7 +116,7 @@ void InputParams::load_postproc(const YAML::Node &n) {
 }
 
 void InputParams::load_inversion(const YAML::Node &n) {
-    inversion_.is_anisotropy      = opt<bool>(n, "is_anisotropy", false);
+    inversion_.model_para_type    = opt<int>(n, "model_para_type", MODEL_ISO);
     inversion_.use_alpha_beta_rho = req<bool>(n, "use_alpha_beta_rho");
     inversion_.rho_scaling        = req<bool>(n, "rho_scaling");
     inversion_.vpvs_ratio_range   = opt<std::vector<real_t>>(n, "vpvs_ratio_range", {1.3, 2.5});
@@ -244,7 +244,7 @@ void InputParams::bcast_postproc() {
 
 void InputParams::bcast_inversion() {
     auto &mpi = Parallel::mpi();
-    mpi.bcast(inversion_.is_anisotropy);
+    mpi.bcast(inversion_.model_para_type);
     mpi.bcast(inversion_.use_alpha_beta_rho);
     mpi.bcast(inversion_.rho_scaling);
     mpi.bcast_vec(inversion_.vpvs_ratio_range);

@@ -12,8 +12,10 @@
 // ---------------------------------------------------------------------------
 
 struct DataParams {
-    std::string src_rec_file_ph;   // source-receiver file for phase velocity
-    std::string src_rec_file_gr;   // source-receiver file for group velocity (optional)
+    std::string src_rec_rl_file_ph;   // source-receiver file for phase velocity
+    std::string src_rec_rl_file_gr;   // source-receiver file for phase velocity
+    std::string src_rec_lv_file_ph;   // source-receiver file for phase velocity
+    std::string src_rec_lv_file_gr;   // source-receiver file for group velocity (optional)
     int         iwave;             // 1 = Love, 2 = Rayleigh
     std::vector<bool>   vel_type = {false, false};  // [use_phase, use_group]
     std::vector<real_t> weights = {_1_CR, _1_CR};   // [weight_phase, weight_group]
@@ -64,7 +66,7 @@ struct PostprocParams {
 
 struct InversionParams {
     // model parametrisation
-    bool is_anisotropy;
+    int model_para_type;  // 0 Isotropic, 1, Azimuthal anisotropy, 2 Radial isotropic
     bool use_alpha_beta_rho;
     bool rho_scaling;
     std::vector<real_t> vpvs_ratio_range;

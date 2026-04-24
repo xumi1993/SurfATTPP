@@ -56,7 +56,6 @@ static void check_topo() {
 
 static void check_inversion() {
     const auto &inv = InputParams::IP().inversion();
-    assert(inv.is_anisotropy      == true);
     assert(inv.use_alpha_beta_rho == true);
     assert(inv.rho_scaling        == true);
     assert(inv.niter        == 40);

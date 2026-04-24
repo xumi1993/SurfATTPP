@@ -72,4 +72,7 @@ private:
     int    iter_start_ = 0;
     real_t alpha_, alpha_R_, alpha_L_;
     bool   gradient_reuse_ = false;
+
+    inline void convert_radial_kl() {
+    }
 };

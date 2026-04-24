@@ -16,7 +16,7 @@ static void distribute_model_para(){
     mg.vs3d_loc = dcp.distribute_data(mg.vs3d);
     mg.vp3d_loc = dcp.distribute_data(mg.vp3d);
     mg.rho3d_loc = dcp.distribute_data(mg.rho3d);
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {  // azimuthal anisotropy
         mg.gc3d_loc = dcp.distribute_data(mg.gc3d);
         mg.gs3d_loc = dcp.distribute_data(mg.gs3d);
     }
@@ -47,8 +47,9 @@ Inversion::Inversion() {
         is_active_param[0] = true; // vs is always active
         is_active_param[1] = IP.inversion().use_alpha_beta_rho; // vp active if use_alpha_beta_rho is true
         is_active_param[2] = IP.inversion().use_alpha_beta_rho; // rho active if use_alpha_beta_rho is true
-        is_active_param[3] = IP.inversion().is_anisotropy; // gc active if is_anisotropy is true
-        is_active_param[4] = IP.inversion().is_anisotropy; // gs active if is_anisotropy is true
+        is_active_param[3] = IP.inversion().model_para_type == MODEL_AZI_ANI; // gc active if model_para_type is azimuthal anisotropy
+        is_active_param[4] = IP.inversion().model_para_type == MODEL_AZI_ANI; // gs active if model_para_type is azimuthal anisotropy
+        is_active_param[5] = IP.inversion().model_para_type == MODEL_RADIAL_ANI; // gamma active if model_para_type is radial anisotropy
         gradient_.assign(NPARAMS, Tensor3r());
         for (int p = 0; p < NPARAMS; ++p) {
             if (is_active_param[p]) {
@@ -340,7 +341,7 @@ void Inversion::store_model() {
         f.write_tensor("model_vp"  + sfx, TMap(mg.vp3d,  ngrid_i, ngrid_j, ngrid_k));
         f.write_tensor("model_rho" + sfx, TMap(mg.rho3d, ngrid_i, ngrid_j, ngrid_k));
     }
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         f.write_tensor("model_gc" + sfx, TMap(mg.gc3d, ngrid_i, ngrid_j, ngrid_k));
         f.write_tensor("model_gs" + sfx, TMap(mg.gs3d, ngrid_i, ngrid_j, ngrid_k));
     }
@@ -495,7 +496,7 @@ void Inversion::model_update(FieldVec &dir) {
         mg.vp3d_loc  = vs2vp(mg.vs3d_loc);
         mg.rho3d_loc = vp2rho(mg.vp3d_loc);
     }
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         mg.gc3d_loc = mg.gc3d_loc - alpha_ * dir[3];
         mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
     }

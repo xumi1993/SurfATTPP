@@ -34,7 +34,7 @@ void accumulate_kernels(
     }
 
     // If anisotropy is considered and the travel time field (tfield) is available, compute the adjoint sources for the anisotropy parameters xi and eta.
-    if (IP.inversion().is_anisotropy && tfield != nullptr) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI && tfield != nullptr) {
         Eigen::MatrixX<real_t> Tx, Ty;
         gradient_2_geo(*tfield, mg.xgrids, mg.ygrids, Tx, Ty);
 
@@ -150,7 +150,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
 void preproc::reset_kernel_accumulators( SurfGrid& sg) {
     auto& IP = InputParams::IP();
 
-    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+    if (run_mode == INVERSION_MODE || IP.inversion().model_para_type == MODEL_AZI_ANI) {
         // Reset the model perturbation arrays to zero before accumulating kernels.
         if (run_mode == INVERSION_MODE) {
             for (int iper = 0; iper < sg.nperiod(); ++iper) {
@@ -158,7 +158,7 @@ void preproc::reset_kernel_accumulators( SurfGrid& sg) {
                 if (IP.postproc().is_kden) {
                     sg.kden_s_local[iper].setZero();
                 }
-                if (IP.inversion().is_anisotropy) {
+                if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
                     sg.adj_xi_local[iper].setZero();
                     sg.adj_eta_local[iper].setZero();
                 }
@@ -167,7 +167,7 @@ void preproc::reset_kernel_accumulators( SurfGrid& sg) {
         sg.sen_vp_loc.setZero();
         sg.sen_vs_loc.setZero();
         sg.sen_rho_loc.setZero();
-        if (IP.inversion().is_anisotropy) {
+        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             sg.sen_gc_loc.setZero();
             sg.sen_gs_loc.setZero();
         }
@@ -178,14 +178,14 @@ void preproc::prepare_dispersion_kernel(SurfGrid& sg) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
 
-    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+    if (run_mode == INVERSION_MODE || IP.inversion().model_para_type == MODEL_AZI_ANI) {
         sg.compute_dispersion_kernel();
         
         if (IP.topo().is_consider_topo) {
             sg.correct_depth_with_topo();
         }
 
-        if (IP.inversion().is_anisotropy) {
+        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             // TODO: need to be checked.
             sg.prepare_aniso_media();
         }
@@ -216,7 +216,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
         sg.ker_loc[2] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[2].setZero();
     }
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         // Gc (3) and Gs (4)
         sg.ker_loc[3] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[3].setZero();
@@ -240,7 +240,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
             adj_den = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
             mpi.sum_all_all(sg.kden_s_local[iper].data(), adj_den.data(), ngrid_i * ngrid_j);
         }
-        if (IP.inversion().is_anisotropy) {
+        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             adj_xi  = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
             adj_eta = Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j);
             mpi.sum_all_all(sg.adj_xi_local[iper].data(),  adj_xi.data(),  ngrid_i * ngrid_j);
@@ -255,8 +255,8 @@ void preproc::combine_kernels(SurfGrid& sg) {
                     const int iglob_y = dcp.loc_J_start() + iy;
                     const real_t att = adj_tt(iglob_x, iglob_y);
                     // In the anisotropic case term1 = -1/sqrt(1+r1²+r2²), otherwise 1
-                    const real_t r1 = IP.inversion().is_anisotropy ? sg.r1_loc(ix, iy, iper) : _0_CR;
-                    const real_t r2 = IP.inversion().is_anisotropy ? sg.r2_loc(ix, iy, iper) : _0_CR;
+                    const real_t r1 = IP.inversion().model_para_type == MODEL_AZI_ANI ? sg.r1_loc(ix, iy, iper) : _0_CR;
+                    const real_t r2 = IP.inversion().model_para_type == MODEL_AZI_ANI ? sg.r2_loc(ix, iy, iper) : _0_CR;
                     const real_t scale = _1_CR / std::sqrt(_1_CR + r1*r1 + r2*r2);
                     for (int k = 0; k < ngrid_k; ++k) {
                         sg.ker_loc[0](ix, iy, k) -= att * scale * sg.sen_vs_loc(ix, iy, k, iper);
@@ -305,7 +305,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
 
         // TODO: Need to be checked for the anisotropic case.
         // Anisotropic parameter kernels (Gc, Gs)
-        if (IP.inversion().is_anisotropy) {
+        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
                 for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
                     const int iglob_x = dcp.loc_I_start() + ix;

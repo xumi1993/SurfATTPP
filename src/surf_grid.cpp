@@ -43,11 +43,11 @@ SurfGrid::SurfGrid(surfType tp){
     }
     mpi.barrier();
 
-    if (run_mode == INVERSION_MODE || IP.inversion().is_anisotropy) {
+    if (run_mode == INVERSION_MODE || IP.inversion().model_para_type == MODEL_AZI_ANI) {
         if (run_mode == INVERSION_MODE) {
             for (int iper = 0; iper < nperiod_; ++iper) {
                 adj_s_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
-                if (IP.inversion().is_anisotropy) {
+                if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
                     adj_xi_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
                     adj_eta_local.emplace_back(Eigen::MatrixX<real_t>::Zero(ngrid_i, ngrid_j));
                 }
@@ -63,7 +63,7 @@ SurfGrid::SurfGrid(surfType tp){
         sen_vp_loc.setZero();
         sen_vs_loc.setZero();
         sen_rho_loc.setZero();
-        if (InputParams::IP().inversion().is_anisotropy) {
+        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             sen_gc_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
             sen_gs_loc = Tensor4r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k, nperiod_);
             r1_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), nperiod_);
@@ -254,7 +254,7 @@ void SurfGrid::compute_dispersion_kernel() {
 
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
     logger.Info(
-        IP.inversion().is_anisotropy ? "Computing anisotropic kernels on each surface grid point..."
+        IP.inversion().model_para_type == MODEL_AZI_ANI ? "Computing anisotropic kernels on each surface grid point..."
                                      : "Computing isotropic kernels on each surface grid point...",
         MODULE_GRID
     );
@@ -279,7 +279,7 @@ void SurfGrid::compute_dispersion_kernel() {
             auto req = surfker::build_disp_req(mg.zgrids, vs1d, vp1d, rho1d, periods,
                                     IFLSPH, IP.data().iwave, IMODE, itype_);
             surfker::DepthKernel1D kernels;
-            if (itype_ == 1 && !IP.inversion().is_anisotropy) {
+            if (itype_ == 1 && !IP.inversion().model_para_type == MODEL_AZI_ANI) {
                 kernels = surfker::depthkernel1d(req);
             } else {
                 kernels = surfker::depthkernelHTI1d(req);
@@ -293,7 +293,7 @@ void SurfGrid::compute_dispersion_kernel() {
             vs_block = kernels.sen_vs.transpose();
             vp_block = kernels.sen_vp.transpose();
             rho_block = kernels.sen_rho.transpose();
-            if (IP.inversion().is_anisotropy) {
+            if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
                 Eigen::Map<MatRM> gc_block(sen_gc_loc.data() + id0, ngrid_k, nperiod_);
                 Eigen::Map<MatRM> gs_block(sen_gs_loc.data() + id0, ngrid_k, nperiod_);
                 gc_block = kernels.sen_gc.transpose();
@@ -350,7 +350,7 @@ void SurfGrid::correct_depth_with_topo() {
                 interp_kernel(sen_vs_loc.data());
                 interp_kernel(sen_vp_loc.data());
                 interp_kernel(sen_rho_loc.data());
-                if (IP.inversion().is_anisotropy) {
+                if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
                     interp_kernel(sen_gc_loc.data());
                     interp_kernel(sen_gs_loc.data());
                 }

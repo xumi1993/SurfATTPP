@@ -44,6 +44,7 @@ public:
 
     real_t* vp3d;
     real_t* vs3d;
+    real_t* vsh3d;
     real_t* rho3d;
     real_t* gc3d;
     real_t* gs3d;
@@ -53,6 +54,8 @@ public:
     Tensor3r rho3d_loc;  // local subdomain of rho3d for each rank, with halo regions included
     Tensor3r gc3d_loc;  // local anisotropy Gc parameter (cosine component), shape (loc_nx, loc_ny, ngrid_k)
     Tensor3r gs3d_loc;  // local anisotropy Gs parameter (sine component), shape (loc_nx, loc_ny, ngrid_k)
+    Tensor3r vsh3d_loc;  // local subdomain of vsh3d for each rank, with halo regions included (for azimuthal anisotropy only)
+    Tensor3r gamma_loc;  // local subdomain of gamma (for radial anisotropy only)
 
 private:
     static std::unique_ptr<ModelGrid> &get_instance_ptr() {

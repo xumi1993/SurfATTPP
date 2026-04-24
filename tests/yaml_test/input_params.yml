@@ -23,7 +23,8 @@ topo:
 
 inversion:
   # ------- Inversion parameters --------
-  is_anisotropy: true
+  model_para_type: 0 # 0: isotropic; 1: azimuthal anisotropy; 2: radial anisotropy
+  is_radial_ani: false
   use_alpha_beta_rho: true
   rho_scaling: true
   # ------- Initial model --------

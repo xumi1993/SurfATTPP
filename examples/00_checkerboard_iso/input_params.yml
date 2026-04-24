@@ -54,7 +54,7 @@ postproc:
 
 inversion:
   # ------- Inversion parameters --------
-  is_anisotropy: False
+  model_para_type: 0 # 0 Isotropic, 1, Azimuthal anisotropy, 2 Radial isotropic
   use_alpha_beta_rho: false
   rho_scaling: false
   vpvs_ratio_range: [1.4, 2.5]
