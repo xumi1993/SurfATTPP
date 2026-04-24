@@ -85,8 +85,13 @@ Inversion::Inversion() {
                 mpi.abort(EXIT_FAILURE);
             } else {
                 obj_file_ << std::unitbuf;  // flush after every write operation
-                obj_file_ << fmt::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
-                    "iter", "misfit", "res_ph_mean", "res_ph_std", "res_gr_mean", "res_gr_std", "alpha");
+                obj_file_ << fmt::format(
+                    "{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
+                    "iter", "misfit",
+                    "res_rl_ph_mean", "res_rl_ph_std", "res_rl_gr_mean", "res_rl_gr_std",
+                    "res_lv_ph_mean", "res_lv_ph_std", "res_lv_gr_mean", "res_lv_gr_std",
+                    "step_length"
+                );
             }
         }
     }
@@ -107,17 +112,31 @@ void Inversion::write_obj_line()
 
     // compute_residual_stats() uses MPI allreduce — all ranks must call it
     // the same number of times, so we iterate every active (wt, vt) entry.
-    ResidualStats ph_stats{_0_CR, _0_CR};
-    ResidualStats gr_stats{_0_CR, _0_CR};
+    ResidualStats rl_ph_stats{_0_CR, _0_CR};
+    ResidualStats rl_gr_stats{_0_CR, _0_CR};
+    ResidualStats lv_ph_stats{_0_CR, _0_CR};
+    ResidualStats lv_gr_stats{_0_CR, _0_CR};
     for (auto [wt, vt] : IP.data().active_data) {
         auto stats = SrcRec::SR(wt, vt).compute_residual_stats();
-        if (vt == surfType::PH) ph_stats = stats;
-        else                    gr_stats = stats;
+        if (wt == WaveType::RL && vt == surfType::PH) {
+            rl_ph_stats = stats;
+        } else if (wt == WaveType::RL && vt == surfType::GR) {
+            rl_gr_stats = stats;
+        } else if (wt == WaveType::LV && vt == surfType::PH) {
+            lv_ph_stats = stats;
+        } else if (wt == WaveType::LV && vt == surfType::GR) {
+            lv_gr_stats = stats;
+        }
     }
 
     if (mpi.is_main() && obj_file_)
-        obj_file_ << fmt::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
-            iter_, misfit_[iter_], ph_stats.mean, ph_stats.stddev, gr_stats.mean, gr_stats.stddev, alpha_);
+        obj_file_ << fmt::format(
+            "{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
+            iter_, misfit_[iter_],
+            rl_ph_stats.mean, rl_ph_stats.stddev, rl_gr_stats.mean, rl_gr_stats.stddev,
+            lv_ph_stats.mean, lv_ph_stats.stddev, lv_gr_stats.mean, lv_gr_stats.stddev,
+            alpha_
+        );
 }
 
 void Inversion::run_inversion() {
