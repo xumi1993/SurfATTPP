@@ -3,7 +3,7 @@
 NPROC=8
 
 mkdir -p OUTPUT_FILES
-cp src_rec_file_ph.csv OUTPUT_FILES/src_rec_file_forward_PH.csv
+cp src_rec_file_ph.csv OUTPUT_FILES/src_rec_file_forward_RL_PH.csv
 # cp src_rec_file_gr.csv OUTPUT_FILES/src_rec_file_forward_GR.csv
 
 # create 2x3x2 checkers and forward simulate surface traveltimes
