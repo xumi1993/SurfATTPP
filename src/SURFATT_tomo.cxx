@@ -35,8 +35,8 @@ int main(int argc, char* argv[])
     );
 
     // load source-receiver tables into shared memory
-    if (IP.data().vel_type[0]) SrcRec::SR_ph().load(IP.data().src_rec_file_ph);
-    if (IP.data().vel_type[1]) SrcRec::SR_gr().load(IP.data().src_rec_file_gr);
+    for (auto [wt, vt] : IP.data().active_data)
+        SrcRec::SR(wt, vt).load(IP.data().file_of(wt, vt));
     SrcRec::build_stas();
 
     // build model grid
@@ -55,8 +55,8 @@ int main(int argc, char* argv[])
         Topography::read(IP.topo().topo_file);
     }
     // build surface grid and compute reference travel times
-    if (IP.data().vel_type[0]) SurfGrid::SG_ph().build_media();
-    if (IP.data().vel_type[1]) SurfGrid::SG_gr().build_media();
+    for (auto [wt, vt] : IP.data().active_data)
+        SurfGrid::SG(wt, vt).build_media();
 
     Inversion::init();
 
@@ -67,8 +67,8 @@ int main(int argc, char* argv[])
         Inversion::INV().run_inversion();
     }
 
-    SrcRec::SR_ph().release_shm();
-    SrcRec::SR_gr().release_shm();
+    for (auto [wt, vt] : IP.data().active_data)
+        SrcRec::SR(wt, vt).release_shm();
 
     double total_time = Parallel::mpi().elapsed_time();
     ATTLogger::logger().Info(fmt::format("Total runtime: {:.2f} seconds", total_time), MODULE_MAIN);

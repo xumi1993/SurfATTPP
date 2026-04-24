@@ -16,17 +16,19 @@
 
 class SurfGrid {
 public:
-    // Phase-velocity grid
-    static SurfGrid& SG_ph() {
-        static SurfGrid inst(surfType::PH);
-        return inst;
+    // Unified accessor: one SurfGrid per (WaveType, surfType) combination.
+    // Instances are created lazily on first call.
+    static SurfGrid& SG(WaveType wt, surfType vt) {
+        static SurfGrid* slots[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
+        const int i = static_cast<int>(wt);
+        const int j = static_cast<int>(vt);
+        if (!slots[i][j]) slots[i][j] = new SurfGrid(wt, vt);
+        return *slots[i][j];
     }
 
-    // Group-velocity grid
-    static SurfGrid& SG_gr() {
-        static SurfGrid inst(surfType::GR);
-        return inst;
-    }
+    // Backward-compatible aliases (Rayleigh-only call sites)
+    static SurfGrid& SG_ph() { return SG(WaveType::RL, surfType::PH); }
+    static SurfGrid& SG_gr() { return SG(WaveType::RL, surfType::GR); }
 
     SurfGrid(const SurfGrid&)            = delete;
     SurfGrid& operator=(const SurfGrid&) = delete;
@@ -49,6 +51,7 @@ public:
     
     Tensor4r sen_vp_loc, sen_vs_loc, sen_rho_loc;  // sensitivity kernels for vp, vs, rho with shape (ngrid_i, ngrid_j, ngrid_k, nperiod)
     Tensor4r sen_gc_loc, sen_gs_loc;  // sensitivity kernels for anisotropy parameters (if applicable)
+    Tensor4r sen_vsh_loc, sen_gamma_loc;  // sensitivity kernels for radial anisotropy parameters (if applicable)
     Tensor3r r1_loc, r2_loc;  // anisotropy r1/r2 on local subdomain, shape (loc_nx, loc_ny, nperiod)
 
     FieldVec ker_loc;
@@ -66,6 +69,8 @@ public:
     inline std::string type_name() const { return type_name_; }
     inline int itype() const { return itype_; }
     inline int nperiod() const { return nperiod_; }
+    inline WaveType wave_type() const { return wt_; }
+    inline int iwave() const { return iwave_of(wt_); }
 
 private:
     MPI_Win win_svel_ = MPI_WIN_NULL;
@@ -79,10 +84,11 @@ private:
     MPI_Win win_ref_t_ = MPI_WIN_NULL;
 
     std::string type_name_;
+    WaveType wt_;
     int itype_;
     int nperiod_;
 
-    explicit SurfGrid(surfType tp);
+    SurfGrid(WaveType wt, surfType vt);
     void release_shm();
     void build_media_matrix_with_topo();
 };

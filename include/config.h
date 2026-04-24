@@ -84,6 +84,11 @@ constexpr int N_KER_ISO = 3;  // number of isotropic kernel types (vp, vs, rho)
 constexpr int N_KER_ANI = 5;  // number of anisotropic kernel types (gc, gs)
 enum class surfType { PH = 0, GR = 1 };
 inline std::vector<std::string> surfTypeStr = {"PH", "GR"};
+enum class WaveType { RL = 0, LV = 1 };  // Rayleigh, Love
+inline std::vector<std::string> waveTypeStr = {"RL", "LV"};
+// Map WaveType to the integer iwave code expected by surfdisp96:
+//   iwave = 1 → Love, iwave = 2 → Rayleigh
+inline int iwave_of(WaveType wt) { return (wt == WaveType::RL) ? 2 : 1; }
 constexpr real_t RHO_SCALING = 0.33;
 constexpr int OPTIM_SD = 0;
 constexpr int OPTIM_LBFGS = 1;

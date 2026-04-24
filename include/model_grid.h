@@ -55,7 +55,7 @@ public:
     Tensor3r gc3d_loc;  // local anisotropy Gc parameter (cosine component), shape (loc_nx, loc_ny, ngrid_k)
     Tensor3r gs3d_loc;  // local anisotropy Gs parameter (sine component), shape (loc_nx, loc_ny, ngrid_k)
     Tensor3r vsh3d_loc;  // local subdomain of vsh3d for each rank, with halo regions included (for azimuthal anisotropy only)
-    Tensor3r gamma_loc;  // local subdomain of gamma (for radial anisotropy only)
+    Tensor3r gamma3d_loc;  // local subdomain of gamma (for radial anisotropy only)
 
 private:
     static std::unique_ptr<ModelGrid> &get_instance_ptr() {
@@ -68,6 +68,7 @@ private:
     MPI_Win win_rho_ = MPI_WIN_NULL;
     MPI_Win win_gc_  = MPI_WIN_NULL;
     MPI_Win win_gs_  = MPI_WIN_NULL;
+    MPI_Win win_vsh_ = MPI_WIN_NULL;  // for radial anisotropy
 
     void build_1d_model_linear();
     void build_1d_model_inversion();

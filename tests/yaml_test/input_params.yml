@@ -1,10 +1,11 @@
 data:
-  src_rec_file_ph: src_rec_file_rotated.csv
-  src_rec_file_gr: 
-  # src_rec_file: /home/xumijian/Codes/SurfATT/test/00_checkerboard_iso/src_rec_test_all.csv
-  iwave: 2 # 1 Love wave (not included in the current version), 2 Rayleigh wave 
-  vel_type: [True, False] # use phase velocity, group velocity or both
-  weights: [0.5, 0.5] # weights for phase and group velocity
+  src_rec_rl_file_ph: src_rec_file_rotated.csv
+  src_rec_rl_file_gr:
+  src_rec_lv_file_ph:
+  src_rec_lv_file_gr:
+  wave_type: [True, False] # [use_rayleigh, use_love]
+  vel_type:  [True, False] # [use_phase, use_group]
+  weights:   [0.5, 0.5]    # weights for phase and group velocity
 
 output:
   output_path: OUTPUT_FILES/ # path to save output files
@@ -24,7 +25,6 @@ topo:
 inversion:
   # ------- Inversion parameters --------
   model_para_type: 0 # 0: isotropic; 1: azimuthal anisotropy; 2: radial anisotropy
-  is_radial_ani: false
   use_alpha_beta_rho: true
   rho_scaling: true
   # ------- Initial model --------

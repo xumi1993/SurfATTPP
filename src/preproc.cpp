@@ -303,7 +303,6 @@ void preproc::combine_kernels(SurfGrid& sg) {
             }
         }
 
-        // TODO: Need to be checked for the anisotropic case.
         // Anisotropic parameter kernels (Gc, Gs)
         if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {

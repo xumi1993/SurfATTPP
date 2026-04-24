@@ -9,7 +9,7 @@
 
 class Inversion1D {
 public:
-    Inversion1D();
+    explicit Inversion1D(WaveType wavetype);
     ~Inversion1D() = default;
 
     Eigen::VectorX<real_t> vs1d;
@@ -22,6 +22,7 @@ public:
 private:
     const int MAX_ITER_1D = 50;
     const real_t TOL_1D = 1e-4;
+    WaveType wavetype_;
 
     int niter;
     std::vector<real_t> misfits;

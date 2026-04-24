@@ -275,9 +275,9 @@ void SrcRec::build_stas()
 {
     auto& mpi = Parallel::mpi();
     auto& st  = stas();
+    auto& IP  = InputParams::IP();
 
     if (mpi.is_main()) {
-        // Build staname → (stla, stlo) map for each loaded table
         auto make_map = [](const SrcRec& sr) {
             std::map<std::string, std::pair<real_t, real_t>> m;
             for (int i = 0; i < sr.n_obs(); ++i)
@@ -285,19 +285,25 @@ void SrcRec::build_stas()
             return m;
         };
 
-        const bool have_ph = (SR_ph().n_obs() > 0);
-        const bool have_gr = (SR_gr().n_obs() > 0);
+        // Collect per-table maps for every (wt, vt) actually loaded
+        std::vector<std::map<std::string, std::pair<real_t, real_t>>> maps;
+        for (auto [wt, vt] : IP.data().active_data) {
+            auto& sr = SR(wt, vt);
+            if (sr.n_obs() > 0) maps.push_back(make_map(sr));
+        }
+
         std::map<std::string, std::pair<real_t, real_t>> merged;
-        if (have_ph && have_gr) {
-            auto map_ph = make_map(SR_ph());
-            auto map_gr = make_map(SR_gr());
-            // intersection: keep only names present in both
-            for (auto& [name, coords] : map_ph)
-                if (map_gr.count(name)) merged[name] = coords;
-        } else if (have_ph) {
-            merged = make_map(SR_ph());
-        } else if (have_gr) {
-            merged = make_map(SR_gr());
+        if (maps.size() == 1) {
+            merged = std::move(maps.front());
+        } else if (maps.size() > 1) {
+            // Intersection across all loaded tables
+            merged = maps.front();
+            for (size_t i = 1; i < maps.size(); ++i) {
+                std::map<std::string, std::pair<real_t, real_t>> next;
+                for (auto& [name, coords] : merged)
+                    if (maps[i].count(name)) next[name] = coords;
+                merged = std::move(next);
+            }
         }
 
         st.stnm.clear(); st.stla.clear(); st.stlo.clear();

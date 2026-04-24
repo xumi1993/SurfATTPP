@@ -34,11 +34,42 @@ static T opt(const YAML::Node &n, const std::string &field, T def) {
 // ---------------------------------------------------------------------------
 
 void InputParams::load_data(const YAML::Node &n) {
-    data_.src_rec_file_ph = req<std::string>(n, "src_rec_file_ph");
-    data_.src_rec_file_gr = opt<std::string>(n, "src_rec_file_gr", "");
-    data_.iwave           = req<int>(n, "iwave");
-    data_.vel_type        = req<std::vector<bool>>(n, "vel_type");
-    data_.weights         = req<std::vector<real_t>>(n, "weights");
+    data_.src_rec_rl_file_ph = opt<std::string>(n, "src_rec_rl_file_ph", "");
+    data_.src_rec_rl_file_gr = opt<std::string>(n, "src_rec_rl_file_gr", "");
+    data_.src_rec_lv_file_ph = opt<std::string>(n, "src_rec_lv_file_ph", "");
+    data_.src_rec_lv_file_gr = opt<std::string>(n, "src_rec_lv_file_gr", "");
+
+    data_.wave_type = opt<std::vector<bool>>(n, "wave_type", {true, false});
+    data_.vel_type  = req<std::vector<bool>>(n, "vel_type");
+    data_.weights   = req<std::vector<real_t>>(n, "weights");
+
+    // Build the list of (wave, velocity-type) pairs actually activated.
+    const bool use_rl = data_.wave_type.size() > 0 ? data_.wave_type[0] : false;
+    const bool use_lv = data_.wave_type.size() > 1 ? data_.wave_type[1] : false;
+    const bool use_ph = data_.vel_type.size()  > 0 ? data_.vel_type[0]  : false;
+    const bool use_gr = data_.vel_type.size()  > 1 ? data_.vel_type[1]  : false;
+
+    data_.active_data.clear();
+    if (use_rl && use_ph) data_.active_data.emplace_back(WaveType::RL, surfType::PH);
+    if (use_rl && use_gr) data_.active_data.emplace_back(WaveType::RL, surfType::GR);
+    if (use_lv && use_ph) data_.active_data.emplace_back(WaveType::LV, surfType::PH);
+    if (use_lv && use_gr) data_.active_data.emplace_back(WaveType::LV, surfType::GR);
+
+    // Require a file path for every activated (wave, vel) combination.
+    auto file_of = [&](WaveType wt, surfType vt) -> const std::string& {
+        if (wt == WaveType::RL)
+            return (vt == surfType::PH) ? data_.src_rec_rl_file_ph : data_.src_rec_rl_file_gr;
+        return (vt == surfType::PH) ? data_.src_rec_lv_file_ph : data_.src_rec_lv_file_gr;
+    };
+    for (auto [wt, vt] : data_.active_data) {
+        if (file_of(wt, vt).empty()) {
+            throw std::runtime_error(
+                "InputParams: activated data (" +
+                waveTypeStr[static_cast<int>(wt)] + "_" +
+                surfTypeStr[static_cast<int>(vt)] +
+                ") has no src_rec file configured");
+        }
+    }
 }
 
 void InputParams::load_output(const YAML::Node &n) {
@@ -161,6 +192,31 @@ InputParams::InputParams(const std::string &filepath)
     load_topo(require_section("topo"));
     load_postproc(require_section("postproc"));
     load_inversion(require_section("inversion"));
+    validate();
+}
+
+void InputParams::validate() {
+    const bool use_rl = data_.wave_type.size() > 0 && data_.wave_type[0];
+    const bool use_lv = data_.wave_type.size() > 1 && data_.wave_type[1];
+    const int  mpt    = inversion_.model_para_type;
+
+    if (!use_rl && !use_lv) {
+        throw std::runtime_error(
+            "InputParams: wave_type has no active component "
+            "(set at least one of [use_rayleigh, use_love] to true)");
+    }
+
+    if (mpt == MODEL_RADIAL_ANI && !(use_rl && use_lv)) {
+        throw std::runtime_error(
+            "InputParams: radial anisotropy requires both Rayleigh and Love data "
+            "(wave_type must be [true, true])");
+    }
+
+    if (mpt != MODEL_RADIAL_ANI && use_rl && use_lv) {
+        throw std::runtime_error(
+            "InputParams: joint Love+Rayleigh inversion is only valid for "
+            "radial anisotropy (set model_para_type to 2)");
+    }
 }
 
 YAML::Node InputParams::resolve(const std::string &key) const {
@@ -188,11 +244,32 @@ bool InputParams::has(const std::string &key) const {
 // Convenience: resize a vector on non-main ranks then broadcast its data.
 void InputParams::bcast_data() {
     auto &mpi = Parallel::mpi();
-    mpi.bcast(data_.src_rec_file_ph);
-    mpi.bcast(data_.src_rec_file_gr);
-    mpi.bcast(data_.iwave);
+    mpi.bcast(data_.src_rec_rl_file_ph);
+    mpi.bcast(data_.src_rec_rl_file_gr);
+    mpi.bcast(data_.src_rec_lv_file_ph);
+    mpi.bcast(data_.src_rec_lv_file_gr);
+    mpi.bcast_bool_vec(data_.wave_type);
     mpi.bcast_bool_vec(data_.vel_type);
     mpi.bcast_vec(data_.weights);
+
+    // active_data: serialize as two int vectors, rebuild on non-main ranks.
+    std::vector<int> wts, vts;
+    if (mpi.is_main()) {
+        for (auto [wt, vt] : data_.active_data) {
+            wts.push_back(static_cast<int>(wt));
+            vts.push_back(static_cast<int>(vt));
+        }
+    }
+    mpi.bcast_vec(wts);
+    mpi.bcast_vec(vts);
+    if (!mpi.is_main()) {
+        data_.active_data.clear();
+        for (size_t i = 0; i < wts.size(); ++i) {
+            data_.active_data.emplace_back(
+                static_cast<WaveType>(wts[i]),
+                static_cast<surfType>(vts[i]));
+        }
+    }
 }
 
 void InputParams::bcast_output() {

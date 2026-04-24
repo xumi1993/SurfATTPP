@@ -41,25 +41,26 @@ struct ResidualStats {
 
 class SrcRec {
 public:
-    // Phase-velocity observation table
-    static SrcRec& SR_ph() {
-        static SrcRec inst;
-        return inst;
+    // Unified accessor: indexed by WaveType (Rayleigh/Love) and surfType (phase/group).
+    // Four independent instances are created lazily on first access.
+    static SrcRec& SR(WaveType wt, surfType vt) {
+        static SrcRec insts[2][2];
+        return insts[static_cast<int>(wt)][static_cast<int>(vt)];
     }
 
-    // Group-velocity observation table
-    static SrcRec& SR_gr() {
-        static SrcRec inst;
-        return inst;
-    }
+    // Backward-compatible aliases (Rayleigh-only call sites)
+    static SrcRec& SR_ph() { return SR(WaveType::RL, surfType::PH); }
+    static SrcRec& SR_gr() { return SR(WaveType::RL, surfType::GR); }
 
     static Stations& stas() {
         static Stations inst;
         return inst;
     }
 
-    // Build the shared station list (intersection of SR_ph and SR_gr).
-    // Call after loading both tables. Broadcasts result to all ranks.
+    // Build the shared station list from all loaded SrcRec instances.
+    // If multiple tables are loaded, the station set is the intersection
+    // across them; otherwise it is the union of the loaded ones.
+    // Call after all active SR(wt, vt).load() calls.
     static void build_stas();
 
     SrcRec() = default;

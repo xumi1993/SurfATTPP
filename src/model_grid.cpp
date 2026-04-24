@@ -194,6 +194,9 @@ void ModelGrid::allocate_model_grids() {
         mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gc3d, win_gc_);
         mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gs3d, win_gs_);
     }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vsh3d, win_vsh_);
+    }
     // Always allocate local model slices; they are needed by fwdsurf() in both
     // FORWARD_ONLY and INVERSION_MODE.
     vs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
@@ -207,6 +210,12 @@ void ModelGrid::allocate_model_grids() {
         gs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         gc3d_loc.setZero();
         gs3d_loc.setZero();
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        vsh3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        gamma3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        vsh3d_loc.setZero();
+        gamma3d_loc.setZero();
     }
 }
 
@@ -224,8 +233,25 @@ void ModelGrid::build_1d_model_linear() {
 // The linear profile is used as the initial guess.
 void ModelGrid::build_1d_model_inversion() {    
     build_1d_model_linear();
-    auto inv1d = std::make_unique<Inversion1D>();
-    vs1d = inv1d->inv1d(zgrids, vs1d);
+    const auto &IP = InputParams::IP();
+
+    std::vector<Eigen::VectorX<real_t>> v1d_vec(2);  // 0: vsv, 1: vsh
+    for (auto wt : {WaveType::RL, WaveType::LV}) {
+        int iwt = static_cast<int>(wt);
+        if (IP.data().wave_type[iwt]) {
+            Inversion1D inv1d(wt);
+            v1d_vec[iwt] = inv1d.inv1d(zgrids, vs1d);
+            if (IP.inversion().model_para_type != MODEL_RADIAL_ANI) {
+                vs1d = v1d_vec[iwt];  // update vs1d for the next inversion; final vs1d will be from the last inversion run
+            }
+        }
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        // Handle radial anisotropy case
+        vs1d = (
+            (2 * v1d_vec[0].array().square() + v1d_vec[1].array().square()).sqrt() / 2
+        ).matrix();  // vs1d is the Vsv profile from Rayleigh inversion
+    }
 }
 
 // Read vs (required) and optionally vp, rho, gc, gs from the HDF5 file.
@@ -421,6 +447,31 @@ void ModelGrid::load_3d_model() {
                 std::fill(gs3d, gs3d + expect_n, _0_CR);
             }
         }
+        
+        // --- vsh (optional, only if model_para_type is MODEL_RADIAL_ANI) ---
+        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+            if (f.exists("vsh")) {
+                interpolate_or_copy("vsh", vsh3d);
+                logger.Info(
+                    same_grid ? "Loaded 'vsh' from HDF5 file." :
+                                "Loaded and interpolated 'vsh' onto current model grid.",
+                    MODULE_GRID
+                );
+            } else {
+                logger.Info("'vsh' not found in HDF5 file, initialising to vs (isotropic).", MODULE_GRID);
+                for (hsize_t i = 0; i < expect_n; ++i)
+                    vsh3d[i] = vs3d[i];
+            }
+            for (hsize_t i = 0; i < expect_n; ++i){
+                if (vsh3d[i] == 0) {
+                    logger.Error(fmt::format(
+                        "Invalid 'vsh' value of zero at index {} in HDF5 file, which would cause division by zero when computing gamma. Please fix the input model file.",
+                        i
+                    ), MODULE_GRID);
+                    mpi.abort(EXIT_FAILURE);
+                }
+            }
+        }
     } catch (const std::exception &e) {
         logger.Error(fmt::format(
             "ModelGrid: failed to load 3D model from HDF5 file '{}': {}",
@@ -493,6 +544,9 @@ void ModelGrid::build_init_model() {
                         if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
                             gc3d[I2V(ix, iy, iz)] = _0_CR;  // start with isotropic model
                             gs3d[I2V(ix, iy, iz)] = _0_CR;  // start with isotropic model
+                        }
+                        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                            vsh3d[I2V(ix, iy, iz)] = vs1d(iz);  // start with isotropic model
                         }
                     }
                 }
@@ -647,10 +701,13 @@ void ModelGrid::collect_model_loc() {
     Tensor3r vs_tmp = dcp.collect_data(vs3d_loc.data());
     Tensor3r vp_tmp = dcp.collect_data(vp3d_loc.data());
     Tensor3r rho_tmp = dcp.collect_data(rho3d_loc.data());
-    Tensor3r gc_tmp, gs_tmp;
+    Tensor3r gc_tmp, gs_tmp, vsh_tmp;
     if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         gc_tmp = dcp.collect_data(gc3d_loc.data());
         gs_tmp = dcp.collect_data(gs3d_loc.data());
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        vsh_tmp = dcp.collect_data(vsh3d_loc.data());
     }
     if (mpi.is_main()) {
         std::copy(vs_tmp.data(), vs_tmp.data() + nelem, vs3d);
@@ -660,6 +717,9 @@ void ModelGrid::collect_model_loc() {
             std::copy(gc_tmp.data(), gc_tmp.data() + nelem, gc3d);
             std::copy(gs_tmp.data(), gs_tmp.data() + nelem, gs3d);
         }
+        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+            std::copy(vsh_tmp.data(), vsh_tmp.data() + nelem, vsh3d);
+        }
     }
     mpi.barrier();
     mpi.sync_from_main_rank(vs3d, nelem);
@@ -668,6 +728,9 @@ void ModelGrid::collect_model_loc() {
     if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         mpi.sync_from_main_rank(gc3d, nelem);
         mpi.sync_from_main_rank(gs3d, nelem);
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mpi.sync_from_main_rank(vsh3d, nelem);
     }
    
 }

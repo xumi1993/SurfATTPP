@@ -20,6 +20,10 @@ static void distribute_model_para(){
         mg.gc3d_loc = dcp.distribute_data(mg.gc3d);
         mg.gs3d_loc = dcp.distribute_data(mg.gs3d);
     }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {  // radial anisotropy
+        mg.vsh3d_loc = dcp.distribute_data(mg.vsh3d);
+        mg.gamma3d_loc = mg.vsh3d_loc / mg.vs3d_loc;  // convert to gamma for radial anisotropy parameterization
+    }
 }
 
 Inversion::Inversion() {
@@ -99,11 +103,17 @@ void Inversion::run_forward() {
 void Inversion::write_obj_line()
 {
     auto &mpi = Parallel::mpi();
+    auto &IP  = InputParams::IP();
 
-    // compute_residual_stats() uses MPI allreduce — all ranks must call it.
-    // events_local is empty for disabled types so the result is naturally {0, 0}.
-    auto ph_stats = SrcRec::SR_ph().compute_residual_stats();
-    auto gr_stats = SrcRec::SR_gr().compute_residual_stats();
+    // compute_residual_stats() uses MPI allreduce — all ranks must call it
+    // the same number of times, so we iterate every active (wt, vt) entry.
+    ResidualStats ph_stats{_0_CR, _0_CR};
+    ResidualStats gr_stats{_0_CR, _0_CR};
+    for (auto [wt, vt] : IP.data().active_data) {
+        auto stats = SrcRec::SR(wt, vt).compute_residual_stats();
+        if (vt == surfType::PH) ph_stats = stats;
+        else                    gr_stats = stats;
+    }
 
     if (mpi.is_main() && obj_file_)
         obj_file_ << fmt::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
@@ -243,16 +253,48 @@ bool Inversion::check_convergence() {
     return break_flag;
 }
 
+void Inversion::accumulate_smoothed_gradient(
+    WaveType wt,
+    int itype,
+    real_t chi,
+    const FieldVec &ker_smooth
+) {
+    auto &IP = InputParams::IP();
+    const int model_para_type = IP.inversion().model_para_type;
+    const real_t grad_scale = IP.data().weights[itype] / chi;
+    auto accumulate_grad = [&](int ipara, bool check_active = true) {
+        if (!check_active || is_active_param[ipara]) {
+            gradient_[ipara] += ker_smooth[ipara] * grad_scale;
+        }
+    };
+
+    if (model_para_type == MODEL_RADIAL_ANI) {
+        if (wt == WaveType::RL) {
+            for (int ipara = 0; ipara < 3; ++ipara) {
+                accumulate_grad(ipara, true);
+            }
+        } else if (wt == WaveType::LV) {
+            // Keep previous behavior: gamma term is always accumulated for Love in radial anisotropy.
+            accumulate_grad(NPARAMS - 1, false);
+        }
+        return;
+    }
+
+    const int ipara_end = (model_para_type == MODEL_AZI_ANI) ? (NPARAMS - 1) : NPARAMS;
+    for (int ipara = 0; ipara < ipara_end; ++ipara) {
+        accumulate_grad(ipara, true);
+    }
+}
+
 real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
 
     real_t misfit_total = _0_CR;
-    for (surfType tp : {surfType::PH, surfType::GR}) {
+    for (auto [wt, tp] : IP.data().active_data) {
         int itype = static_cast<int>(tp);
-        if (!IP.data().vel_type[itype]) continue;
-        auto &sg = (tp == surfType::PH) ? SurfGrid::SG_ph() : SurfGrid::SG_gr();
-        auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+        auto &sg = SurfGrid::SG(wt, tp);
+        auto &sr = SrcRec::SR(wt, tp);
 
         // Reset kernel accumulators before processing this type of data
         preproc::reset_kernel_accumulators(sg);
@@ -288,13 +330,12 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
             // smooth the kernels if needed
             auto ker_smooth = postproc::kernel_smooth(sg);
 
-            for (int ipara = 0; ipara < NPARAMS; ++ipara) {
-                // Accumulate the smoothed kernel into the gradient for this parameter
-                if (is_active_param[ipara]) {
-                    gradient_[ipara] = gradient_[ipara] + ker_smooth[ipara] * IP.data().weights[itype] / chi;
-                }
-            }
+            accumulate_smoothed_gradient(wt, itype, chi, ker_smooth);
         }
+        mpi.barrier();
+    }
+    if (run_mode == INVERSION_MODE && IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        convert_radial_kl();
         mpi.barrier();
     }
     return misfit_total;
@@ -500,6 +541,10 @@ void Inversion::model_update(FieldVec &dir) {
         mg.gc3d_loc = mg.gc3d_loc - alpha_ * dir[3];
         mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
     }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mg.gamma3d_loc = mg.gamma3d_loc - alpha_ * dir[5];
+        mg.vsh3d_loc = mg.vs3d_loc * mg.gamma3d_loc;
+    }
     mpi.barrier();
 }
 
@@ -520,21 +565,21 @@ void Inversion::write_src_rec_fwd(){
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    for (surfType tp : {surfType::PH, surfType::GR}) {
+    for (auto [wt, tp] : IP.data().active_data) {
         int itype = static_cast<int>(tp);
-        if (!IP.data().vel_type[itype]) continue;
-        auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+        auto &sr = SrcRec::SR(wt, tp);
+        const std::string tag = waveTypeStr[static_cast<int>(wt)] + "_" + surfTypeStr[itype];
         // gather synthetic travel times to the main rank for output and inversion steps
-        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data || 
+        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data ||
             (run_mode == INVERSION_MODE && iter_ == IP.inversion().niter - 1) ||
             (run_mode == INVERSION_MODE && iter_ == 0)) {
             logger.Info(fmt::format(
-                "Gathering synthetic {} travel times to the main rank for output...", surfTypeStr[itype]), MODULE_PREPROC
+                "Gathering synthetic {} travel times to the main rank for output...", tag), MODULE_PREPROC
             );
             sr.gather_syn_tt();
-            std::string sfx = surfTypeStr[itype];
+            std::string sfx = tag;
             if (run_mode == INVERSION_MODE)
-                sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
+                sfx = fmt::format("{}_{:03d}", tag, iter_);
             sr.write(
                 fmt::format("{}/{}_{}.csv", IP.output().output_path, FORWARD_FILE_PREFIX, sfx), true
             );

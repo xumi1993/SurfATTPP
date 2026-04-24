@@ -3,13 +3,15 @@
 # data parameters
 #######################################
 data:
-  # src_rec_file_ph: src_rec_file_ph.csv
-  # src_rec_file_gr: src_rec_file_gr.csv
-  src_rec_file_ph: OUTPUT_FILES/src_rec_file_forward_PH.csv
-  src_rec_file_gr: OUTPUT_FILES/src_rec_file_forward_GR.csv
-  iwave: 2 # 1 Love wave, 2 Rayleigh wave
-  vel_type: [True, False] # use phase velocity, group velocity or both
-  weights: [0.5, 0.5] # weights for phase and group velocity
+  # Rayleigh-wave source-receiver files
+  src_rec_rl_file_ph: OUTPUT_FILES/src_rec_file_forward_RL_PH.csv
+  src_rec_rl_file_gr: OUTPUT_FILES/src_rec_file_forward_RL_GR.csv
+  # Love-wave source-receiver files (used when wave_type[1] is true)
+  src_rec_lv_file_ph:
+  src_rec_lv_file_gr:
+  wave_type: [True, False] # [use_rayleigh, use_love]
+  vel_type:  [True, False] # [use_phase, use_group]
+  weights:   [0.5, 0.5]    # weights for phase and group velocity
 
 output:
   output_path: OUTPUT_FILES/ # path to save output files

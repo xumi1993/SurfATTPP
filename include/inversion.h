@@ -46,6 +46,12 @@ private:
         return instance;
     }
 
+    void accumulate_smoothed_gradient(
+        WaveType wt,
+        int itype,
+        real_t chi,
+        const FieldVec &ker_smooth
+    );
     real_t run_forward_adjoint(const bool is_calc_adj);
     void init_iteration();
     void steepest_descent();
@@ -74,5 +80,8 @@ private:
     bool   gradient_reuse_ = false;
 
     inline void convert_radial_kl() {
+        auto &mg = ModelGrid::MG();
+        gradient_[0] = gradient_[0] + gradient_[5]; // vs kernel
+        gradient_[5] = gradient_[5] / mg.gamma3d_loc;  // convert gamma kernel to absolute perturbation kernel for radial anisotropy
     }
 };

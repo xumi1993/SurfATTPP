@@ -525,7 +525,7 @@ FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
 
     logger.Info(fmt::format("Regularizing kernels with {}...", method_name), MODULE_POSTPROC);
     FieldVec ker_loc_smooth(sg.ker_loc.size());
-    for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
+    for (int iparam = 0; iparam < NPARAMS; ++iparam) {
         if (sg.ker_loc[iparam].size() == 0) continue;
         ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);
     }

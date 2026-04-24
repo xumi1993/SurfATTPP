@@ -19,10 +19,15 @@ static void assert_near(double a, double b, double tol = 1e-9) {
 static void check_data() {
     // Any file can call InputParams::IP() after init() has been called.
     const auto &d = InputParams::IP().data();
-    assert(d.src_rec_file_ph == "src_rec_file_rotated.csv");
-    assert(d.src_rec_file_gr.empty());
-    assert(d.iwave == 2);
-    assert(d.vel_type[0] == true  && d.vel_type[1] == false);
+    assert(d.src_rec_rl_file_ph == "src_rec_file_rotated.csv");
+    assert(d.src_rec_rl_file_gr.empty());
+    assert(d.src_rec_lv_file_ph.empty());
+    assert(d.src_rec_lv_file_gr.empty());
+    assert(d.wave_type[0] == true  && d.wave_type[1] == false);
+    assert(d.vel_type[0]  == true  && d.vel_type[1]  == false);
+    assert(d.active_data.size() == 1);
+    assert(d.active_data[0].first  == WaveType::RL);
+    assert(d.active_data[0].second == surfType::PH);
     assert_near(d.weights[0], 0.5);
     assert_near(d.weights[1], 0.5);
     std::cout << "[PASS] data\n";
