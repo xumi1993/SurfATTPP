@@ -687,7 +687,7 @@ inline std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6)
 
 // Scalar version: compute Vs from vsv and vsh
 inline real_t vsvvsh2vs(real_t vsv, real_t vsh) {
-    return std::sqrt((2 * vsv + vsh) / 3);
+    return std::sqrt((2 * vsv* vsv + vsh * vsh) / 3);
 }
 
 // Scalar version: compute zeta from vsv and vsh
@@ -696,10 +696,13 @@ inline real_t vsvvsh2zeta(real_t vsv, real_t vsh) {
 }
 
 // Scalar version: recover vsv and vsh from Vs and zeta
+// Given: Vs = sqrt((2*vsv^2 + vsh^2) / 3), zeta = vsh^2 / vsv^2
+// Solution: vsv = sqrt(3*Vs^2 / (2 + zeta)), vsh = vsv * sqrt(zeta)
 inline std::pair<real_t, real_t> recover_anisotropy(real_t Vs, real_t zeta) {
     real_t sqrt_zeta = std::sqrt(zeta);
-    real_t coeff = 3 * Vs * Vs / (2 + sqrt_zeta);
-    return {coeff, coeff * sqrt_zeta};
+    real_t vsv = std::sqrt(3 * Vs * Vs / (2 + zeta));
+    real_t vsh = vsv * sqrt_zeta;
+    return {vsv, vsh};
 }
 
 // Vector version: compute Vs from vsv and vsh vectors (Ref overload)
@@ -709,7 +712,7 @@ inline Eigen::Matrix<T, Eigen::Dynamic, 1> vsvvsh2vs(
     const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vsh
 ) {
     return (
-        (T(2) * vsv.array() + vsh.array()) / T(3)
+        (T(2) * vsv.array().square() + vsh.array().square()) / T(3)
     ).sqrt().matrix();
 }
 
@@ -720,7 +723,7 @@ inline Eigen::Matrix<T, Eigen::Dynamic, 1> vsvvsh2vs(
     const Eigen::Matrix<T, Eigen::Dynamic, 1>& vsh
 ) {
     return (
-        (T(2) * vsv.array() + vsh.array()) / T(3)
+        (T(2) * vsv.array().square() + vsh.array().square()) / T(3)
     ).sqrt().matrix();
 }
 
@@ -749,7 +752,7 @@ inline Eigen::Tensor<real_t, Rank, Options> vsvvsh2vs(
     const Eigen::Tensor<real_t, Rank, Options>& vsh
 ) {
     return (
-        (vsv.constant(2.0) * vsv + vsh) / vsv.constant(3.0)
+        (vsv.constant(2.0) * vsv * vsv + vsh * vsh) / vsv.constant(3.0)
     ).sqrt();
 }
 

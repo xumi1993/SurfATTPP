@@ -549,6 +549,7 @@ void ModelGrid::build_init_model() {
                     }
                 }
             }
+            std::cout << vsh3d[I2V(0, 0, 0)] << " " << vsh3d[I2V(0, 0, ngrid_k - 1)] << std::endl;
         }
         // write() guards itself with is_main() and calls mpi.barrier() internally,
         // so it must be called by all ranks — not inside if (mpi.is_main()).
@@ -569,6 +570,9 @@ void ModelGrid::build_init_model() {
     if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         mpi.sync_from_main_rank(gc3d, ngrid_i * ngrid_j * ngrid_k);
         mpi.sync_from_main_rank(gs3d, ngrid_i * ngrid_j * ngrid_k);
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mpi.sync_from_main_rank(vsh3d, ngrid_i * ngrid_j * ngrid_k);
     }
 }
 
@@ -711,25 +715,21 @@ void ModelGrid::add_radial_aniso_perturbation(
 
                     const int idx = I2V(i, j, k);
 
-                    // Recover original vsv and vsh from current Vs and zeta stored in vs3d
-                    // Note: vs3d stores Vs (RMS S-wave velocity), vsh3d stores vsh
-                    const real_t Vs0 = vs3d[idx];  // Current RMS velocity
-                    const real_t vsh0 = vs3d[idx];
-                    const real_t vsv0 = (vsh0 == Vs0) ? Vs0 : Vs0;  // If isotropic, vsv = vsh = Vs
-                    const real_t zeta0 = (vsh0 * vsh0) / (vsv0 * vsv0);
+                    // Calculate original Vs and zeta
+                    // Vs = sqrt((2*vsv^2 + vsh^2)/3), zeta = vsh^2/vsv^2
+                    const real_t Vs0 = vs3d[idx];
+                    const real_t zeta0 = _1_CR;
 
-                    // Apply perturbations
+                    // Apply perturbations to Vs and zeta
                     const real_t Vs_new = Vs0 * (1 + amp_vs);
                     const real_t zeta_new = zeta0 * (1 + amp_zeta);
 
                     // Recover vsv and vsh from Vs and zeta
-                    // vsv = 3*Vs^2 / (2 + sqrt(zeta))
+                    // vsv = sqrt(3*Vs^2 / (2 + zeta))
                     // vsh = vsv * sqrt(zeta)
-                    const real_t sqrt_zeta = std::sqrt(zeta_new);
-                    const real_t coeff = 3 * Vs_new * Vs_new / (2 + sqrt_zeta);
-                    const real_t vsv_new = coeff;
-                    const real_t vsh_new = coeff * sqrt_zeta;
+                    auto [vsv_new, vsh_new] = recover_anisotropy(Vs_new, zeta_new);
 
+                    // Update vs3d to store Vs (for consistency with load_3d_model)
                     vs3d[idx] = vsv_new;
                     vsh3d[idx] = vsh_new;
                     vp3d[idx] = vs2vp(vsv_new);
