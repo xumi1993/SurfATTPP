@@ -767,7 +767,7 @@ subroutine slegn96(thk,vs,rhom,nlayer,&
 
   ! copy to input variables
   disp(:) = uu(:)
-  stress(:) = uu(:)
+  stress(:) = tt(:)
   dc2db(:) = dcdb(:)
   dc2dr(:) = dcdr(:)
   dc2dh(:) = dcdh(:)
