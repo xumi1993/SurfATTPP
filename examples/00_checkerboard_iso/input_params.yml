@@ -7,8 +7,8 @@ data:
   src_rec_file_rl_ph: OUTPUT_FILES/src_rec_file_forward_RL_PH.csv
   src_rec_file_rl_gr: OUTPUT_FILES/src_rec_file_forward_RL_GR.csv
   # Love-wave source-receiver files (used when wave_type[1] is true)
-  src_rec_file_lv_ph:
-  src_rec_file_lv_gr:
+  src_rec_file_lv_ph: OUTPUT_FILES/src_rec_file_forward_LV_PH.csv
+  src_rec_file_lv_gr: OUTPUT_FILES/src_rec_file_forward_LV_GR.csv
   wave_type: [True, False] # [use_rayleigh, use_love]
   vel_type:  [True, False] # [use_phase, use_group]
   weights:   [0.5, 0.5]    # weights for phase and group velocity

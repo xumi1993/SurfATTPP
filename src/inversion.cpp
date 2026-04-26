@@ -45,6 +45,16 @@ Inversion::Inversion() {
                 f.write_vector("x", mg.xgrids);
                 f.write_vector("y", mg.ygrids);
                 f.write_vector("z", mg.zgrids);
+
+                // Uniform-scale coordinates: convert lon/lat (degrees) to km so
+                // all three axes share the same unit for undistorted visualization.
+                const Eigen::VectorX<real_t> cos_lat  = (mg.ygrids.array() * DEG2RAD).cos();
+                Eigen::VectorX<real_t> x_km =
+                    (mg.xgrids.array() - mg.xgrids(0)) * DEG2RAD * R_EARTH * cos_lat.array();
+                Eigen::VectorX<real_t> y_km =
+                    (mg.ygrids.array() - mg.ygrids(0)) * DEG2RAD * R_EARTH;
+                f.write_vector("x_km", x_km);
+                f.write_vector("y_km", y_km);
             } catch (const std::exception &e) {
                 logger.Error(fmt::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
                 logger.Error("Check if the output path exists and is writable, or delete the existing file.", MODULE_INV);
@@ -394,6 +404,7 @@ void Inversion::store_model() {
     auto &mg  = ModelGrid::MG();
     auto &IP  = InputParams::IP();
     auto &mpi = Parallel::mpi();
+    auto &dcp = Decomposer::DCP();
 
     if (!mpi.is_main()) return;
 
@@ -411,7 +422,15 @@ void Inversion::store_model() {
         f.write_tensor("model_gc" + sfx, TMap(mg.gc3d, ngrid_i, ngrid_j, ngrid_k));
         f.write_tensor("model_gs" + sfx, TMap(mg.gs3d, ngrid_i, ngrid_j, ngrid_k));
     }
-    xdmf::write_model_iter(xdmf_fname_, iter_);
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        Tensor3r _gamma3d = dcp.collect_data(mg.gamma3d_loc.data());  // gather the local gamma3d back to global for output
+        f.write_tensor("model_gamma" + sfx, _gamma3d);
+    }
+    // Gradients for iterations 0..iter_-1 have been written; current iter_ grad
+    // is written later by store_gradient(), so last_grad_iter = iter_ - 1.
+    const bool grads_enabled = IP.output().output_in_process_model
+                                || IP.inversion().optim_method == OPTIM_LBFGS;
+    xdmf::write_model_iter(xdmf_fname_, iter_, grads_enabled ? iter_ - 1 : -1);
 }
 
 // Save the current (normalised) gradient to db_fname.
@@ -436,6 +455,10 @@ void Inversion::store_gradient() {
         if (is_active_param[i])
             f.write_tensor(std::string("grad_") + pnames[i] + sfx, grad_all[i]);
     }
+    // grad_vs_{iter_} is now in HDF5; update XDMF so all stored iterations
+    // (0..iter_) show both model and gradient fields.
+    if (!xdmf_fname_.empty())
+        xdmf::write_model_iter(xdmf_fname_, iter_, iter_);
 }
 
 void Inversion::steepest_descent() {
