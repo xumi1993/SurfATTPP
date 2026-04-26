@@ -42,11 +42,12 @@ int main(int argc, char* argv[]) {
     mg.build_init_model();
 
     // add checkerboard perturbation if requested
+    if 
     mg.add_perturbation(
         args.ncb[0], args.ncb[1], args.ncb[2],
         args.pert_vel, args.hmarg, args.anom_size, args.only_vs
     );
-    mg.add_aniso_perturbation(
+    mg.add_azi_aniso_perturbation(
         args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
         args.ani_angle, args.pert_ani, args.hmarg, args.anom_size
     );

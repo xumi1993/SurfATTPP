@@ -116,13 +116,15 @@ struct TomoArgs {
 struct CbFwdArgs {
     std::array<int, 3> ncb      = {0, 0, 0};
     std::array<int, 3> ncb_ani  = {0, 0, 0};
-    double ani_angle = 120.0;  // anisotropy fast-axis angle in degrees
+    double ani_angle = 120.0;  // anisotropy fast-axis angle in degrees (for azimuthal anisotropy)
     double pert_vel  = 0.08;
-    double pert_ani  = 0.0;   // anisotropic perturbation magnitude (gc and gs), additive
+    double pert_ani  = 0.0;   // azimuthal anisotropy perturbation magnitude (gc and gs)
+    double pert_zeta = 0.0;   // radial anisotropy perturbation magnitude (zeta)
     double hmarg     = 0.0;
     double anom_size = 0.0;
     double max_noise = 0.0;
     bool   only_vs   = false;
+    bool   use_radial_ani = false;  // use radial anisotropy; if false, use azimuthal anisotropy (with -a)
 };
 
 struct RotateSrcRecArgs {
@@ -187,35 +189,57 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
             " [-m margin_degree] [-p pert] [-s anom_size_km]\n\n"
             "Create checkerboard and forward simulate travel time for surface wave\n\n"
             "required arguments:\n"
-            "  -i para_file            Path to parameter file in yaml format\n"
-            "  -n nx/ny/nz             Number of anomalies along X, Y and Z\n\n"
+            "  -i para_file             Path to parameter file in yaml format\n"
+            "  -n nx/ny/nz              Number of anomalies along X, Y and Z\n\n"
             "optional arguments:\n"
-            "  -h                      Print help message\n"
-            "  -a nx/ny/nz[/angle]     Number of anisotropic anomalies; optional anisotropy angle (deg, default: 120)\n"
-            "  -e tt_noise             Add random noise to travel time data (default: 0)\n"
-            "  -v                      Only perturb Vs model, default: false\n"
-            "  -m margin_degree        Margin between anomalies in degrees (default: 0)\n"
-            "  -p pert_vel[/pert_ani]  Magnitude of velocity perturbations (default: 0.08)\n"
-            "  -s anom_size_km         Size of top anomalies in km (default: uniform)\n";
+            "  -h                       Print help message\n"
+            "  -a nx/ny/nz[/angle]      Add azimuthal anisotropy anomalies with optional angle (deg, default: 120)\n"
+            "  -r                       Use radial anisotropy instead of azimuthal (cannot be used with -a)\n"
+            "  -e tt_noise              Add random noise to travel time data (default: 0)\n"
+            "  -v                       Only perturb Vs model, default: false\n"
+            "  -m margin_degree         Margin between anomalies in degrees (default: 0)\n"
+            "  -p pert_vel[/pert_ani]   Magnitude of velocity/anisotropy perturbations\n"
+            "                           For azimuthal: -p pert_vel[/pert_gc_gs] (default: 0.08)\n"
+            "                           For radial: -p pert_vs[/pert_zeta] (default: 0.08)\n"
+            "  -s anom_size_km          Size of top anomalies in km (default: uniform)\n";
         std::exit(0);
     }
     CbFwdArgs out;
     input_file  = al.require("-i");
     out.only_vs = al.has("-v");
-    if (auto v = al.get("-n")) out.ncb       = parse_3int(*v);
-    if (auto v = al.get("-a")) {
-        auto [ncb_ani, ani_angle] = parse_3int_1double(*v);
+    if (auto v = al.get("-n")) out.ncb = parse_3int(*v);
+
+    // Check for mutually exclusive -a and -r options
+    bool has_azi_ani = al.has("-a");
+    bool has_rad_ani = al.has("-r");
+
+    if (has_azi_ani && has_rad_ani) {
+        throw std::runtime_error("Options -a (azimuthal anisotropy) and -r (radial anisotropy) cannot be used together");
+    }
+
+    if (has_azi_ani) {
+        auto [ncb_ani, ani_angle] = parse_3int_1double(*al.get("-a"));
         out.ncb_ani = ncb_ani;
         out.ani_angle = ani_angle;
+        out.use_radial_ani = false;
+    } else if (has_rad_ani) {
+        out.ncb_ani = out.ncb;  // use same as isotropic checkerboard
+        out.use_radial_ani = true;
     } else {
         out.ncb_ani = out.ncb;  // default: same as -n
         out.ani_angle = 120.0;
+        out.use_radial_ani = false;
     }
+
     if (auto v = al.get("-p")) {
         if (v->find('/') != std::string::npos) {
             auto pert = parse_2double(*v);
             out.pert_vel = pert[0];
-            out.pert_ani = pert[1];
+            if (out.use_radial_ani) {
+                out.pert_zeta = pert[1];  // for radial anisotropy
+            } else {
+                out.pert_ani = pert[1];   // for azimuthal anisotropy
+            }
         } else {
             out.pert_vel = std::stod(*v);
         }

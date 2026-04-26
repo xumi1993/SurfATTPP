@@ -710,13 +710,11 @@ void ModelGrid::add_radial_aniso_perturbation(
                     const real_t amp_zeta = xp(i) * yp(j) * zp(k) * pert_zeta;
 
                     const int idx = I2V(i, j, k);
-                    const real_t vsv0 = vs3d[idx];
-                    const real_t vsh0 = vsh3d[idx];
 
                     // Calculate original Vs and zeta
                     // Vs = sqrt((2*vsv + vsh)/3), zeta = vsh^2/vsv^2
-                    const real_t Vs0 = std::sqrt((2 * vsv0 + vsh0) / 3);
-                    const real_t zeta0 = (vsh0 * vsh0) / (vsv0 * vsv0);
+                    const real_t Vs0 = vs3d[idx];
+                    const real_t zeta0 = _1_CR;
 
                     // Apply perturbations
                     const real_t Vs_new = Vs0 * (1 + amp_vs);
