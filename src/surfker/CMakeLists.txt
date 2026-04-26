@@ -1,2 +1,3 @@
 file(GLOB SURFKER_SOURCES "*.f*")
-add_library(surfker_obj OBJECT ${SURFKER_SOURCES})
+file(GLOB SURFKER_C_SOURCES "*.cpp")
+add_library(surfker_obj OBJECT ${SURFKER_SOURCES} ${SURFKER_C_SOURCES})
