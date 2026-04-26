@@ -711,10 +711,12 @@ void ModelGrid::add_radial_aniso_perturbation(
 
                     const int idx = I2V(i, j, k);
 
-                    // Calculate original Vs and zeta
-                    // Vs = sqrt((2*vsv + vsh)/3), zeta = vsh^2/vsv^2
-                    const real_t Vs0 = vs3d[idx];
-                    const real_t zeta0 = _1_CR;
+                    // Recover original vsv and vsh from current Vs and zeta stored in vs3d
+                    // Note: vs3d stores Vs (RMS S-wave velocity), vsh3d stores vsh
+                    const real_t Vs0 = vs3d[idx];  // Current RMS velocity
+                    const real_t vsh0 = vs3d[idx];
+                    const real_t vsv0 = (vsh0 == Vs0) ? Vs0 : Vs0;  // If isotropic, vsv = vsh = Vs
+                    const real_t zeta0 = (vsh0 * vsh0) / (vsv0 * vsv0);
 
                     // Apply perturbations
                     const real_t Vs_new = Vs0 * (1 + amp_vs);
