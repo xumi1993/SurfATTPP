@@ -1,0 +1,18 @@
+--------------------------------------------------------------------------
+prterun was unable to launch the specified application as it lacked
+permissions to execute an executable:
+
+   Executable: ../../bin/SURFATT_cb_fwd
+   Node: xumijians-MacBook-Air-3
+
+while attempting to start process rank 0.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+prterun was unable to launch the specified application as it lacked
+permissions to execute an executable:
+
+   Executable: ../../bin/SURFATT_tomo
+   Node: xumijians-MacBook-Air-3
+
+while attempting to start process rank 0.
+--------------------------------------------------------------------------

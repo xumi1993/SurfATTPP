@@ -42,15 +42,21 @@ int main(int argc, char* argv[]) {
     mg.build_init_model();
 
     // add checkerboard perturbation if requested
-    if 
-    mg.add_perturbation(
-        args.ncb[0], args.ncb[1], args.ncb[2],
-        args.pert_vel, args.hmarg, args.anom_size, args.only_vs
-    );
-    mg.add_azi_aniso_perturbation(
-        args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
-        args.ani_angle, args.pert_ani, args.hmarg, args.anom_size
-    );
+    if (args.use_radial_ani) {
+        mg.add_radial_aniso_perturbation(
+            args.ncb[0], args.ncb[1], args.ncb[2],
+            args.pert_vel, args.pert_zeta, args.hmarg, args.anom_size
+        );
+    } else {
+        mg.add_perturbation(
+            args.ncb[0], args.ncb[1], args.ncb[2],
+            args.pert_vel, args.hmarg, args.anom_size, args.only_vs
+        );
+        mg.add_azi_aniso_perturbation(
+            args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
+            args.ani_angle, args.pert_ani, args.hmarg, args.anom_size
+        );
+    }
     mg.write(TARGET_MODEL_FNAME);
 
     // initialize decomposer (for parallel execution)
