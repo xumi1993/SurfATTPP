@@ -193,7 +193,7 @@ FieldVec lbfgs_direction(int iter) {
                     auto mk1 = f.read_tensor<real_t>(std::string("model_") + pnames[p] + sfx(ik + 1));
                     // vs/vp/rho (p < 3) are updated multiplicatively, so work in log space;
                     // gc/gs (p >= 3) are updated additively, use the raw difference.
-                    if (p < 3)
+                    if (p < 3 || p == 5) // vs, vp, rho, gamma
                         s_hist[h][p] = mk1.log() - mk.log();
                     else
                         s_hist[h][p] = mk1 - mk;

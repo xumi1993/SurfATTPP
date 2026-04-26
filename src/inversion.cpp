@@ -591,7 +591,7 @@ void Inversion::model_update(FieldVec &dir) {
         mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
     }
     if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
-        mg.gamma3d_loc = mg.gamma3d_loc - alpha_ * dir[5];
+        mg.gamma3d_loc = mg.gamma3d_loc * (1 - alpha_ * dir[5]);
         mg.vsh3d_loc = mg.vs3d_loc * mg.gamma3d_loc;
     }
     mpi.barrier();

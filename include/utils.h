@@ -672,3 +672,92 @@ inline std::vector<std::string> fmt_col(const real_t* data, int n, int prec = 6)
     }
     return v;
 }
+
+// ---------------------------------------------------------------------------
+// Radial anisotropy parameter conversions
+//
+// Converts between (vsv, vsh) and (Vs, zeta) parameterizations.
+//
+// Definitions:
+//   Vs   = sqrt((2*vsv + vsh) / 3)  — RMS S-wave velocity
+//   zeta = vsh^2 / vsv^2             — anisotropy ratio
+//
+// Supports scalar, vector (Eigen::VectorX), and tensor (Eigen::Tensor<3>) inputs.
+// ---------------------------------------------------------------------------
+
+// Scalar version: compute Vs from vsv and vsh
+inline real_t vsvvsh2vs(real_t vsv, real_t vsh) {
+    return std::sqrt((2 * vsv + vsh) / 3);
+}
+
+// Scalar version: compute zeta from vsv and vsh
+inline real_t vsvvsh2zeta(real_t vsv, real_t vsh) {
+    return (vsh * vsh) / (vsv * vsv);
+}
+
+// Scalar version: recover vsv and vsh from Vs and zeta
+inline std::pair<real_t, real_t> recover_anisotropy(real_t Vs, real_t zeta) {
+    real_t sqrt_zeta = std::sqrt(zeta);
+    real_t coeff = 3 * Vs * Vs / (2 + sqrt_zeta);
+    return {coeff, coeff * sqrt_zeta};
+}
+
+// Vector version: compute Vs from vsv and vsh vectors (Ref overload)
+template<typename T>
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> vsvvsh2vs(
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vsv,
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vsh
+) {
+    return (
+        (T(2) * vsv.array() + vsh.array()) / T(3)
+    ).sqrt().matrix();
+}
+
+// Vector version: compute Vs from vsv and vsh vectors (Matrix overload)
+template<typename T>
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> vsvvsh2vs(
+    const Eigen::Matrix<T, Eigen::Dynamic, 1>& vsv,
+    const Eigen::Matrix<T, Eigen::Dynamic, 1>& vsh
+) {
+    return (
+        (T(2) * vsv.array() + vsh.array()) / T(3)
+    ).sqrt().matrix();
+}
+
+// Vector version: compute zeta from vsv and vsh vectors (Ref overload)
+template<typename T>
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> vsvvsh2zeta(
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vsv,
+    const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>>& vsh
+) {
+    return (vsh.array().square() / vsv.array().square()).matrix();
+}
+
+// Vector version: compute zeta from vsv and vsh vectors (Matrix overload)
+template<typename T>
+inline Eigen::Matrix<T, Eigen::Dynamic, 1> vsvvsh2zeta(
+    const Eigen::Matrix<T, Eigen::Dynamic, 1>& vsv,
+    const Eigen::Matrix<T, Eigen::Dynamic, 1>& vsh
+) {
+    return (vsh.array().square() / vsv.array().square()).matrix();
+}
+
+// Tensor version: compute Vs from vsv and vsh tensors
+template<int Rank, int Options>
+inline Eigen::Tensor<real_t, Rank, Options> vsvvsh2vs(
+    const Eigen::Tensor<real_t, Rank, Options>& vsv,
+    const Eigen::Tensor<real_t, Rank, Options>& vsh
+) {
+    return (
+        (vsv.constant(2.0) * vsv + vsh) / vsv.constant(3.0)
+    ).sqrt();
+}
+
+// Tensor version: compute zeta from vsv and vsh tensors
+template<int Rank, int Options>
+inline Eigen::Tensor<real_t, Rank, Options> vsvvsh2zeta(
+    const Eigen::Tensor<real_t, Rank, Options>& vsv,
+    const Eigen::Tensor<real_t, Rank, Options>& vsh
+) {
+    return vsh * vsh / (vsv * vsv);
+}

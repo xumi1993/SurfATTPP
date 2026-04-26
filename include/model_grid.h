@@ -29,9 +29,14 @@ public:
         const real_t pert_vel, const real_t hmargin = _0_CR,
         const real_t anom_size = _0_CR, const bool only_vs = false
     );
-    void add_aniso_perturbation(
+    void add_azi_aniso_perturbation(
         const int nx, const int ny, const int nz,
-        const real_t pert_gc, const real_t pert_gs,
+        const real_t angle, const real_t pert_ani,
+        const real_t hmargin = _0_CR, const real_t anom_size = _0_CR
+    );
+    void add_radial_aniso_perturbation(
+        const int nx, const int ny, const int nz,
+        const real_t pert_vs, const real_t pert_zeta,
         const real_t hmargin = _0_CR, const real_t anom_size = _0_CR
     );
     void write(const std::string &subname);
