@@ -6,7 +6,7 @@
 #include "logger.h"
 #include "config.h"
 #include "topo.h"
-#include "surfdisp.h"
+#include "surfker/surfker.hpp"
 #include "model_grid.h"
 #include "decomposer.h"
 
@@ -16,9 +16,9 @@
 
 class SurfGrid {
 public:
-    // Unified accessor: one SurfGrid per (WaveType, surfType) combination.
+    // Unified accessor: one SurfGrid per (WaveType, SurfType) combination.
     // Instances are created lazily on first call.
-    static SurfGrid& SG(WaveType wt, surfType vt) {
+    static SurfGrid& SG(WaveType wt, SurfType vt) {
         static SurfGrid* slots[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
         const int i = static_cast<int>(wt);
         const int j = static_cast<int>(vt);
@@ -27,8 +27,8 @@ public:
     }
 
     // Backward-compatible aliases (Rayleigh-only call sites)
-    static SurfGrid& SG_ph() { return SG(WaveType::RL, surfType::PH); }
-    static SurfGrid& SG_gr() { return SG(WaveType::RL, surfType::GR); }
+    static SurfGrid& SG_ph() { return SG(WaveType::RL, SurfType::PH); }
+    static SurfGrid& SG_gr() { return SG(WaveType::RL, SurfType::GR); }
 
     SurfGrid(const SurfGrid&)            = delete;
     SurfGrid& operator=(const SurfGrid&) = delete;
@@ -88,7 +88,7 @@ private:
     int itype_;
     int nperiod_;
 
-    SurfGrid(WaveType wt, surfType vt);
+    SurfGrid(WaveType wt, SurfType vt);
     void release_shm();
     void build_media_matrix_with_topo();
 };

@@ -5,13 +5,12 @@
  *
  */
 
-#include "disper.hpp"
+#include "surfdisp.hpp"
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
 #include <vector>
 
-static const double TWOPI = 2.0 * 3.141592653589793;
 
 /* ------------------------------------------------------------------ */
 /* Forward declarations                                                 */

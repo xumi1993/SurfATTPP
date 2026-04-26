@@ -24,13 +24,13 @@ struct DataParams {
 
     // Activated (wave, velocity-type) combinations, determined once in load_data().
     // All downstream loops iterate this vector instead of re-checking flags.
-    std::vector<std::pair<WaveType, surfType>> active_data;
+    std::vector<std::pair<WaveType, SurfType>> active_data;
 
     // Resolve the src_rec CSV path for a given (wave, vel) pair.
-    const std::string& file_of(WaveType wt, surfType vt) const {
+    const std::string& file_of(WaveType wt, SurfType vt) const {
         if (wt == WaveType::RL)
-            return (vt == surfType::PH) ? src_rec_file_rl_ph : src_rec_file_rl_gr;
-        return (vt == surfType::PH) ? src_rec_file_lv_ph : src_rec_file_lv_gr;
+            return (vt == SurfType::PH) ? src_rec_file_rl_ph : src_rec_file_rl_gr;
+        return (vt == SurfType::PH) ? src_rec_file_lv_ph : src_rec_file_lv_gr;
     }
 };
 

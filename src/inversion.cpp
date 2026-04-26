@@ -134,13 +134,13 @@ void Inversion::write_obj_line()
     ResidualStats lv_gr_stats{_0_CR, _0_CR};
     for (auto [wt, vt] : IP.data().active_data) {
         auto stats = SrcRec::SR(wt, vt).compute_residual_stats();
-        if (wt == WaveType::RL && vt == surfType::PH) {
+        if (wt == WaveType::RL && vt == SurfType::PH) {
             rl_ph_stats = stats;
-        } else if (wt == WaveType::RL && vt == surfType::GR) {
+        } else if (wt == WaveType::RL && vt == SurfType::GR) {
             rl_gr_stats = stats;
-        } else if (wt == WaveType::LV && vt == surfType::PH) {
+        } else if (wt == WaveType::LV && vt == SurfType::PH) {
             lv_ph_stats = stats;
-        } else if (wt == WaveType::LV && vt == surfType::GR) {
+        } else if (wt == WaveType::LV && vt == SurfType::GR) {
             lv_gr_stats = stats;
         }
     }

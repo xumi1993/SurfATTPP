@@ -13,6 +13,7 @@ struct DispersionRequest {
     Eigen::VectorX<real_t> vs_km_s;
     Eigen::VectorX<real_t> rho_g_cm3;
     Eigen::VectorX<real_t> periods_s;
+    EarthModel EarthModel;
 
     int iflsph = IFLSPH;  // 0: flat Earth, 1: spherical Earth
     int iwave = 2;   // 1: Love, 2: Rayleigh

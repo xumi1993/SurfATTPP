@@ -1,6 +1,6 @@
 #include "inversion1d.h"
 #include "logger.h"
-#include "surfdisp.h"
+#include "surfker/surfker.hpp"
 #include "utils.h"
 #include "input_params.h"
 #include "src_rec.h"

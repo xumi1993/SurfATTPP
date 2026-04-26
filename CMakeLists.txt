@@ -204,6 +204,7 @@ file(GLOB SOURCES "src/*.cpp")
 add_library(objs OBJECT ${SOURCES} ${SURFKER_SOURCES})
 target_include_directories(objs PUBLIC
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
 )
 target_link_libraries(objs PUBLIC
     Eigen3::Eigen

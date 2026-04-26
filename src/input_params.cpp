@@ -51,16 +51,16 @@ void InputParams::load_data(const YAML::Node &n) {
     const bool use_gr = data_.vel_type.size()  > 1 ? data_.vel_type[1]  : false;
 
     data_.active_data.clear();
-    if (use_rl && use_ph) data_.active_data.emplace_back(WaveType::RL, surfType::PH);
-    if (use_rl && use_gr) data_.active_data.emplace_back(WaveType::RL, surfType::GR);
-    if (use_lv && use_ph) data_.active_data.emplace_back(WaveType::LV, surfType::PH);
-    if (use_lv && use_gr) data_.active_data.emplace_back(WaveType::LV, surfType::GR);
+    if (use_rl && use_ph) data_.active_data.emplace_back(WaveType::RL, SurfType::PH);
+    if (use_rl && use_gr) data_.active_data.emplace_back(WaveType::RL, SurfType::GR);
+    if (use_lv && use_ph) data_.active_data.emplace_back(WaveType::LV, SurfType::PH);
+    if (use_lv && use_gr) data_.active_data.emplace_back(WaveType::LV, SurfType::GR);
 
     // Require a file path for every activated (wave, vel) combination.
-    auto file_of = [&](WaveType wt, surfType vt) -> const std::string& {
+    auto file_of = [&](WaveType wt, SurfType vt) -> const std::string& {
         if (wt == WaveType::RL)
-            return (vt == surfType::PH) ? data_.src_rec_file_rl_ph : data_.src_rec_file_rl_gr;
-        return (vt == surfType::PH) ? data_.src_rec_file_lv_ph : data_.src_rec_file_lv_gr;
+            return (vt == SurfType::PH) ? data_.src_rec_file_rl_ph : data_.src_rec_file_rl_gr;
+        return (vt == SurfType::PH) ? data_.src_rec_file_lv_ph : data_.src_rec_file_lv_gr;
     };
     for (auto [wt, vt] : data_.active_data) {
         if (file_of(wt, vt).empty()) {
@@ -289,7 +289,7 @@ void InputParams::bcast_data() {
         for (size_t i = 0; i < wts.size(); ++i) {
             data_.active_data.emplace_back(
                 static_cast<WaveType>(wts[i]),
-                static_cast<surfType>(vts[i]));
+                static_cast<SurfType>(vts[i]));
         }
     }
 }

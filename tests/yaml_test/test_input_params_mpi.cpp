@@ -34,7 +34,7 @@ static void verify_all() {
     assert(d.vel_type[0]  == true  && d.vel_type[1]  == false);
     assert(d.active_data.size() == 1);
     assert(d.active_data[0].first  == WaveType::RL);
-    assert(d.active_data[0].second == surfType::PH);
+    assert(d.active_data[0].second == SurfType::PH);
     assert_near(d.weights[0], 0.5);
     assert_near(d.weights[1], 0.5);
 

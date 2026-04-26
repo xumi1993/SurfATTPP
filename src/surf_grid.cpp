@@ -9,7 +9,7 @@ inline int kernel_idx4(const int ix, const int iy, const int iz, const int iper,
 
 }
 
-SurfGrid::SurfGrid(WaveType wt, surfType vt){
+SurfGrid::SurfGrid(WaveType wt, SurfType vt){
     auto &sr = SrcRec::SR(wt, vt);
     nperiod_ = sr.periods_info.nperiod;
     Eigen::VectorX<real_t> periods = sr.periods_info.periods;
@@ -82,7 +82,7 @@ void SurfGrid::build_media_matrix_with_topo() {
     auto& mpi = Parallel::mpi();
     auto& IP = InputParams::IP();
     auto &mg = ModelGrid::MG();
-    auto &sr = SrcRec::SR(wt_, static_cast<surfType>(itype_));
+    auto &sr = SrcRec::SR(wt_, static_cast<SurfType>(itype_));
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
     // Load topography
@@ -198,7 +198,7 @@ void SurfGrid::fwdsurf(){
     auto &IP = InputParams::IP();
     auto &mg = ModelGrid::MG();
     auto &dcp = Decomposer::DCP();
-    auto &sr = SrcRec::SR(wt_, static_cast<surfType>(itype_));
+    auto &sr = SrcRec::SR(wt_, static_cast<SurfType>(itype_));
     const Eigen::VectorX<real_t>& periods = sr.periods_info.periods;
 
     logger.Info(fmt::format(
@@ -253,7 +253,7 @@ void SurfGrid::compute_dispersion_kernel() {
     auto& mpi = Parallel::mpi();
     auto& mg = ModelGrid::MG();
     auto& IP = InputParams::IP();
-    auto& sr = SrcRec::SR(wt_, static_cast<surfType>(itype_));
+    auto& sr = SrcRec::SR(wt_, static_cast<SurfType>(itype_));
     auto& logger = ATTLogger::logger();
     auto& dcp = Decomposer::DCP();
 
