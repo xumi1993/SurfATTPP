@@ -161,6 +161,10 @@ public:
 
     const YAML::Node &root() const { return root_; }
 
+    inline void set_model_para_type(int mpt) {
+        model_.init_model_type = mpt;
+    }
+
 private:
     static std::unique_ptr<InputParams> &get_IP_ptr() {
         static std::unique_ptr<InputParams> IP;

@@ -2,6 +2,7 @@
 #include "eikonal_solver.h"
 #include "utils.h"
 #include "decomposer.h"
+#include "config.h"
 
 namespace{
 Eigen::Matrix<real_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
@@ -203,13 +204,15 @@ void preproc::combine_kernels(SurfGrid& sg) {
 
     // Resize to hold all parameter slots; default-construct (no storage) first,
     // then allocate only the entries that are actually used.
-    logger.Info("Combining traveltime kernels with surface wave kernels...", MODULE_PREPROC);
+    logger.Info(fmt::format(
+        "Combining traveltime kernels with surface wave ({}) kernels...", 
+        waveTypeStr[static_cast<int>(sg.wave_type())]), MODULE_PREPROC);
     sg.ker_loc.assign(NPARAMS, Tensor3r());
 
     // vs kernel — always allocated (index 0)
     sg.ker_loc[0] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
     sg.ker_loc[0].setZero();
-    if (IP.inversion().use_alpha_beta_rho) {
+    if (IP.inversion().use_alpha_beta_rho && sg.wave_type() == WaveType::RL) {
         // vp (1) and rho (2) — only when parametrised independently
         sg.ker_loc[1] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         sg.ker_loc[1].setZero();
@@ -248,7 +251,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
         }
 
         // Isotropic parameter kernels — gated by use_alpha_beta_rho only
-        if (IP.inversion().use_alpha_beta_rho) {
+        if (IP.inversion().use_alpha_beta_rho && sg.wave_type() == WaveType::RL) {
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
                 for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
                     const int iglob_x = dcp.loc_I_start() + ix;
@@ -273,7 +276,7 @@ void preproc::combine_kernels(SurfGrid& sg) {
             if (IP.inversion().rho_scaling) {
                 sg.ker_loc[2] = sg.ker_loc[0] * RHO_SCALING;
             }
-        } else {
+        } else if (sg.wave_type() == WaveType::RL) {
             // vs-only parametrisation: chain rule collapses vp and rho into the vs kernel
             //   K_vs += adj_s * (sen_vs + sen_vp * d(vp)/d(vs) + sen_rho * d(rho)/d(vp) * d(vp)/d(vs))
             for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
@@ -297,6 +300,21 @@ void preproc::combine_kernels(SurfGrid& sg) {
                                 + sg.sen_vp_loc(ix, iy, k, iper)  * dab
                                 + sg.sen_rho_loc(ix, iy, k, iper) * dra * dab
                             );
+                        }
+                    }
+                }
+            }
+        } else {
+            // For Love waves with no independent vp kernel, the vs kernel includes contributions from the vp and rho kernels through the chain rule, but without the scaling factor that appears in the anisotropic case.
+            for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+                for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                    const int iglob_x = dcp.loc_I_start() + ix;
+                    const int iglob_y = dcp.loc_J_start() + iy;
+                    const real_t att  = adj_tt(iglob_x, iglob_y);
+                    for (int k = 0; k < ngrid_k; ++k) {
+                        sg.ker_loc[0](ix, iy, k) -= att * sg.sen_vs_loc(ix, iy, k, iper);
+                        if (IP.postproc().is_kden) {
+                            sg.ker_den_loc(ix, iy, k) -= adj_den(iglob_x, iglob_y) * sg.sen_vs_loc(ix, iy, k, iper);
                         }
                     }
                 }

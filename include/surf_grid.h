@@ -71,6 +71,7 @@ public:
     inline int nperiod() const { return nperiod_; }
     inline WaveType wave_type() const { return wt_; }
     inline int iwave() const { return iwave_of(wt_); }
+    inline bool is_active_ker(const int iker) const { return active_kernels_[iker]; }
 
 private:
     MPI_Win win_svel_ = MPI_WIN_NULL;
@@ -87,8 +88,10 @@ private:
     WaveType wt_;
     int itype_;
     int nperiod_;
+    std::vector<bool> active_kernels_;  // which kernels are active for this SurfGrid (length NPARAMS, indexed by ker_loc)
 
     SurfGrid(WaveType wt, SurfType vt);
     void release_shm();
     void build_media_matrix_with_topo();
+    void setup_active_kernels();
 };

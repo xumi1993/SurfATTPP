@@ -353,9 +353,21 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
 
             //backup the current kernel before preconditioning and smoothing (used for LBFGS)
             if (IP.inversion().optim_method == OPTIM_LBFGS) {
-                for (int ipara = 0; ipara < NPARAMS; ++ipara) {
-                    if (is_active_param[ipara]) 
-                        ker_curr_[ipara] = ker_curr_[ipara] + sg.ker_loc[ipara] * IP.data().weights[itype];
+                const real_t wt_val = IP.data().weights[itype];
+                if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                    // For radial anisotropy, Love kernel lives in ker_loc[0] and contributes
+                    // to the gamma (index 5) direction; Rayleigh only updates vs/vp/rho.
+                    if (wt == WaveType::RL) {
+                        for (int ipara = 0; ipara < 3; ++ipara)
+                            if (is_active_param[ipara])
+                                ker_curr_[ipara] = ker_curr_[ipara] + sg.ker_loc[ipara] * wt_val;
+                    } else {
+                        ker_curr_[5] = ker_curr_[5] + sg.ker_loc[0] * wt_val;
+                    }
+                } else {
+                    for (int ipara = 0; ipara < NPARAMS; ++ipara)
+                        if (is_active_param[ipara])
+                            ker_curr_[ipara] = ker_curr_[ipara] + sg.ker_loc[ipara] * wt_val;
                 }
             }
 
@@ -404,7 +416,6 @@ void Inversion::store_model() {
     auto &mg  = ModelGrid::MG();
     auto &IP  = InputParams::IP();
     auto &mpi = Parallel::mpi();
-    auto &dcp = Decomposer::DCP();
 
     if (!mpi.is_main()) return;
 
@@ -423,8 +434,11 @@ void Inversion::store_model() {
         f.write_tensor("model_gs" + sfx, TMap(mg.gs3d, ngrid_i, ngrid_j, ngrid_k));
     }
     if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
-        Tensor3r _gamma3d = dcp.collect_data(mg.gamma3d_loc.data());  // gather the local gamma3d back to global for output
-        f.write_tensor("model_gamma" + sfx, _gamma3d);
+        // vsh3d and vs3d are already in global memory (collected by collect_model_loc)
+        TMap vsh_map(mg.vsh3d, ngrid_i, ngrid_j, ngrid_k);
+        TMap vs_map(mg.vs3d, ngrid_i, ngrid_j, ngrid_k);
+        Tensor3r gamma3d = vsh_map / vs_map;
+        f.write_tensor("model_gamma" + sfx, gamma3d);
     }
     // Gradients for iterations 0..iter_-1 have been written; current iter_ grad
     // is written later by store_gradient(), so last_grad_iter = iter_ - 1.

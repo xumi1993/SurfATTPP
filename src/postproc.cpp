@@ -509,10 +509,11 @@ void postproc::kernel_precondition(SurfGrid& sg) {
         );
 
     // Precondition the kernels by multiplying with the reference model parameters at each surface grid point
-    int nker = sg.ker_loc.size();
+    int nker = NPARAMS - 1;
     for (int iparam = 0; iparam < nker; ++iparam) {
-        if (sg.ker_loc[iparam].size() == 0) continue;  // skip if no kernels for this parameter
-        sg.ker_loc[iparam] = sg.ker_loc[iparam] * hess_inv;
+        if (sg.is_active_ker(iparam)) {
+            sg.ker_loc[iparam] = sg.ker_loc[iparam] * hess_inv;
+        }
     }
 }
 
@@ -524,11 +525,14 @@ FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
     std::string method_name = (IP.postproc().smooth_method == 0) ? "PDE smoothing" : "multigrid smoothing";
 
     logger.Info(fmt::format("Regularizing kernels with {}...", method_name), MODULE_POSTPROC);
-    FieldVec ker_loc_smooth(sg.ker_loc.size());
-    for (int iparam = 0; iparam < NPARAMS; ++iparam) {
-        if (sg.ker_loc[iparam].size() == 0) continue;
-        ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);
+    FieldVec ker_loc_smooth(NPARAMS);
+    for (int iparam = 0; iparam < NPARAMS - 1; ++iparam) {
+        if (sg.is_active_ker(iparam)) {
+            ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);
+        }
     }
+    if (sg.wave_type() == WaveType::LV)
+        ker_loc_smooth[NPARAMS - 1] = ker_loc_smooth[0];
     return ker_loc_smooth;
 }
 

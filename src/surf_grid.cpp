@@ -16,6 +16,8 @@ SurfGrid::SurfGrid(WaveType wt, SurfType vt){
     wt_ = wt;
     itype_ = static_cast<int>(vt);
     type_name_ = waveTypeStr[static_cast<int>(wt)] + "_" + surfTypeStr[itype_];
+    setup_active_kernels();
+
     auto& IP = InputParams::IP();
     auto& dcp = Decomposer::DCP();
 
@@ -76,6 +78,20 @@ SurfGrid::SurfGrid(WaveType wt, SurfType vt){
         }
     }
     mpi.barrier();
+}
+
+void SurfGrid::setup_active_kernels() {
+    auto& IP = InputParams::IP();
+    active_kernels_ = std::vector<bool>(NPARAMS-1, false);
+    active_kernels_[0] = true;  // vp
+    if (IP.inversion().use_alpha_beta_rho && wt_ == WaveType::RL) {
+        active_kernels_[1] = true;  // vs
+        active_kernels_[2] = true;  // rho
+    }
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI && wt_ == WaveType::RL) {
+        active_kernels_[3] = true;  // gc
+        active_kernels_[4] = true;  // gs
+    }
 }
 
 void SurfGrid::build_media_matrix_with_topo() {
@@ -272,7 +288,12 @@ void SurfGrid::compute_dispersion_kernel() {
             Eigen::VectorX<real_t> vp1d(ngrid_k);
             Eigen::VectorX<real_t> rho1d(ngrid_k);
             for (int k = 0; k < ngrid_k; ++k){
-                vs1d(k) = mg.vs3d_loc(ix, iy, k);
+                // For Love waves in radial anisotropy, dispersion depends on vsh
+                if (wt_ == WaveType::LV && IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                    vs1d(k) = mg.vsh3d_loc(ix, iy, k);
+                } else {
+                    vs1d(k) = mg.vs3d_loc(ix, iy, k);
+                }
                 if (IP.inversion().use_alpha_beta_rho) {
                     vp1d(k) = mg.vp3d_loc(ix, iy, k);
                     rho1d(k) = mg.rho3d_loc(ix, iy, k);

@@ -124,7 +124,7 @@ struct CbFwdArgs {
     double anom_size = 0.0;
     double max_noise = 0.0;
     bool   only_vs   = false;
-    bool   use_radial_ani = false;  // use radial anisotropy; if false, use azimuthal anisotropy (with -a)
+    int   model_type = 0;  // 0: isotropic, 1: azimuthal anisotropy, 2: radial anisotropy
 };
 
 struct RotateSrcRecArgs {
@@ -221,21 +221,19 @@ inline CbFwdArgs argparse_cb_fwd(int argc, char* argv[]) {
         auto [ncb_ani, ani_angle] = parse_3int_1double(*al.get("-a"));
         out.ncb_ani = ncb_ani;
         out.ani_angle = ani_angle;
-        out.use_radial_ani = false;
+        out.model_type = 1;
     } else if (has_rad_ani) {
         out.ncb_ani = out.ncb;  // use same as isotropic checkerboard
-        out.use_radial_ani = true;
+        out.model_type = 2;
     } else {
-        out.ncb_ani = out.ncb;  // default: same as -n
-        out.ani_angle = 120.0;
-        out.use_radial_ani = false;
+        out.model_type = 0;
     }
 
     if (auto v = al.get("-p")) {
         if (v->find('/') != std::string::npos) {
             auto pert = parse_2double(*v);
             out.pert_vel = pert[0];
-            if (out.use_radial_ani) {
+            if (out.model_type == 2) {
                 out.pert_zeta = pert[1];  // for radial anisotropy
             } else {
                 out.pert_ani = pert[1];   // for azimuthal anisotropy

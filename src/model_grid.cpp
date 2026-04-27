@@ -549,14 +549,13 @@ void ModelGrid::build_init_model() {
                     }
                 }
             }
-            std::cout << vsh3d[I2V(0, 0, 0)] << " " << vsh3d[I2V(0, 0, ngrid_k - 1)] << std::endl;
         }
         // write() guards itself with is_main() and calls mpi.barrier() internally,
         // so it must be called by all ranks — not inside if (mpi.is_main()).
         mpi.barrier();
     }
     if (IP.output().output_initial_model) {
-        write(std::string("initial_model.h5"));
+        write(INIT_MODEL_FNAME);
     }
 
     // Broadcast the model from main rank to all other ranks.
