@@ -155,19 +155,27 @@ public:
 
     // ---- 3-D volume (flat array, dims: ni × nj × nk, row-major on disk) ---
     // data must have exactly ni*nj*nk elements.
+
+    template<typename T>
+    void write_volume(const std::string &name,
+                      const T *data, hsize_t ni, hsize_t nj, hsize_t nk) {
+        ensure_not_readonly();
+        remove_if_exists(name);
+        hsize_t dims[3] = {ni, nj, nk};
+        H5::DataSpace sp(3, dims);
+        H5::DataSet   ds = file_.createDataSet(name, h5_type_of<T>(), sp);
+        ds.write(data, h5_type_of<T>());           
+    }
+
+    // Overload accepting std::vector<T> — delegates to the raw-pointer overload.
     template<typename T>
     void write_volume(const std::string &name,
                       const std::vector<T> &data,
                       hsize_t ni, hsize_t nj, hsize_t nk) {
-        ensure_not_readonly();
-        remove_if_exists(name);
         if (data.size() != ni * nj * nk)
             throw std::invalid_argument(
                 "H5IO::write_volume: data.size() != ni*nj*nk");
-        hsize_t dims[3] = {ni, nj, nk};
-        H5::DataSpace sp(3, dims);
-        H5::DataSet   ds = file_.createDataSet(name, h5_type_of<T>(), sp);
-        ds.write(data.data(), h5_type_of<T>());
+        write_volume(name, data.data(), ni, nj, nk);
     }
 
     // Read a 3-D dataset; ni/nj/nk are set to the actual dataset dimensions.

@@ -29,7 +29,7 @@ int main(int argc, char* argv[])
 
     // initialize logger
     ATTLogger::init(
-        std::format("{}/{}", IP.output().output_path, LOG_FNAME),
+        fmt::format("{}/{}", IP.output().output_path, LOG_FNAME),
         IP.output().log_level,
         false
     );

@@ -33,12 +33,12 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
     }
     logger.Info("1D inversion using averaged surface wave data", MODULE_INV1D);
     logger.Debug(
-        std::format("  nz={}, sigma={:.3f}, initial step_length={:.3e}, max_iter={}",
+        fmt::format("  nz={}, sigma={:.3f}, initial step_length={:.3e}, max_iter={}",
             nz, sigma, step_length, MAX_ITER_1D),
         MODULE_INV1D
     );
     logger.Debug(
-        std::format("  Initial Vs: min={:.4f}, max={:.4f} km/s",
+        fmt::format("  Initial Vs: min={:.4f}, max={:.4f} km/s",
             vs1d.minCoeff(), vs1d.maxCoeff()),
         MODULE_INV1D
     );
@@ -66,7 +66,7 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
             Eigen::VectorX<real_t> pred_vel = surfker::surfdisp(req);
             real_t misfit = 0.5 * (pred_vel - sr.periods_info.meanvel).array().square().sum();
             logger.Debug(
-                std::format("  iter {:3d} | {} misfit={:.6e} (weight={:.3f})",
+                fmt::format("  iter {:3d} | {} misfit={:.6e} (weight={:.3f})",
                     iter, (itype == 0 ? "PH" : "GR"), misfit, IP.data().weights[itype]),
                 MODULE_INV1D
             );
@@ -97,14 +97,14 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
         update_total = step_length * update_total / update_total.lpNorm<Eigen::Infinity>();
 
         logger.Debug(
-            std::format("Iteration {}: misfit = {:.6e}, step_length = {:.3e}", iter, misfits.back(), step_length),
+            fmt::format("Iteration {}: misfit = {:.6e}, step_length = {:.3e}", iter, misfits.back(), step_length),
             MODULE_INV1D
         );
 
         if (iter > 0) {
             real_t derr = std::abs(misfits[iter] - misfits[iter - 1]);
             logger.Debug(
-                std::format("  iter {:3d} | delta_misfit={:.3e} (tol={:.3e})",
+                fmt::format("  iter {:3d} | delta_misfit={:.3e} (tol={:.3e})",
                     iter, derr, TOL_1D),
                 MODULE_INV1D
             );
@@ -119,19 +119,19 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
 
     if (niter < MAX_ITER_1D) {
         logger.Info(
-            std::format("1D inversion converged after {} iterations, final misfit={:.6e}",
+            fmt::format("1D inversion converged after {} iterations, final misfit={:.6e}",
                 niter + 1, misfits.back()),
             MODULE_INV1D
         );
     } else {
         logger.Warn(
-            std::format("1D inversion reached max iterations ({}), final misfit={:.6e}",
+            fmt::format("1D inversion reached max iterations ({}), final misfit={:.6e}",
                 MAX_ITER_1D, misfits.back()),
             MODULE_INV1D
         );
     }
     logger.Debug(
-        std::format("  Final Vs: min={:.4f}, max={:.4f} km/s",
+        fmt::format("  Final Vs: min={:.4f}, max={:.4f} km/s",
             vs1d.minCoeff(), vs1d.maxCoeff()),
         MODULE_INV1D
     );

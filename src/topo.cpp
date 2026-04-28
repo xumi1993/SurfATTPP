@@ -83,7 +83,7 @@ void Topography::check_bounds(const Eigen::VectorX<real_t>& x,
     if (x_min < lon_min || x_max > lon_max ||
         y_min < lat_min || y_max > lat_max) {
         logger.Error(
-            std::format("Model grid extends beyond topography bounds: "
+            fmt::format("Model grid extends beyond topography bounds: "
                         "lon [{:.2f}, {:.2f}] vs topo [{:.2f}, {:.2f}]; "
                         "lat [{:.2f}, {:.2f}] vs topo [{:.2f}, {:.2f}]",
                         x_min, x_max, lon_min, lon_max,

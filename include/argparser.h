@@ -27,7 +27,7 @@ struct ArgList {
     bool empty() const { return args.empty(); }
 
     bool has(std::string flag) const {
-        return std::ranges::any_of(args, [&flag](const std::string& s) {
+        return std::any_of(args.begin(), args.end(), [&flag](const std::string& s) {
             return s == flag;
         });
     }
