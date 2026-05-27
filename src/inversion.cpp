@@ -527,11 +527,12 @@ bool Inversion::line_search() {
             restart_flag = true;
             return restart_flag;
         }
+    } else {
+        alpha_ = IP.inversion().step_length; // use initial step length for the first iteration
     }
 
     ker_prev_ = ker_curr_;
 
-    alpha_ = IP.inversion().step_length;
     int sub_iter = 0;
     alpha_R_ = _0_CR;
     alpha_L_ = _0_CR;
