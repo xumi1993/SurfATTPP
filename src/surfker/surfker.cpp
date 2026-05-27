@@ -42,7 +42,7 @@ surfker::DispersionRequest refine_request(
 
     surfker::DispersionRequest req;
     req.iflsph = iflsph;
-    req.EarthModel = (iflsph == 1) ? EarthModel::Spherical : EarthModel::Flat;  // hardcoded for now; can be made user-configurable if needed
+    req.earthModel = (iflsph == 1) ? EarthModel::Spherical : EarthModel::Flat;  // hardcoded for now; can be made user-configurable if needed
     req.iwave = iwave;
     req.mode = mode;
     req.igr = igr;
@@ -136,7 +136,7 @@ DepthKernel1D depthkernel_rayleigh_phase(const DispersionRequest& req) {
         double cp_val = cp[i];
         RayleighEigenResult result =rayleighPhaseKernel(
             mmax, rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-            t_val, cp_val, req.EarthModel
+            t_val, cp_val, req.earthModel
         );
 
         // Extract kernel for this period (first nz layers, skip halfspace)
@@ -205,7 +205,7 @@ DepthKernel1D depthkernel_rayleigh_group(const DispersionRequest& req) {
 
         RayleighGroupKernelResult result = rayleighGroupKernel(
             mmax, rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-            t_val, cp_val, t1_val, cp1_val, t2_val, cp2_val, req.EarthModel
+            t_val, cp_val, t1_val, cp1_val, t2_val, cp2_val, req.earthModel
         );
 
         // Extract group velocity kernels (first nz layers, skip halfspace)
@@ -252,7 +252,7 @@ DepthKernel1D depthkernel_love_phase(const DispersionRequest& req) {
 
         LoveEigenResult result = lovePhaseKernel(
             mmax, rthk.data(), rvs.data(), rrho.data(),
-            t_val, cp_val, req.EarthModel
+            t_val, cp_val, req.earthModel
         );
 
         // Extract kernel for this period (first nz layers, skip halfspace)
@@ -315,7 +315,7 @@ DepthKernel1D depthkernel_love_group(const DispersionRequest& req) {
         LoveGroupKernelResult result = loveGroupKernel(
             mmax, rthk.data(), rvs.data(), rrho.data(),
             t_val, cp_val, t1_val, cp1_val,
-            t2_val, cp2_val, req.EarthModel
+            t2_val, cp2_val, req.earthModel
         );
 
         for (int j = 0; j < nz; ++j) {
@@ -418,7 +418,7 @@ DepthKernel1D depthkernelHTI1d(const DispersionRequest& req) {
         double cp_val = cp[i];
         HTIResult result = rayleighPhaseKernel_hti(
             mmax, rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-            t_val, cp_val, req.EarthModel
+            t_val, cp_val, req.earthModel
         );
 
         for (int j = 0; j < nz; ++j) {
