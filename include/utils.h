@@ -7,6 +7,7 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <cmath>
 #include <filesystem>
+#include <iomanip>
 
 // ---------------------------------------------------------------------------
 // Helpers
