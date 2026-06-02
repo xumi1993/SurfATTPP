@@ -82,14 +82,23 @@ constexpr int FORWARD_ONLY = 0;
 constexpr int INVERSION_MODE = 1;
 constexpr int N_KER_ISO = 3;  // number of isotropic kernel types (vp, vs, rho)
 constexpr int N_KER_ANI = 5;  // number of anisotropic kernel types (gc, gs)
-enum class surfType { PH = 0, GR = 1 };
+enum class SurfType { PH = 0, GR = 1 };
 inline std::vector<std::string> surfTypeStr = {"PH", "GR"};
+enum class WaveType { RL = 0, LV = 1 };  // Rayleigh, Love
+inline std::vector<std::string> waveTypeStr = {"RL", "LV"};
+enum class EarthModel {Flat, Spherical};
+// Map WaveType to the integer iwave code expected by surfdisp96:
+//   iwave = 1 → Love, iwave = 2 → Rayleigh
+inline int iwave_of(WaveType wt) { return (wt == WaveType::RL) ? 2 : 1; }
 constexpr real_t RHO_SCALING = 0.33;
 constexpr int OPTIM_SD = 0;
 constexpr int OPTIM_LBFGS = 1;
 constexpr int MAX_LBFGS_STORE = 5;
-constexpr int NPARAMS = 5; // vs, vp, rho, gc, gs
-inline const std::array<const char *, NPARAMS> pnames = {"vs", "vp", "rho", "gc", "gs"};
+constexpr int NPARAMS = 6; // vs, vp, rho, gc, gs, gamma
+constexpr int MODEL_ISO = 0;
+constexpr int MODEL_AZI_ANI = 1;
+constexpr int MODEL_RADIAL_ANI = 2;
+inline const std::array<const char *, NPARAMS> pnames = {"vs", "vp", "rho", "gc", "gs", "gamma"};
 inline std::vector<bool> is_active_param(NPARAMS, false); // vs, vp, rho are active by default; gc, gs are inactive by default
 constexpr int BREAK_ITER = 5;  // convergence tolerance for relative misfit reduction
 constexpr real_t MAX_DESC_ANGLE = 92; // maximum allowable descent angle for L-BFGS restart logic

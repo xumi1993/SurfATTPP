@@ -12,11 +12,26 @@
 // ---------------------------------------------------------------------------
 
 struct DataParams {
-    std::string src_rec_file_ph;   // source-receiver file for phase velocity
-    std::string src_rec_file_gr;   // source-receiver file for group velocity (optional)
-    int         iwave;             // 1 = Love, 2 = Rayleigh
-    std::vector<bool>   vel_type = {false, false};  // [use_phase, use_group]
-    std::vector<real_t> weights = {_1_CR, _1_CR};   // [weight_phase, weight_group]
+    // Per-wave-type source-receiver files (phase / group each)
+    std::string src_rec_file_rl_ph;   // Rayleigh, phase velocity
+    std::string src_rec_file_rl_gr;   // Rayleigh, group velocity
+    std::string src_rec_file_lv_ph;   // Love, phase velocity
+    std::string src_rec_file_lv_gr;   // Love, group velocity
+
+    std::vector<bool>   wave_type = {true, false};   // [use_rayleigh, use_love]
+    std::vector<bool>   vel_type  = {true, false};   // [use_phase, use_group]
+    std::vector<real_t> weights   = {_1_CR, _1_CR};  // [weight_phase, weight_group]
+
+    // Activated (wave, velocity-type) combinations, determined once in load_data().
+    // All downstream loops iterate this vector instead of re-checking flags.
+    std::vector<std::pair<WaveType, SurfType>> active_data;
+
+    // Resolve the src_rec CSV path for a given (wave, vel) pair.
+    const std::string& file_of(WaveType wt, SurfType vt) const {
+        if (wt == WaveType::RL)
+            return (vt == SurfType::PH) ? src_rec_file_rl_ph : src_rec_file_rl_gr;
+        return (vt == SurfType::PH) ? src_rec_file_lv_ph : src_rec_file_lv_gr;
+    }
 };
 
 struct OutputParams {
@@ -64,7 +79,7 @@ struct PostprocParams {
 
 struct InversionParams {
     // model parametrisation
-    bool is_anisotropy;
+    int model_para_type;  // 0 Isotropic, 1, Azimuthal anisotropy, 2 Radial isotropic
     bool use_alpha_beta_rho;
     bool rho_scaling;
     std::vector<real_t> vpvs_ratio_range;
@@ -146,6 +161,10 @@ public:
 
     const YAML::Node &root() const { return root_; }
 
+    inline void set_model_para_type(int mpt) {
+        model_.init_model_type = mpt;
+    }
+
 private:
     static std::unique_ptr<InputParams> &get_IP_ptr() {
         static std::unique_ptr<InputParams> IP;
@@ -172,6 +191,10 @@ private:
     void load_inversion(const YAML::Node &n);
     void load_postproc(const YAML::Node &n);
     void load_model(const YAML::Node &n);
+
+    // Cross-section validation run after all sections are loaded.
+    // Throws std::runtime_error for illegal (wave_type × model_para_type) combos.
+    void validate();
 
     void bcast_data();
     void bcast_output();

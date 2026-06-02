@@ -12,7 +12,7 @@
  *   mpirun -n 1 ./bin/test_surfdisp
  */
 
-#include "surfdisp.h"
+#include "surfker/surfker.hpp"
 #include "parallel.h"
 #include "h5io.h"
 

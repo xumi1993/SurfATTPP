@@ -46,6 +46,12 @@ private:
         return instance;
     }
 
+    void accumulate_smoothed_gradient(
+        WaveType wt,
+        int itype,
+        real_t chi,
+        const FieldVec &ker_smooth
+    );
     real_t run_forward_adjoint(const bool is_calc_adj);
     void init_iteration();
     void steepest_descent();
@@ -60,6 +66,7 @@ private:
     void alpha_clamp();
 
     std::ofstream obj_file_;  // objective function log; open only on main rank
+    std::string   xdmf_fname_;
 
     Tensor3r model_update_;
     FieldVec ker_curr_, ker_prev_;
@@ -72,4 +79,8 @@ private:
     int    iter_start_ = 0;
     real_t alpha_, alpha_R_, alpha_L_;
     bool   gradient_reuse_ = false;
+
+    inline void convert_radial_kl() {
+        gradient_[0] = gradient_[0] + gradient_[5]; // vs kernel
+    }
 };
