@@ -206,7 +206,7 @@ void InputParams::validate() {
     auto &mpi = Parallel::mpi();
 
 
-    if (abr && mpt == use_lv) {
+    if (abr && use_lv) {
         std::cout << "InputParams: alpha-beta-rho parametrisation is not compatible with love-wave inverision " << std::endl;
         mpi.abort(EXIT_FAILURE);
     }

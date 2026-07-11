@@ -21,7 +21,7 @@ output:
   log_level: 2 # 1 debug mode, 2: info mode, 3: warning mode, 4: error mode
 
 domain:
-  depth_min_max: [0, 15] # depth range in km
+  depth_min_max: [0, 8] # depth range in km
   grid_method: 0 # 0: grid by interval; 1: grid by min max and number of grid
   grid_method_0:
     interval: [0.02, 0.02, 0.5] # interval of lon(degree), lat(degree), z(km)

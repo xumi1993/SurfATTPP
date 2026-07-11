@@ -24,6 +24,10 @@ _deps/
 *.dll
 *.exe
 
+# Claude Code
+.claude/
+CLAUDE.md
+
 # IDE and editor
 .vscode/
 .idea/
@@ -61,3 +65,4 @@ hawaii*.nc
 OUTPUT_FILES*/
 check*.ipynb
 version.h
+develop/
