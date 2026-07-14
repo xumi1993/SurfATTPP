@@ -1,5 +1,6 @@
 #include "input_params.h"
 
+#include <iostream>
 #include <sstream>
 
 // ---------------------------------------------------------------------------
@@ -34,11 +35,42 @@ static T opt(const YAML::Node &n, const std::string &field, T def) {
 // ---------------------------------------------------------------------------
 
 void InputParams::load_data(const YAML::Node &n) {
-    data_.src_rec_file_ph = req<std::string>(n, "src_rec_file_ph");
-    data_.src_rec_file_gr = opt<std::string>(n, "src_rec_file_gr", "");
-    data_.iwave           = req<int>(n, "iwave");
-    data_.vel_type        = req<std::vector<bool>>(n, "vel_type");
-    data_.weights         = req<std::vector<real_t>>(n, "weights");
+    data_.src_rec_file_rl_ph = opt<std::string>(n, "src_rec_file_rl_ph", "");
+    data_.src_rec_file_rl_gr = opt<std::string>(n, "src_rec_file_rl_gr", "");
+    data_.src_rec_file_lv_ph = opt<std::string>(n, "src_rec_file_lv_ph", "");
+    data_.src_rec_file_lv_gr = opt<std::string>(n, "src_rec_file_lv_gr", "");
+
+    data_.wave_type = opt<std::vector<bool>>(n, "wave_type", {true, false});
+    data_.vel_type  = req<std::vector<bool>>(n, "vel_type");
+    data_.weights   = req<std::vector<real_t>>(n, "weights");
+
+    // Build the list of (wave, velocity-type) pairs actually activated.
+    const bool use_rl = data_.wave_type.size() > 0 ? data_.wave_type[0] : false;
+    const bool use_lv = data_.wave_type.size() > 1 ? data_.wave_type[1] : false;
+    const bool use_ph = data_.vel_type.size()  > 0 ? data_.vel_type[0]  : false;
+    const bool use_gr = data_.vel_type.size()  > 1 ? data_.vel_type[1]  : false;
+
+    data_.active_data.clear();
+    if (use_rl && use_ph) data_.active_data.emplace_back(WaveType::RL, SurfType::PH);
+    if (use_rl && use_gr) data_.active_data.emplace_back(WaveType::RL, SurfType::GR);
+    if (use_lv && use_ph) data_.active_data.emplace_back(WaveType::LV, SurfType::PH);
+    if (use_lv && use_gr) data_.active_data.emplace_back(WaveType::LV, SurfType::GR);
+
+    // Require a file path for every activated (wave, vel) combination.
+    auto file_of = [&](WaveType wt, SurfType vt) -> const std::string& {
+        if (wt == WaveType::RL)
+            return (vt == SurfType::PH) ? data_.src_rec_file_rl_ph : data_.src_rec_file_rl_gr;
+        return (vt == SurfType::PH) ? data_.src_rec_file_lv_ph : data_.src_rec_file_lv_gr;
+    };
+    for (auto [wt, vt] : data_.active_data) {
+        if (file_of(wt, vt).empty()) {
+            throw std::runtime_error(
+                "InputParams: activated data (" +
+                waveTypeStr[static_cast<int>(wt)] + "_" +
+                surfTypeStr[static_cast<int>(vt)] +
+                ") has no src_rec file configured");
+        }
+    }
 }
 
 void InputParams::load_output(const YAML::Node &n) {
@@ -116,7 +148,7 @@ void InputParams::load_postproc(const YAML::Node &n) {
 }
 
 void InputParams::load_inversion(const YAML::Node &n) {
-    inversion_.is_anisotropy      = opt<bool>(n, "is_anisotropy", false);
+    inversion_.model_para_type    = opt<int>(n, "model_para_type", MODEL_ISO);
     inversion_.use_alpha_beta_rho = req<bool>(n, "use_alpha_beta_rho");
     inversion_.rho_scaling        = req<bool>(n, "rho_scaling");
     inversion_.vpvs_ratio_range   = opt<std::vector<real_t>>(n, "vpvs_ratio_range", {1.3, 2.5});
@@ -161,6 +193,52 @@ InputParams::InputParams(const std::string &filepath)
     load_topo(require_section("topo"));
     load_postproc(require_section("postproc"));
     load_inversion(require_section("inversion"));
+    validate();
+}
+
+void InputParams::validate() {
+    const bool use_rl = data_.wave_type.size() > 0 && data_.wave_type[0];
+    const bool use_lv = data_.wave_type.size() > 1 && data_.wave_type[1];
+    const bool use_ph = data_.vel_type.size()  > 0 && data_.vel_type[0];
+    const bool use_gr = data_.vel_type.size()  > 1 && data_.vel_type[1];
+    const int  mpt    = inversion_.model_para_type;
+    const bool abr    = inversion_.use_alpha_beta_rho;
+    auto &mpi = Parallel::mpi();
+
+
+    if (abr && use_lv) {
+        std::cout << "InputParams: alpha-beta-rho parametrisation is not compatible with love-wave inverision " << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (use_gr && mpt != MODEL_ISO) {
+        std::cout << "InputParams: group velocity data is not compatible with anisotropic inversion "
+                  << "(set model_para_type to 0 for isotropic)" << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (!(use_ph && use_rl) && mpt == MODEL_AZI_ANI) {
+        std::cout << "InputParams: azimuthal anisotropy is not compatible with love-wave or group velocity inversion " << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (!use_rl && !use_lv) {
+        std::cout << "InputParams: wave_type has no active component "
+                  << "(set at least one of [use_rayleigh, use_love] to true)" << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (mpt == MODEL_RADIAL_ANI && !(use_rl && use_lv)) {
+        std::cout << "InputParams: radial anisotropy requires both Rayleigh and Love data "
+                  << "(wave_type must be [true, true])" << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    if (mpt != MODEL_RADIAL_ANI && use_rl && use_lv) {
+        std::cout << "InputParams: joint Love+Rayleigh inversion is only valid for radial anisotropy "
+                  << "(set model_para_type to 2 for radial anisotropy)" << std::endl;
+        mpi.abort(EXIT_FAILURE);
+    }
 }
 
 YAML::Node InputParams::resolve(const std::string &key) const {
@@ -188,11 +266,32 @@ bool InputParams::has(const std::string &key) const {
 // Convenience: resize a vector on non-main ranks then broadcast its data.
 void InputParams::bcast_data() {
     auto &mpi = Parallel::mpi();
-    mpi.bcast(data_.src_rec_file_ph);
-    mpi.bcast(data_.src_rec_file_gr);
-    mpi.bcast(data_.iwave);
+    mpi.bcast(data_.src_rec_file_rl_ph);
+    mpi.bcast(data_.src_rec_file_rl_gr);
+    mpi.bcast(data_.src_rec_file_lv_ph);
+    mpi.bcast(data_.src_rec_file_lv_gr);
+    mpi.bcast_bool_vec(data_.wave_type);
     mpi.bcast_bool_vec(data_.vel_type);
     mpi.bcast_vec(data_.weights);
+
+    // active_data: serialize as two int vectors, rebuild on non-main ranks.
+    std::vector<int> wts, vts;
+    if (mpi.is_main()) {
+        for (auto [wt, vt] : data_.active_data) {
+            wts.push_back(static_cast<int>(wt));
+            vts.push_back(static_cast<int>(vt));
+        }
+    }
+    mpi.bcast_vec(wts);
+    mpi.bcast_vec(vts);
+    if (!mpi.is_main()) {
+        data_.active_data.clear();
+        for (size_t i = 0; i < wts.size(); ++i) {
+            data_.active_data.emplace_back(
+                static_cast<WaveType>(wts[i]),
+                static_cast<SurfType>(vts[i]));
+        }
+    }
 }
 
 void InputParams::bcast_output() {
@@ -244,7 +343,7 @@ void InputParams::bcast_postproc() {
 
 void InputParams::bcast_inversion() {
     auto &mpi = Parallel::mpi();
-    mpi.bcast(inversion_.is_anisotropy);
+    mpi.bcast(inversion_.model_para_type);
     mpi.bcast(inversion_.use_alpha_beta_rho);
     mpi.bcast(inversion_.rho_scaling);
     mpi.bcast_vec(inversion_.vpvs_ratio_range);

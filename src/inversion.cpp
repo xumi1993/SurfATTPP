@@ -5,6 +5,7 @@
 #include "h5io.h"
 #include "optimize.h"
 #include "src_rec.h"
+#include "xdmf.h"
 #include <fstream>
 
 static void distribute_model_para(){
@@ -16,9 +17,13 @@ static void distribute_model_para(){
     mg.vs3d_loc = dcp.distribute_data(mg.vs3d);
     mg.vp3d_loc = dcp.distribute_data(mg.vp3d);
     mg.rho3d_loc = dcp.distribute_data(mg.rho3d);
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {  // azimuthal anisotropy
         mg.gc3d_loc = dcp.distribute_data(mg.gc3d);
         mg.gs3d_loc = dcp.distribute_data(mg.gs3d);
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {  // radial anisotropy
+        mg.vsh3d_loc = dcp.distribute_data(mg.vsh3d);
+        mg.gamma3d_loc = mg.vsh3d_loc / mg.vs3d_loc;  // convert to gamma for radial anisotropy parameterization
     }
 }
 
@@ -35,20 +40,36 @@ Inversion::Inversion() {
 
         if (mpi.is_main()) {
             try {
+                auto &mg = ModelGrid::MG();
                 H5IO f(db_fname, H5IO::TRUNC);
+                f.write_vector("x", mg.xgrids);
+                f.write_vector("y", mg.ygrids);
+                f.write_vector("z", mg.zgrids);
+
+                // Uniform-scale coordinates: convert lon/lat (degrees) to km so
+                // all three axes share the same unit for undistorted visualization.
+                const Eigen::VectorX<real_t> cos_lat  = (mg.ygrids.array() * DEG2RAD).cos();
+                Eigen::VectorX<real_t> x_km =
+                    (mg.xgrids.array() - mg.xgrids(0)) * DEG2RAD * R_EARTH * cos_lat.array();
+                Eigen::VectorX<real_t> y_km =
+                    (mg.ygrids.array() - mg.ygrids(0)) * DEG2RAD * R_EARTH;
+                f.write_vector("x_km", x_km);
+                f.write_vector("y_km", y_km);
             } catch (const std::exception &e) {
                 logger.Error(fmt::format("Failed to create HDF5 file for model history: {}", e.what()), MODULE_INV);
                 logger.Error("Check if the output path exists and is writable, or delete the existing file.", MODULE_INV);
                 mpi.abort(EXIT_FAILURE);
             }
         }
+        xdmf_fname_ = fmt::format("{}/model_iter.xdmf", IP.output().output_path);
 
         // Create empty datasets for model and gradient history. These will be resized and filled during the inversion iterations.
         is_active_param[0] = true; // vs is always active
         is_active_param[1] = IP.inversion().use_alpha_beta_rho; // vp active if use_alpha_beta_rho is true
         is_active_param[2] = IP.inversion().use_alpha_beta_rho; // rho active if use_alpha_beta_rho is true
-        is_active_param[3] = IP.inversion().is_anisotropy; // gc active if is_anisotropy is true
-        is_active_param[4] = IP.inversion().is_anisotropy; // gs active if is_anisotropy is true
+        is_active_param[3] = IP.inversion().model_para_type == MODEL_AZI_ANI; // gc active if model_para_type is azimuthal anisotropy
+        is_active_param[4] = IP.inversion().model_para_type == MODEL_AZI_ANI; // gs active if model_para_type is azimuthal anisotropy
+        is_active_param[5] = IP.inversion().model_para_type == MODEL_RADIAL_ANI; // gamma active if model_para_type is radial anisotropy
         gradient_.assign(NPARAMS, Tensor3r());
         for (int p = 0; p < NPARAMS; ++p) {
             if (is_active_param[p]) {
@@ -80,8 +101,13 @@ Inversion::Inversion() {
                 mpi.abort(EXIT_FAILURE);
             } else {
                 obj_file_ << std::unitbuf;  // flush after every write operation
-                obj_file_ << fmt::format("{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
-                    "iter", "misfit", "res_ph_mean", "res_ph_std", "res_gr_mean", "res_gr_std", "alpha");
+                obj_file_ << fmt::format(
+                    "{:<6} {:>14} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12}\n",
+                    "iter", "misfit",
+                    "res_rl_ph_mean", "res_rl_ph_std", "res_rl_gr_mean", "res_rl_gr_std",
+                    "res_lv_ph_mean", "res_lv_ph_std", "res_lv_gr_mean", "res_lv_gr_std",
+                    "step_length"
+                );
             }
         }
     }
@@ -98,15 +124,35 @@ void Inversion::run_forward() {
 void Inversion::write_obj_line()
 {
     auto &mpi = Parallel::mpi();
+    auto &IP  = InputParams::IP();
 
-    // compute_residual_stats() uses MPI allreduce — all ranks must call it.
-    // events_local is empty for disabled types so the result is naturally {0, 0}.
-    auto ph_stats = SrcRec::SR_ph().compute_residual_stats();
-    auto gr_stats = SrcRec::SR_gr().compute_residual_stats();
+    // compute_residual_stats() uses MPI allreduce — all ranks must call it
+    // the same number of times, so we iterate every active (wt, vt) entry.
+    ResidualStats rl_ph_stats{_0_CR, _0_CR};
+    ResidualStats rl_gr_stats{_0_CR, _0_CR};
+    ResidualStats lv_ph_stats{_0_CR, _0_CR};
+    ResidualStats lv_gr_stats{_0_CR, _0_CR};
+    for (auto [wt, vt] : IP.data().active_data) {
+        auto stats = SrcRec::SR(wt, vt).compute_residual_stats();
+        if (wt == WaveType::RL && vt == SurfType::PH) {
+            rl_ph_stats = stats;
+        } else if (wt == WaveType::RL && vt == SurfType::GR) {
+            rl_gr_stats = stats;
+        } else if (wt == WaveType::LV && vt == SurfType::PH) {
+            lv_ph_stats = stats;
+        } else if (wt == WaveType::LV && vt == SurfType::GR) {
+            lv_gr_stats = stats;
+        }
+    }
 
     if (mpi.is_main() && obj_file_)
-        obj_file_ << fmt::format("{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
-            iter_, misfit_[iter_], ph_stats.mean, ph_stats.stddev, gr_stats.mean, gr_stats.stddev, alpha_);
+        obj_file_ << fmt::format(
+            "{:<6d} {:>14.6e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.4e} {:>12.6f}\n",
+            iter_, misfit_[iter_],
+            rl_ph_stats.mean, rl_ph_stats.stddev, rl_gr_stats.mean, rl_gr_stats.stddev,
+            lv_ph_stats.mean, lv_ph_stats.stddev, lv_gr_stats.mean, lv_gr_stats.stddev,
+            alpha_
+        );
 }
 
 void Inversion::run_inversion() {
@@ -242,16 +288,48 @@ bool Inversion::check_convergence() {
     return break_flag;
 }
 
+void Inversion::accumulate_smoothed_gradient(
+    WaveType wt,
+    int itype,
+    real_t chi,
+    const FieldVec &ker_smooth
+) {
+    auto &IP = InputParams::IP();
+    const int model_para_type = IP.inversion().model_para_type;
+    const real_t grad_scale = IP.data().weights[itype] / chi;
+    auto accumulate_grad = [&](int ipara, bool check_active = true) {
+        if (!check_active || is_active_param[ipara]) {
+            gradient_[ipara] += ker_smooth[ipara] * grad_scale;
+        }
+    };
+
+    if (model_para_type == MODEL_RADIAL_ANI) {
+        if (wt == WaveType::RL) {
+            for (int ipara = 0; ipara < 3; ++ipara) {
+                accumulate_grad(ipara, true);
+            }
+        } else if (wt == WaveType::LV) {
+            // Keep previous behavior: gamma term is always accumulated for Love in radial anisotropy.
+            accumulate_grad(NPARAMS - 1, false);
+        }
+        return;
+    }
+
+    const int ipara_end = (model_para_type == MODEL_AZI_ANI) ? (NPARAMS - 1) : NPARAMS;
+    for (int ipara = 0; ipara < ipara_end; ++ipara) {
+        accumulate_grad(ipara, true);
+    }
+}
+
 real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
     auto& IP = InputParams::IP();
     auto& mpi = Parallel::mpi();
 
     real_t misfit_total = _0_CR;
-    for (surfType tp : {surfType::PH, surfType::GR}) {
+    for (auto [wt, tp] : IP.data().active_data) {
         int itype = static_cast<int>(tp);
-        if (!IP.data().vel_type[itype]) continue;
-        auto &sg = (tp == surfType::PH) ? SurfGrid::SG_ph() : SurfGrid::SG_gr();
-        auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+        auto &sg = SurfGrid::SG(wt, tp);
+        auto &sr = SrcRec::SR(wt, tp);
 
         // Reset kernel accumulators before processing this type of data
         preproc::reset_kernel_accumulators(sg);
@@ -275,9 +353,21 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
 
             //backup the current kernel before preconditioning and smoothing (used for LBFGS)
             if (IP.inversion().optim_method == OPTIM_LBFGS) {
-                for (int ipara = 0; ipara < NPARAMS; ++ipara) {
-                    if (is_active_param[ipara]) 
-                        ker_curr_[ipara] = ker_curr_[ipara] + sg.ker_loc[ipara] * IP.data().weights[itype];
+                const real_t wt_val = IP.data().weights[itype];
+                if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                    // For radial anisotropy, Love kernel lives in ker_loc[0] and contributes
+                    // to the gamma (index 5) direction; Rayleigh only updates vs/vp/rho.
+                    if (wt == WaveType::RL) {
+                        for (int ipara = 0; ipara < 3; ++ipara)
+                            if (is_active_param[ipara])
+                                ker_curr_[ipara] = ker_curr_[ipara] + sg.ker_loc[ipara] * wt_val;
+                    } else {
+                        ker_curr_[5] = ker_curr_[5] + sg.ker_loc[0] * wt_val;
+                    }
+                } else {
+                    for (int ipara = 0; ipara < NPARAMS; ++ipara)
+                        if (is_active_param[ipara])
+                            ker_curr_[ipara] = ker_curr_[ipara] + sg.ker_loc[ipara] * wt_val;
                 }
             }
 
@@ -287,13 +377,12 @@ real_t Inversion::run_forward_adjoint(const bool is_calc_adj) {
             // smooth the kernels if needed
             auto ker_smooth = postproc::kernel_smooth(sg);
 
-            for (int ipara = 0; ipara < NPARAMS; ++ipara) {
-                // Accumulate the smoothed kernel into the gradient for this parameter
-                if (is_active_param[ipara]) {
-                    gradient_[ipara] = gradient_[ipara] + ker_smooth[ipara] * IP.data().weights[itype] / chi;
-                }
-            }
+            accumulate_smoothed_gradient(wt, itype, chi, ker_smooth);
         }
+        mpi.barrier();
+    }
+    if (run_mode == INVERSION_MODE && IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        convert_radial_kl();
         mpi.barrier();
     }
     return misfit_total;
@@ -340,10 +429,22 @@ void Inversion::store_model() {
         f.write_tensor("model_vp"  + sfx, TMap(mg.vp3d,  ngrid_i, ngrid_j, ngrid_k));
         f.write_tensor("model_rho" + sfx, TMap(mg.rho3d, ngrid_i, ngrid_j, ngrid_k));
     }
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         f.write_tensor("model_gc" + sfx, TMap(mg.gc3d, ngrid_i, ngrid_j, ngrid_k));
         f.write_tensor("model_gs" + sfx, TMap(mg.gs3d, ngrid_i, ngrid_j, ngrid_k));
     }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        // vsh3d and vs3d are already in global memory (collected by collect_model_loc)
+        TMap vsh_map(mg.vsh3d, ngrid_i, ngrid_j, ngrid_k);
+        TMap vs_map(mg.vs3d, ngrid_i, ngrid_j, ngrid_k);
+        Tensor3r gamma3d = vsh_map / vs_map;
+        f.write_tensor("model_gamma" + sfx, gamma3d);
+    }
+    // Gradients for iterations 0..iter_-1 have been written; current iter_ grad
+    // is written later by store_gradient(), so last_grad_iter = iter_ - 1.
+    const bool grads_enabled = IP.output().output_in_process_model
+                                || IP.inversion().optim_method == OPTIM_LBFGS;
+    xdmf::write_model_iter(xdmf_fname_, iter_, grads_enabled ? iter_ - 1 : -1);
 }
 
 // Save the current (normalised) gradient to db_fname.
@@ -368,6 +469,10 @@ void Inversion::store_gradient() {
         if (is_active_param[i])
             f.write_tensor(std::string("grad_") + pnames[i] + sfx, grad_all[i]);
     }
+    // grad_vs_{iter_} is now in HDF5; update XDMF so all stored iterations
+    // (0..iter_) show both model and gradient fields.
+    if (!xdmf_fname_.empty())
+        xdmf::write_model_iter(xdmf_fname_, iter_, iter_);
 }
 
 void Inversion::steepest_descent() {
@@ -422,11 +527,12 @@ bool Inversion::line_search() {
             restart_flag = true;
             return restart_flag;
         }
+    } else {
+        alpha_ = IP.inversion().step_length; // use initial step length for the first iteration
     }
 
     ker_prev_ = ker_curr_;
 
-    alpha_ = IP.inversion().step_length;
     int sub_iter = 0;
     alpha_R_ = _0_CR;
     alpha_L_ = _0_CR;
@@ -495,9 +601,13 @@ void Inversion::model_update(FieldVec &dir) {
         mg.vp3d_loc  = vs2vp(mg.vs3d_loc);
         mg.rho3d_loc = vp2rho(mg.vp3d_loc);
     }
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         mg.gc3d_loc = mg.gc3d_loc - alpha_ * dir[3];
         mg.gs3d_loc = mg.gs3d_loc - alpha_ * dir[4];
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mg.gamma3d_loc = mg.gamma3d_loc * (1 - alpha_ * dir[5]);
+        mg.vsh3d_loc = mg.vs3d_loc * mg.gamma3d_loc;
     }
     mpi.barrier();
 }
@@ -519,21 +629,21 @@ void Inversion::write_src_rec_fwd(){
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    for (surfType tp : {surfType::PH, surfType::GR}) {
+    for (auto [wt, tp] : IP.data().active_data) {
         int itype = static_cast<int>(tp);
-        if (!IP.data().vel_type[itype]) continue;
-        auto &sr = (tp == surfType::PH) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+        auto &sr = SrcRec::SR(wt, tp);
+        const std::string tag = waveTypeStr[static_cast<int>(wt)] + "_" + surfTypeStr[itype];
         // gather synthetic travel times to the main rank for output and inversion steps
-        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data || 
+        if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data ||
             (run_mode == INVERSION_MODE && iter_ == IP.inversion().niter - 1) ||
             (run_mode == INVERSION_MODE && iter_ == 0)) {
             logger.Info(fmt::format(
-                "Gathering synthetic {} travel times to the main rank for output...", surfTypeStr[itype]), MODULE_PREPROC
+                "Gathering synthetic {} travel times to the main rank for output...", tag), MODULE_PREPROC
             );
             sr.gather_syn_tt();
-            std::string sfx = surfTypeStr[itype];
+            std::string sfx = tag;
             if (run_mode == INVERSION_MODE)
-                sfx = fmt::format("{}_{:03d}", surfTypeStr[itype], iter_);
+                sfx = fmt::format("{}_{:03d}", tag, iter_);
             sr.write(
                 fmt::format("{}/{}_{}.csv", IP.output().output_path, FORWARD_FILE_PREFIX, sfx), true
             );

@@ -190,9 +190,12 @@ void ModelGrid::allocate_model_grids() {
     mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vp3d, win_vp_);
     mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vs3d, win_vs_);
     mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, rho3d, win_rho_);
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {  // azimuthal anisotropy
         mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gc3d, win_gc_);
         mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, gs3d, win_gs_);
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mpi.alloc_shared(ngrid_i * ngrid_j * ngrid_k, vsh3d, win_vsh_);
     }
     // Always allocate local model slices; they are needed by fwdsurf() in both
     // FORWARD_ONLY and INVERSION_MODE.
@@ -202,11 +205,17 @@ void ModelGrid::allocate_model_grids() {
     vs3d_loc.setZero();
     vp3d_loc.setZero();
     rho3d_loc.setZero();
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         gc3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         gs3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
         gc3d_loc.setZero();
         gs3d_loc.setZero();
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        vsh3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        gamma3d_loc = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+        vsh3d_loc.setZero();
+        gamma3d_loc.setZero();
     }
 }
 
@@ -222,10 +231,24 @@ void ModelGrid::build_1d_model_linear() {
 
 // Refine the linear starting model via 1-D surface-wave inversion.
 // The linear profile is used as the initial guess.
-void ModelGrid::build_1d_model_inversion() {    
+void ModelGrid::build_1d_model_inversion() {
     build_1d_model_linear();
-    auto inv1d = std::make_unique<Inversion1D>();
-    vs1d = inv1d->inv1d(zgrids, vs1d);
+    const auto &IP = InputParams::IP();
+
+    std::vector<Eigen::VectorX<real_t>> v1d_vec(2);  // 0: vsv, 1: vsh
+    for (auto wt : {WaveType::RL, WaveType::LV}) {
+        int iwt = static_cast<int>(wt);
+        if (IP.data().wave_type[iwt]) {
+            Inversion1D inv1d(wt);
+            v1d_vec[iwt] = inv1d.inv1d(zgrids, vs1d);
+            if (IP.inversion().model_para_type != MODEL_RADIAL_ANI) {
+                vs1d = v1d_vec[iwt];  // update vs1d for the next inversion; final vs1d will be from the last inversion run
+            }
+        }
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        vs1d = vsvvsh2vs(v1d_vec[0], v1d_vec[1]);
+    }
 }
 
 // Read vs (required) and optionally vp, rho, gc, gs from the HDF5 file.
@@ -358,12 +381,13 @@ void ModelGrid::load_3d_model() {
             }
         };
 
-        // --- vs (required) ---
+        // --- vs or vsv (required) ---
         {
-            interpolate_or_copy("vs", vs3d);
+            std::string key = IP.inversion().model_para_type == MODEL_RADIAL_ANI ? "vsv" : "vs";
+            interpolate_or_copy(key, vs3d);
             logger.Info(
-                same_grid ? "Loaded 'vs' from HDF5 file." :
-                            "Loaded and interpolated 'vs' onto current model grid.",
+                same_grid ? "Loaded '" + key + "' from HDF5 file." :
+                            "Loaded and interpolated '" + key + "' onto current model grid.",
                 MODULE_GRID
             );
         }
@@ -396,8 +420,8 @@ void ModelGrid::load_3d_model() {
                 rho3d[i] = vp2rho(vp3d[i]);
         }
 
-        // --- gc / gs (optional, only if is_anisotropy) ---
-        if (IP.inversion().is_anisotropy) {
+        // --- gc / gs (optional, only if model_para_type is MODEL_AZI_ANI) ---
+        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             if (f.exists("gc")) {
                 interpolate_or_copy("gc", gc3d);
                 logger.Info(
@@ -419,6 +443,31 @@ void ModelGrid::load_3d_model() {
             } else {
                 logger.Info("'gs' not found in HDF5 file, initialising to zero.", MODULE_GRID);
                 std::fill(gs3d, gs3d + expect_n, _0_CR);
+            }
+        }
+        
+        // --- vsh (optional, only if model_para_type is MODEL_RADIAL_ANI) ---
+        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+            if (f.exists("vsh")) {
+                interpolate_or_copy("vsh", vsh3d);
+                logger.Info(
+                    same_grid ? "Loaded 'vsh' from HDF5 file." :
+                                "Loaded and interpolated 'vsh' onto current model grid.",
+                    MODULE_GRID
+                );
+            } else {
+                logger.Info("'vsh' not found in HDF5 file, initialising to vs (isotropic).", MODULE_GRID);
+                for (hsize_t i = 0; i < expect_n; ++i)
+                    vsh3d[i] = vs3d[i];
+            }
+            for (hsize_t i = 0; i < expect_n; ++i){
+                if (vsh3d[i] == 0) {
+                    logger.Error(fmt::format(
+                        "Invalid 'vsh' value of zero at index {} in HDF5 file, which would cause division by zero when computing gamma. Please fix the input model file.",
+                        i
+                    ), MODULE_GRID);
+                    mpi.abort(EXIT_FAILURE);
+                }
             }
         }
     } catch (const std::exception &e) {
@@ -490,9 +539,12 @@ void ModelGrid::build_init_model() {
                         vp3d[I2V(ix, iy, iz)] = vs2vp(vs1d(iz));
                         vs3d[I2V(ix, iy, iz)] = vs1d(iz);
                         rho3d[I2V(ix, iy, iz)] = vp2rho(vp3d[I2V(ix, iy, iz)]);  // empirical Vp→density scaling
-                        if (IP.inversion().is_anisotropy) {
+                        if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
                             gc3d[I2V(ix, iy, iz)] = _0_CR;  // start with isotropic model
                             gs3d[I2V(ix, iy, iz)] = _0_CR;  // start with isotropic model
+                        }
+                        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                            vsh3d[I2V(ix, iy, iz)] = vs1d(iz);  // start with isotropic model
                         }
                     }
                 }
@@ -503,7 +555,7 @@ void ModelGrid::build_init_model() {
         mpi.barrier();
     }
     if (IP.output().output_initial_model) {
-        write(std::string("initial_model.h5"));
+        write(INIT_MODEL_FNAME);
     }
 
     // Broadcast the model from main rank to all other ranks.
@@ -514,9 +566,12 @@ void ModelGrid::build_init_model() {
     mpi.sync_from_main_rank(vp3d,  ngrid_i * ngrid_j * ngrid_k);
     mpi.sync_from_main_rank(vs3d,  ngrid_i * ngrid_j * ngrid_k);
     mpi.sync_from_main_rank(rho3d, ngrid_i * ngrid_j * ngrid_k);
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         mpi.sync_from_main_rank(gc3d, ngrid_i * ngrid_j * ngrid_k);
         mpi.sync_from_main_rank(gs3d, ngrid_i * ngrid_j * ngrid_k);
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mpi.sync_from_main_rank(vsh3d, ngrid_i * ngrid_j * ngrid_k);
     }
 }
 
@@ -604,7 +659,7 @@ void ModelGrid::add_perturbation(
     mpi.sync_from_main_rank(rho3d, nelem);
 }
 
-void ModelGrid::add_aniso_perturbation(
+void ModelGrid::add_azi_aniso_perturbation(
     const int nx, const int ny, const int nz,
     const real_t angle, const real_t pert_ani,
     const real_t hmargin, const real_t anom_size
@@ -613,7 +668,7 @@ void ModelGrid::add_aniso_perturbation(
     auto &IP = InputParams::IP();
     const int nelem = ngrid_i * ngrid_j * ngrid_k;
 
-    if (!IP.inversion().is_anisotropy) return;
+    if (IP.inversion().model_para_type != MODEL_AZI_ANI) return;
 
     if (mpi.is_main()) {
         auto [xp, yp, zp] = build_perturbation_pattern(nx, ny, nz, hmargin, anom_size);
@@ -638,6 +693,58 @@ void ModelGrid::add_aniso_perturbation(
     mpi.sync_from_main_rank(gs3d, nelem);
 }
 
+void ModelGrid::add_radial_aniso_perturbation(
+    const int nx, const int ny, const int nz,
+    const real_t pert_vs, const real_t pert_zeta,
+    const real_t hmargin, const real_t anom_size
+) {
+    auto &mpi = Parallel::mpi();
+    auto &IP = InputParams::IP();
+    const int nelem = ngrid_i * ngrid_j * ngrid_k;
+
+    if (IP.inversion().model_para_type != MODEL_RADIAL_ANI) return;
+
+    if (mpi.is_main()) {
+        auto [xp, yp, zp] = build_perturbation_pattern(nx, ny, nz, hmargin, anom_size);
+        for (int i = 0; i < ngrid_i; ++i) {
+            for (int j = 0; j < ngrid_j; ++j) {
+                for (int k = 0; k < ngrid_k; ++k) {
+                    const real_t amp_vs = xp(i) * yp(j) * zp(k) * pert_vs;
+                    const real_t amp_zeta = xp(i) * yp(j) * zp(k) * pert_zeta;
+
+                    const int idx = I2V(i, j, k);
+
+                    // Calculate original Vs and zeta
+                    // Vs = sqrt((2*vsv^2 + vsh^2)/3), zeta = vsh^2/vsv^2
+                    const real_t Vs0 = vs3d[idx];
+                    const real_t zeta0 = _1_CR;
+
+                    // Apply perturbations to Vs and zeta
+                    const real_t Vs_new = Vs0 * (1 + amp_vs);
+                    const real_t zeta_new = zeta0 * (1 + amp_zeta);
+
+                    // Recover vsv and vsh from Vs and zeta
+                    // vsv = sqrt(3*Vs^2 / (2 + zeta))
+                    // vsh = vsv * sqrt(zeta)
+                    auto [vsv_new, vsh_new] = recover_anisotropy(Vs_new, zeta_new);
+
+                    // Update vs3d to store Vs (for consistency with load_3d_model)
+                    vs3d[idx] = vsv_new;
+                    vsh3d[idx] = vsh_new;
+                    vp3d[idx] = vs2vp(vsv_new);
+                    rho3d[idx] = vp2rho(vp3d[idx]);
+                }
+            }
+        }
+    }
+
+    mpi.barrier();
+    mpi.sync_from_main_rank(vs3d, nelem);
+    mpi.sync_from_main_rank(vsh3d, nelem);
+    mpi.sync_from_main_rank(vp3d, nelem);
+    mpi.sync_from_main_rank(rho3d, nelem);
+}
+
 void ModelGrid::collect_model_loc() {
     auto &mpi = Parallel::mpi();
     auto &dcp = Decomposer::DCP();
@@ -647,27 +754,36 @@ void ModelGrid::collect_model_loc() {
     Tensor3r vs_tmp = dcp.collect_data(vs3d_loc.data());
     Tensor3r vp_tmp = dcp.collect_data(vp3d_loc.data());
     Tensor3r rho_tmp = dcp.collect_data(rho3d_loc.data());
-    Tensor3r gc_tmp, gs_tmp;
-    if (IP.inversion().is_anisotropy) {
+    Tensor3r gc_tmp, gs_tmp, vsh_tmp;
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         gc_tmp = dcp.collect_data(gc3d_loc.data());
         gs_tmp = dcp.collect_data(gs3d_loc.data());
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        vsh_tmp = dcp.collect_data(vsh3d_loc.data());
     }
     if (mpi.is_main()) {
         std::copy(vs_tmp.data(), vs_tmp.data() + nelem, vs3d);
         std::copy(vp_tmp.data(), vp_tmp.data() + nelem, vp3d);
         std::copy(rho_tmp.data(), rho_tmp.data() + nelem, rho3d);
-         if (IP.inversion().is_anisotropy) {
+         if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
             std::copy(gc_tmp.data(), gc_tmp.data() + nelem, gc3d);
             std::copy(gs_tmp.data(), gs_tmp.data() + nelem, gs3d);
+        }
+        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+            std::copy(vsh_tmp.data(), vsh_tmp.data() + nelem, vsh3d);
         }
     }
     mpi.barrier();
     mpi.sync_from_main_rank(vs3d, nelem);
     mpi.sync_from_main_rank(vp3d, nelem);
     mpi.sync_from_main_rank(rho3d, nelem);
-    if (IP.inversion().is_anisotropy) {
+    if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
         mpi.sync_from_main_rank(gc3d, nelem);
         mpi.sync_from_main_rank(gs3d, nelem);
+    }
+    if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+        mpi.sync_from_main_rank(vsh3d, nelem);
     }
    
 }
@@ -681,22 +797,49 @@ void ModelGrid::write(const std::string &subname) {
         f.write_vector("x", xgrids);
         f.write_vector("y", ygrids);
         f.write_vector("z", zgrids);
-        f.write_volume("vs", vs3d, ngrid_i, ngrid_j, ngrid_k);
-        if (IP.inversion().use_alpha_beta_rho) {
-            f.write_volume("vp", vp3d, ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("rho", rho3d, ngrid_i, ngrid_j, ngrid_k);
-        }
-        if (IP.inversion().is_anisotropy) {
-            f.write_volume("gc", gc3d, ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("gs", gs3d, ngrid_i, ngrid_j, ngrid_k);
-            std::vector<real_t> g0(ngrid_i * ngrid_j * ngrid_k);
-            std::vector<real_t> theta(ngrid_i * ngrid_j * ngrid_k);
-            for (int i = 0; i < ngrid_i * ngrid_j * ngrid_k; ++i) {
-                g0[i] = std::sqrt(gc3d[i] * gc3d[i] + gs3d[i] * gs3d[i]);
-                theta[i] = _0_5_CR * std::atan2(gs3d[i], gc3d[i]) * RAD2DEG;
+
+        const int nelem = ngrid_i * ngrid_j * ngrid_k;
+
+        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+            // For radial anisotropy: vs3d stores vsv, vsh3d stores vsh
+            // Write vsv and vsh
+            f.write_volume("vsv", vs3d, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("vsh", vsh3d, ngrid_i, ngrid_j, ngrid_k);
+
+            // Compute and write Vs = sqrt((2*vsv + vsh)/3) and zeta = vsh^2/vsv^2
+            std::vector<real_t> Vs(nelem);
+            std::vector<real_t> zeta(nelem);
+            for (int i = 0; i < nelem; ++i) {
+                Vs[i] = vsvvsh2vs(vs3d[i], vsh3d[i]);
+                zeta[i] = vsvvsh2zeta(vs3d[i], vsh3d[i]);
             }
-            f.write_volume("g0", g0, ngrid_i, ngrid_j, ngrid_k);
-            f.write_volume("theta", theta, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("vs", Vs, ngrid_i, ngrid_j, ngrid_k);
+            f.write_volume("zeta", zeta, ngrid_i, ngrid_j, ngrid_k);
+
+            // Write vp and rho if available
+            if (IP.inversion().use_alpha_beta_rho) {
+                f.write_volume("vp", vp3d, ngrid_i, ngrid_j, ngrid_k);
+                f.write_volume("rho", rho3d, ngrid_i, ngrid_j, ngrid_k);
+            }
+        } else {
+            // Isotropic or azimuthal anisotropy case
+            f.write_volume("vs", vs3d, ngrid_i, ngrid_j, ngrid_k);
+            if (IP.inversion().use_alpha_beta_rho) {
+                f.write_volume("vp", vp3d, ngrid_i, ngrid_j, ngrid_k);
+                f.write_volume("rho", rho3d, ngrid_i, ngrid_j, ngrid_k);
+            }
+            if (IP.inversion().model_para_type == MODEL_AZI_ANI) {
+                f.write_volume("gc", gc3d, ngrid_i, ngrid_j, ngrid_k);
+                f.write_volume("gs", gs3d, ngrid_i, ngrid_j, ngrid_k);
+                std::vector<real_t> g0(nelem);
+                std::vector<real_t> theta(nelem);
+                for (int i = 0; i < nelem; ++i) {
+                    g0[i] = std::sqrt(gc3d[i] * gc3d[i] + gs3d[i] * gs3d[i]);
+                    theta[i] = _0_5_CR * std::atan2(gs3d[i], gc3d[i]) * RAD2DEG;
+                }
+                f.write_volume("g0", g0, ngrid_i, ngrid_j, ngrid_k);
+                f.write_volume("theta", theta, ngrid_i, ngrid_j, ngrid_k);
+            }
         }
     }
     mpi.barrier();

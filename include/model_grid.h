@@ -29,9 +29,14 @@ public:
         const real_t pert_vel, const real_t hmargin = _0_CR,
         const real_t anom_size = _0_CR, const bool only_vs = false
     );
-    void add_aniso_perturbation(
+    void add_azi_aniso_perturbation(
         const int nx, const int ny, const int nz,
-        const real_t pert_gc, const real_t pert_gs,
+        const real_t angle, const real_t pert_ani,
+        const real_t hmargin = _0_CR, const real_t anom_size = _0_CR
+    );
+    void add_radial_aniso_perturbation(
+        const int nx, const int ny, const int nz,
+        const real_t pert_vs, const real_t pert_zeta,
         const real_t hmargin = _0_CR, const real_t anom_size = _0_CR
     );
     void write(const std::string &subname);
@@ -44,6 +49,7 @@ public:
 
     real_t* vp3d;
     real_t* vs3d;
+    real_t* vsh3d;
     real_t* rho3d;
     real_t* gc3d;
     real_t* gs3d;
@@ -53,6 +59,8 @@ public:
     Tensor3r rho3d_loc;  // local subdomain of rho3d for each rank, with halo regions included
     Tensor3r gc3d_loc;  // local anisotropy Gc parameter (cosine component), shape (loc_nx, loc_ny, ngrid_k)
     Tensor3r gs3d_loc;  // local anisotropy Gs parameter (sine component), shape (loc_nx, loc_ny, ngrid_k)
+    Tensor3r vsh3d_loc;  // local subdomain of vsh3d for each rank, with halo regions included (for azimuthal anisotropy only)
+    Tensor3r gamma3d_loc;  // local subdomain of gamma (for radial anisotropy only)
 
 private:
     static std::unique_ptr<ModelGrid> &get_instance_ptr() {
@@ -65,6 +73,7 @@ private:
     MPI_Win win_rho_ = MPI_WIN_NULL;
     MPI_Win win_gc_  = MPI_WIN_NULL;
     MPI_Win win_gs_  = MPI_WIN_NULL;
+    MPI_Win win_vsh_ = MPI_WIN_NULL;  // for radial anisotropy
 
     void build_1d_model_linear();
     void build_1d_model_inversion();
