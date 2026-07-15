@@ -286,9 +286,9 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                             m = I2V_INV_GRIDS(idx+1, idy, idz+1, igrid);
                             wt = wx * (_1_CR - wy)*wz;
                         }
+                        weight[m] += wt;
+                        tmp[m] += wt * buf(i, j, k);
                     }
-                    weight[m] += wt;
-                    tmp[m] += wt * buf(i, j, k);
                 }
             }
         }
@@ -462,7 +462,7 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
     return smoothed_buf;
 }
 
-Tensor3r PostProc::smooth(const Tensor3r &buf) {
+Tensor3r PostProc::smooth(const Tensor3r &buf, bool is_ani) {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
@@ -470,9 +470,10 @@ Tensor3r PostProc::smooth(const Tensor3r &buf) {
     if (IP.postproc().smooth_method == 0) {
         return pde_smooth(buf);
     } else if (IP.postproc().smooth_method == 1) {
-        std::vector<real_t> inv_buf = inv_grid.fwd2inv(buf);
+        InvGrid &ig = is_ani ? inv_grid_ani : inv_grid;
+        std::vector<real_t> inv_buf = ig.fwd2inv(buf);
         // Here we can apply some smoothing in the inversion grid if needed (not implemented in this example)
-        return inv_grid.inv2fwd(inv_buf.data());
+        return ig.inv2fwd(inv_buf.data());
     } else {
         logger.Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
         mpi.abort(EXIT_FAILURE);
@@ -502,10 +503,14 @@ void postproc::kernel_precondition(SurfGrid& sg) {
     mpi.barrier();
     mpi.max_all_all_inplace(L_inf);
 
-    Tensor3r ken_den_norm = sg.ker_den_loc / L_inf;
-    Tensor3r hess_inv = (ken_den_norm > VERYTINY).select(
-            ken_den_norm.inverse(),
-            ken_den_norm.constant(_1_CR)
+    // Match legacy Fortran: precond = |density|/max, zeroed below threshold,
+    // otherwise 1/precond^kdensity_coe
+    const real_t precond_thres = static_cast<real_t>(1e-4);
+    const real_t coe = IP.postproc().kdensity_coe;
+    Tensor3r ken_den_norm = sg.ker_den_loc.abs() / L_inf;
+    Tensor3r hess_inv = (ken_den_norm >= precond_thres).select(
+            ken_den_norm.pow(-coe),
+            ken_den_norm.constant(_0_CR)
         );
 
     // Precondition the kernels by multiplying with the reference model parameters at each surface grid point
@@ -528,7 +533,8 @@ FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
     FieldVec ker_loc_smooth(NPARAMS);
     for (int iparam = 0; iparam < NPARAMS - 1; ++iparam) {
         if (sg.is_active_ker(iparam)) {
-            ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);
+            const bool is_ani_param = (iparam == 3 || iparam == 4);  // gc, gs
+            ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam], is_ani_param);
         }
     }
     if (sg.wave_type() == WaveType::LV)
