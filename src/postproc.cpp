@@ -385,14 +385,16 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
     return arr_fwd;
 }
 
-Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
+Tensor3r PostProc::pde_smooth(const Tensor3r &buf, bool is_ani) {
     auto &logger = ATTLogger::logger();
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
 
-    real_t sigma_h = IP.postproc().sigma[0];
-    real_t sigma_v = IP.postproc().sigma[1];
+    // sigma_ani falls back to sigma when independent_smooth_ani is off (input_params)
+    const auto &sigma = is_ani ? IP.postproc().sigma_ani : IP.postproc().sigma;
+    real_t sigma_h = sigma[0];
+    real_t sigma_v = sigma[1];
 
     if (sigma_h <= _0_CR || sigma_v <= _0_CR ) {
         logger.Error("Invalid sigma values for PDE-based smoothing. All sigma values must be positive.", MODULE_POSTPROC);
@@ -468,7 +470,7 @@ Tensor3r PostProc::smooth(const Tensor3r &buf, bool is_ani) {
     auto &mpi = Parallel::mpi();
 
     if (IP.postproc().smooth_method == 0) {
-        return pde_smooth(buf);
+        return pde_smooth(buf, is_ani);
     } else if (IP.postproc().smooth_method == 1) {
         InvGrid &ig = is_ani ? inv_grid_ani : inv_grid;
         std::vector<real_t> inv_buf = ig.fwd2inv(buf);
@@ -496,12 +498,14 @@ void postproc::kernel_precondition(SurfGrid& sg) {
     // normalize kernel density by L_inf
     Eigen::Tensor<real_t, 0, Eigen::RowMajor> L_inf_tensor = sg.ker_den_loc.abs().maximum();
     real_t L_inf = L_inf_tensor();
+    // Reduce to the global max before the threshold test: testing the rank-local
+    // max would let uncovered ranks return early and mismatch the collectives.
+    mpi.barrier();
+    mpi.max_all_all_inplace(L_inf);
     if (L_inf < VERYTINY) {
         logger.Warn("Kernel density is too small, skipping preconditioning.", MODULE_POSTPROC);
         return;
     }
-    mpi.barrier();
-    mpi.max_all_all_inplace(L_inf);
 
     // Match legacy Fortran: precond = |density|/max, zeroed below threshold,
     // otherwise 1/precond^kdensity_coe
