@@ -9,9 +9,9 @@ data:
   # Love-wave source-receiver files (used when wave_type[1] is true)
   src_rec_file_lv_ph: OUTPUT_FILES/src_rec_file_forward_LV_PH.csv
   src_rec_file_lv_gr: OUTPUT_FILES/src_rec_file_forward_LV_GR.csv
-  wave_type: [True, False] # [use_rayleigh, use_love]
+  wave_type: [True, False] # [use_rayleigh, use_love] - both required for radial anisotropy
   vel_type:  [True, False] # [use_phase, use_group]
-  weights:   [0.5, 0.5]    # weights for phase and group velocity
+  weights:   [1.0, 0.5]    # weights for phase and group velocity
 
 output:
   output_path: OUTPUT_FILES/ # path to save output files
@@ -21,7 +21,7 @@ output:
   log_level: 2 # 1 debug mode, 2: info mode, 3: warning mode, 4: error mode
 
 domain:
-  depth_min_max: [0, 15] # depth range in km
+  depth_min_max: [0, 12] # depth range in km
   grid_method: 0 # 0: grid by interval; 1: grid by min max and number of grid
   grid_method_0:
     interval: [0.02, 0.02, 0.5] # interval of lon(degree), lat(degree), z(km)
@@ -47,8 +47,8 @@ postproc:
   independent_smooth_ani: False # if True, smooth azimuthal anisotropy (Gc/Gs) kernels with sigma_ani / n_inv_grid_ani
   smooth_method: 0
   smooth_method_0:
-    sigma: [0.1, 2] # smoothing lengths [horizontal (degree), vertical (km)]
-    sigma_ani: [0.1, 2] # same units as sigma; azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy (gamma uses sigma)
+    sigma: [0.1, 1] # smoothing lengths [horizontal (degree), vertical (km)]
+    sigma_ani: [0.15, 1] # same units as sigma; azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy (gamma uses sigma)
   smooth_method_1:
     n_inv_components: 5
     n_inv_grid: [8, 9, 8]
@@ -56,12 +56,12 @@ postproc:
 
 inversion:
   # ------- Inversion parameters --------
-  model_para_type: 0 # 0 Isotropic, 1, Azimuthal anisotropy, 2 Radial isotropic
+  model_para_type: 1 # 0 Isotropic, 1 Azimuthal anisotropy, 2 Radial anisotropy
   use_alpha_beta_rho: false
   rho_scaling: false
   vpvs_ratio_range: [1.4, 2.5]
   # ------- Inversion parameters --------
-  niter: 40 # max iterations
+  niter: 80 # max iterations
   min_derr: 0.0015 # minimum error change
   # ------- optimization parameters -------
   optim_method: 1 # 0: SD (adeptive step length); 1: LBFGS (line search)

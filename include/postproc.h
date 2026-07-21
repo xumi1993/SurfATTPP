@@ -63,7 +63,7 @@ public:
 private:
     PostProc(const PostProc &)            = delete;
     PostProc &operator=(const PostProc &) = delete;
-    Tensor3r pde_smooth(const Tensor3r &buf);
+    Tensor3r pde_smooth(const Tensor3r &buf, bool is_ani);
    
 
 };
