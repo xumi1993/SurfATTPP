@@ -106,12 +106,30 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
         logger.Info(fmt::format("Wolfe conditions satisfied. Misfit {:.6f} -> {:.6f}",
             f0, f1, alpha), MODULE_OPTIM);
 
+    } else if (cond_armijo && alpha_R > _0_CR) {
+        // Armijo previously failed, so its upper bound has priority. Once a
+        // shorter trial satisfies Armijo, accept it even if curvature does not.
+        res.status     = WolfeResult::Status::ACCEPT;
+        res.next_alpha = alpha;
+        logger.Info(fmt::format(
+            "Armijo satisfied after shrinking the step. Accept alpha={:.6f} without further curvature trials.",
+            alpha), MODULE_OPTIM);
+
+    } else if (!cond_armijo && !cond_curvature) {
+        // Both conditions failed: prioritize Armijo and shrink directly.
+        alpha_R        = alpha;
+        res.next_alpha = alpha * _0_5_CR;
+        res.status     = WolfeResult::Status::TRY;
+        logger.Info(fmt::format(
+            "Neither Armijo nor curvature satisfied; prioritize Armijo. Try alpha={:.6f}.",
+            res.next_alpha), MODULE_OPTIM);
+
     } else if (!cond_armijo) {
         // Step too large: shrink upper bracket.
         alpha_R        = alpha;
         res.next_alpha = (alpha_L + alpha_R) * _0_5_CR;
         res.status     = WolfeResult::Status::TRY;
-        logger.Info(fmt::format("Armijo not satisfied (step too large).",
+        logger.Info(fmt::format("Armijo not satisfied (step too large). Try alpha={:.6f}.",
             res.next_alpha), MODULE_OPTIM);
 
     } else {
