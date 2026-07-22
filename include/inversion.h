@@ -9,6 +9,7 @@
 #include "decomposer.h"
 #include "preproc.h"
 #include "postproc.h"
+#include "optimize.h"
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <unsupported/Eigen/CXX11/Tensor>
@@ -72,4 +73,6 @@ private:
     int    iter_start_ = 0;
     real_t alpha_, alpha_R_, alpha_L_;
     bool   gradient_reuse_ = false;
+    optimize::WolfeResult wolfe_res_;
+    bool   break_flag_ = false;
 };
