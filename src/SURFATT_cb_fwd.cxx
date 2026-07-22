@@ -30,8 +30,8 @@ int main(int argc, char* argv[]) {
     );
 
     // load source-receiver tables into shared memory
-    if (IP.data().vel_type[0]) SrcRec::SR_ph().load(IP.data().src_rec_file_ph);
-    if (IP.data().vel_type[1]) SrcRec::SR_gr().load(IP.data().src_rec_file_gr);
+    for (auto [wt, vt] : IP.data().active_data)
+        SrcRec::SR(wt, vt).load(IP.data().file_of(wt, vt));
     SrcRec::build_stas();
 
     // build model grid
@@ -42,14 +42,26 @@ int main(int argc, char* argv[]) {
     mg.build_init_model();
 
     // add checkerboard perturbation if requested
-    mg.add_perturbation(
-        args.ncb[0], args.ncb[1], args.ncb[2],
-        args.pert_vel, args.hmarg, args.anom_size, args.only_vs
-    );
-    mg.add_aniso_perturbation(
-        args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
-        args.ani_angle, args.pert_ani, args.hmarg, args.anom_size
-    );
+    if (args.model_type == MODEL_RADIAL_ANI) {
+        IP.set_model_para_type(MODEL_RADIAL_ANI);
+        mg.add_radial_aniso_perturbation(
+            args.ncb[0], args.ncb[1], args.ncb[2],
+            args.pert_vel, args.pert_zeta, args.hmarg, args.anom_size
+        );
+    } else {
+        IP.set_model_para_type(MODEL_ISO);
+        mg.add_perturbation(
+            args.ncb[0], args.ncb[1], args.ncb[2],
+            args.pert_vel, args.hmarg, args.anom_size, args.only_vs
+        );
+        if (args.model_type == MODEL_AZI_ANI) {
+            IP.set_model_para_type(MODEL_AZI_ANI);
+            mg.add_azi_aniso_perturbation(
+                args.ncb_ani[0], args.ncb_ani[1], args.ncb_ani[2],
+                args.ani_angle, args.pert_ani, args.hmarg, args.anom_size
+            );
+        }
+    }
     mg.write(TARGET_MODEL_FNAME);
 
     // initialize decomposer (for parallel execution)
@@ -61,16 +73,16 @@ int main(int argc, char* argv[]) {
         Topography::read(IP.topo().topo_file);
     }
     // build surface grid and compute reference travel times
-    if (IP.data().vel_type[0]) SurfGrid::SG_ph().build_media();
-    if (IP.data().vel_type[1]) SurfGrid::SG_gr().build_media();
+    for (auto [wt, vt] : IP.data().active_data)
+        SurfGrid::SG(wt, vt).build_media();
 
     // run forward simulation
     Inversion::init();
     Inversion::INV().run_forward();
 
     // free shared memory windows
-    SrcRec::SR_ph().release_shm();
-    SrcRec::SR_gr().release_shm();
+    for (auto [wt, vt] : IP.data().active_data)
+        SrcRec::SR(wt, vt).release_shm();
 
     return 0;
 

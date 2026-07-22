@@ -2,7 +2,6 @@
 #include "h5io.h"
 #include "logger.h"
 #include "sph2loc.h"
-#include "surfdisp.h"
 
 Topography::Topography(const std::string& filepath)
     : topo_file_(filepath)

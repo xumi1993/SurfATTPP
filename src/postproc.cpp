@@ -286,9 +286,9 @@ std::vector<real_t> PostProc::InvGrid::fwd2inv(const Tensor3r &buf) {
                             m = I2V_INV_GRIDS(idx+1, idy, idz+1, igrid);
                             wt = wx * (_1_CR - wy)*wz;
                         }
+                        weight[m] += wt;
+                        tmp[m] += wt * buf(i, j, k);
                     }
-                    weight[m] += wt;
-                    tmp[m] += wt * buf(i, j, k);
                 }
             }
         }
@@ -385,14 +385,16 @@ Tensor3r PostProc::InvGrid::inv2fwd(const real_t *buf) {
     return arr_fwd;
 }
 
-Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
+Tensor3r PostProc::pde_smooth(const Tensor3r &buf, bool is_ani) {
     auto &logger = ATTLogger::logger();
     auto &dcp = Decomposer::DCP();
     auto &IP = InputParams::IP();
     auto &mpi = Parallel::mpi();
 
-    real_t sigma_h = IP.postproc().sigma[0];
-    real_t sigma_v = IP.postproc().sigma[1];
+    // sigma_ani falls back to sigma when independent_smooth_ani is off (input_params)
+    const auto &sigma = is_ani ? IP.postproc().sigma_ani : IP.postproc().sigma;
+    real_t sigma_h = sigma[0];
+    real_t sigma_v = sigma[1];
 
     if (sigma_h <= _0_CR || sigma_v <= _0_CR ) {
         logger.Error("Invalid sigma values for PDE-based smoothing. All sigma values must be positive.", MODULE_POSTPROC);
@@ -462,17 +464,18 @@ Tensor3r PostProc::pde_smooth(const Tensor3r &buf) {
     return smoothed_buf;
 }
 
-Tensor3r PostProc::smooth(const Tensor3r &buf) {
+Tensor3r PostProc::smooth(const Tensor3r &buf, bool is_ani) {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
 
     if (IP.postproc().smooth_method == 0) {
-        return pde_smooth(buf);
+        return pde_smooth(buf, is_ani);
     } else if (IP.postproc().smooth_method == 1) {
-        std::vector<real_t> inv_buf = inv_grid.fwd2inv(buf);
+        InvGrid &ig = is_ani ? inv_grid_ani : inv_grid;
+        std::vector<real_t> inv_buf = ig.fwd2inv(buf);
         // Here we can apply some smoothing in the inversion grid if needed (not implemented in this example)
-        return inv_grid.inv2fwd(inv_buf.data());
+        return ig.inv2fwd(inv_buf.data());
     } else {
         logger.Error("Invalid smoothing method specified in input parameters.", MODULE_POSTPROC);
         mpi.abort(EXIT_FAILURE);
@@ -495,24 +498,31 @@ void postproc::kernel_precondition(SurfGrid& sg) {
     // normalize kernel density by L_inf
     Eigen::Tensor<real_t, 0, Eigen::RowMajor> L_inf_tensor = sg.ker_den_loc.abs().maximum();
     real_t L_inf = L_inf_tensor();
+    // Reduce to the global max before the threshold test: testing the rank-local
+    // max would let uncovered ranks return early and mismatch the collectives.
+    mpi.barrier();
+    mpi.max_all_all_inplace(L_inf);
     if (L_inf < VERYTINY) {
         logger.Warn("Kernel density is too small, skipping preconditioning.", MODULE_POSTPROC);
         return;
     }
-    mpi.barrier();
-    mpi.max_all_all_inplace(L_inf);
 
-    Tensor3r ken_den_norm = sg.ker_den_loc / L_inf;
-    Tensor3r hess_inv = (ken_den_norm > VERYTINY).select(
-            ken_den_norm.inverse(),
-            ken_den_norm.constant(_1_CR)
+    // Match legacy Fortran: precond = |density|/max, zeroed below threshold,
+    // otherwise 1/precond^kdensity_coe
+    const real_t precond_thres = static_cast<real_t>(1e-4);
+    const real_t coe = IP.postproc().kdensity_coe;
+    Tensor3r ken_den_norm = sg.ker_den_loc.abs() / L_inf;
+    Tensor3r hess_inv = (ken_den_norm >= precond_thres).select(
+            ken_den_norm.pow(-coe),
+            ken_den_norm.constant(_0_CR)
         );
 
     // Precondition the kernels by multiplying with the reference model parameters at each surface grid point
-    int nker = sg.ker_loc.size();
+    int nker = NPARAMS - 1;
     for (int iparam = 0; iparam < nker; ++iparam) {
-        if (sg.ker_loc[iparam].size() == 0) continue;  // skip if no kernels for this parameter
-        sg.ker_loc[iparam] = sg.ker_loc[iparam] * hess_inv;
+        if (sg.is_active_ker(iparam)) {
+            sg.ker_loc[iparam] = sg.ker_loc[iparam] * hess_inv;
+        }
     }
 }
 
@@ -524,11 +534,15 @@ FieldVec postproc::kernel_smooth(const SurfGrid& sg) {
     std::string method_name = (IP.postproc().smooth_method == 0) ? "PDE smoothing" : "multigrid smoothing";
 
     logger.Info(fmt::format("Regularizing kernels with {}...", method_name), MODULE_POSTPROC);
-    FieldVec ker_loc_smooth(sg.ker_loc.size());
-    for (int iparam = 0; iparam < static_cast<int>(sg.ker_loc.size()); ++iparam) {
-        if (sg.ker_loc[iparam].size() == 0) continue;
-        ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam]);
+    FieldVec ker_loc_smooth(NPARAMS);
+    for (int iparam = 0; iparam < NPARAMS - 1; ++iparam) {
+        if (sg.is_active_ker(iparam)) {
+            const bool is_ani_param = (iparam == 3 || iparam == 4);  // gc, gs
+            ker_loc_smooth[iparam] = PP.smooth(sg.ker_loc[iparam], is_ani_param);
+        }
     }
+    if (sg.wave_type() == WaveType::LV)
+        ker_loc_smooth[NPARAMS - 1] = ker_loc_smooth[0];
     return ker_loc_smooth;
 }
 

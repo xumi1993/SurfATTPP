@@ -9,7 +9,7 @@ data:
   # Love-wave source-receiver files (used when wave_type[1] is true)
   src_rec_file_lv_ph: OUTPUT_FILES/src_rec_file_forward_LV_PH.csv
   src_rec_file_lv_gr: OUTPUT_FILES/src_rec_file_forward_LV_GR.csv
-  wave_type: [True, False] # [use_rayleigh, use_love]
+  wave_type: [True, True] # [use_rayleigh, use_love] - both required for radial anisotropy
   vel_type:  [True, False] # [use_phase, use_group]
   weights:   [0.5, 0.5]    # weights for phase and group velocity
 
@@ -21,7 +21,7 @@ output:
   log_level: 2 # 1 debug mode, 2: info mode, 3: warning mode, 4: error mode
 
 domain:
-  depth_min_max: [0, 15] # depth range in km
+  depth_min_max: [0, 8] # depth range in km
   grid_method: 0 # 0: grid by interval; 1: grid by min max and number of grid
   grid_method_0:
     interval: [0.02, 0.02, 0.5] # interval of lon(degree), lat(degree), z(km)
@@ -56,7 +56,7 @@ postproc:
 
 inversion:
   # ------- Inversion parameters --------
-  model_para_type: 0 # 0 Isotropic, 1, Azimuthal anisotropy, 2 Radial isotropic
+  model_para_type: 2 # 0 Isotropic, 1 Azimuthal anisotropy, 2 Radial anisotropy
   use_alpha_beta_rho: false
   rho_scaling: false
   vpvs_ratio_range: [1.4, 2.5]

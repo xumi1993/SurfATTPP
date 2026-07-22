@@ -1,11 +1,13 @@
 #include "inversion1d.h"
 #include "logger.h"
-#include "surfdisp.h"
+#include "surfker/surfker.hpp"
 #include "utils.h"
 #include "input_params.h"
 #include "src_rec.h"
+#include <stdexcept>
 
-Inversion1D::Inversion1D() {
+Inversion1D::Inversion1D(WaveType wavetype)
+    : wavetype_(wavetype) {
     niter = 0;
     misfits.clear();
     vs1d.resize(0);
@@ -31,7 +33,23 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
     } else if (IP.postproc().smooth_method == 1) {
         sigma = 0.68 * (zarr(zarr.size() - 1) - zarr(0)) / IP.postproc().n_inv_grid[2];
     }
-    logger.Info("1D inversion using averaged surface wave data", MODULE_INV1D);
+    int n_active_for_wave = 0;
+    for (const auto& [wt, tp] : IP.data().active_data) {
+        (void)tp;
+        if (wt == wavetype_) {
+            ++n_active_for_wave;
+        }
+    }
+    if (n_active_for_wave == 0) {
+        throw std::runtime_error(
+            "Inversion1D::inv1d: selected wavetype has no active surface-wave data");
+    }
+
+    logger.Info(
+        fmt::format("1D inversion using averaged {} surface-wave data",
+            waveTypeStr[static_cast<int>(wavetype_)]),
+        MODULE_INV1D
+    );
     logger.Debug(
         fmt::format("  nz={}, sigma={:.3f}, initial step_length={:.3e}, max_iter={}",
             nz, sigma, step_length, MAX_ITER_1D),
@@ -52,22 +70,23 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
         // Compute predicted dispersion curve and misfit
         update_total.setZero();
         real_t misfit_total = _0_CR;
-        for (auto tp : {surfType::PH, surfType::GR}) {
+        for (auto [wt, tp] : IP.data().active_data) {
+            if (wt != wavetype_) continue;
             int itype = static_cast<int>(tp);
-            if (!IP.data().vel_type[itype]) continue;
-            auto &sr = (itype == 0) ? SrcRec::SR_ph() : SrcRec::SR_gr();
+            auto &sr = SrcRec::SR(wt, tp);
             int nperiod = sr.periods_info.nperiod;
 
             surfker::DispersionRequest req = surfker::build_disp_req(
                 zarr, vs1d, sr.periods_info.periods,
-                IFLSPH, IP.data().iwave, IMODE, itype
+                IFLSPH, iwave_of(wt), IMODE, itype
             );
 
             Eigen::VectorX<real_t> pred_vel = surfker::surfdisp(req);
             real_t misfit = 0.5 * (pred_vel - sr.periods_info.meanvel).array().square().sum();
             logger.Debug(
-                fmt::format("  iter {:3d} | {} misfit={:.6e} (weight={:.3f})",
-                    iter, (itype == 0 ? "PH" : "GR"), misfit, IP.data().weights[itype]),
+                fmt::format("  iter {:3d} | {}_{} misfit={:.6e} (weight={:.3f})",
+                    iter, waveTypeStr[static_cast<int>(wt)],
+                    (itype == 0 ? "PH" : "GR"), misfit, IP.data().weights[itype]),
                 MODULE_INV1D
             );
             misfit_total += misfit * IP.data().weights[itype];
@@ -78,11 +97,18 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
             auto vp = vs2vp<real_t>(vs1d);
             auto db = dalpha_dbeta<real_t>(vs1d);
             auto dr = drho_dalpha<real_t>(vp);
+            // Love-wave depth kernels carry no vp sensitivity, so sen_vp stays
+            // an empty matrix; guard each chain-rule term by its kernel size.
+            const bool has_vp  = kernels.sen_vp.size()  > 0;
+            const bool has_rho = kernels.sen_rho.size() > 0;
             for (int iper = 0; iper < nperiod; ++iper) {
-                Eigen::VectorX<real_t> sen =
-                      kernels.sen_vs.row(iper).transpose().array()
-                    + kernels.sen_vp.row(iper).transpose().array()  * db.array()
-                    + kernels.sen_rho.row(iper).transpose().array() * dr.array() * db.array();
+                Eigen::VectorX<real_t> sen = kernels.sen_vs.row(iper).transpose();
+                if (has_vp) {
+                    sen.array() += kernels.sen_vp.row(iper).transpose().array() * db.array();
+                }
+                if (has_rho) {
+                    sen.array() += kernels.sen_rho.row(iper).transpose().array() * dr.array() * db.array();
+                }
                 update += sen * (pred_vel(iper) - sr.periods_info.meanvel(iper));
             }
             update /= nperiod;

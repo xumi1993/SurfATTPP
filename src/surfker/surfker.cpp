@@ -1,42 +1,10 @@
-#include "surfdisp.h"
 #include "utils.h"
-
+#include "surfdisp.hpp"
+#include "surfker.hpp"
 #include <Eigen/Core>
 #include <stdexcept>
 
 namespace {
-
-extern "C" {
-void surfdisp96_c(const float* thkm, const float* vpm, const float* vsm, const float* rhom,
-                 int nlayer, int iflsph, int iwave, int mode, int igr, int kmax,
-                 const double* t, double* cg);
-
-void sregn96_c(const float* thk, const float* vp, const float* vs, const float* rhom,
-              int nlayer, double* t, double* cp, double* cg, double* dispu, double* dispw,
-              double* stressu, double* stressw, double* dc2da, double* dc2db,
-              double* dc2dh, double* dc2dr, int iflsph);
-
-void sregn96_hti_c(const float* thk, const float* vp, const float* vs, const float* rhom,
-                  int nlayer, double* t, double* cp, double* cg, double* dispu, double* dispw,
-                  double* stressu, double* stressw, double* dc2da, double* dc2db,
-                  double* dc2dh, double* dc2dr, double* dc2dgc, double* dc2dgs, int iflsph);
-
-void sregnpu_c(const float* thk, const float* vp, const float* vs, const float* rhom,
-              int nlayer, double* t, double* cp, double* cg, double* dispu, double* dispw,
-              double* stressu, double* stressw, double* t1, double* cp1, double* t2, double* cp2,
-              double* dc2da, double* dc2db, double* dc2dh, double* dc2dr, double* du2da, double* du2db,
-              double* du2dh, double* du2dr, int iflsph);
-
-void slegn96_c(const float* thk, const float* vs, const float* rhom,
-              int nlayer, double* t, double* cp, double* cg, double* disp, double* stress,
-              double* dc2db, double* dc2dh, double* dc2dr, int iflsph);
-
-void slegnpu_c(const float* thk, const float* vs, const float* rhom,
-              int nlayer, double* t, double* cp, double* cg, double* disp, double* stress,
-              double* t1, double* cp1, double* t2, double* cp2,
-              double* dc2db, double* dc2dh, double* dc2dr, double* du2db, double* du2dh, double* du2dr,
-              int iflsph);
-}
 
 void validate_request(const surfker::DispersionRequest& req) {
     const auto nlayer = req.thickness_km.size();
@@ -74,6 +42,7 @@ surfker::DispersionRequest refine_request(
 
     surfker::DispersionRequest req;
     req.iflsph = iflsph;
+    req.earthModel = (iflsph == 1) ? EarthModel::Spherical : EarthModel::Flat;  // hardcoded for now; can be made user-configurable if needed
     req.iwave = iwave;
     req.mode = mode;
     req.igr = igr;
@@ -152,43 +121,29 @@ DepthKernel1D depthkernel_rayleigh_phase(const DispersionRequest& req) {
     Eigen::VectorXd t = req.periods_s.cast<double>();
 
     // Compute phase velocities
-    Eigen::VectorXd cp(kmax);
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, req.iwave, req.mode, 0, kmax,
-                 t.data(), cp.data());
+    std::vector<double> cp = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, req.iwave, req.mode, 0, kmax, t.data()
+    );
 
     Eigen::MatrixX<real_t> sen_vs = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_vp = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_rho = Eigen::MatrixX<real_t>::Zero(kmax, nz);
 
-    Eigen::VectorXd cg = Eigen::VectorXd::Zero(kmax);
-    Eigen::VectorXd dispu = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dispw = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stressu = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stressw = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdar = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdbr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdhr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdrr = Eigen::VectorXd::Zero(mmax);
-
     for (int i = 0; i < kmax; ++i) {
-        dcdar.setZero();
-        dcdbr.setZero();
-        dcdhr.setZero();
-        dcdrr.setZero();
 
         double t_val = t(i);
-        double cp_val = cp(i);
-        sregn96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(), mmax,
-                 &t_val, &cp_val, cg.data() + i, dispu.data(), dispw.data(),
-                 stressu.data(), stressw.data(), dcdar.data(), dcdbr.data(),
-                 dcdhr.data(), dcdrr.data(), req.iflsph);
+        double cp_val = cp[i];
+        RayleighEigenResult result =rayleighPhaseKernel(
+            mmax, rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+            t_val, cp_val, req.earthModel
+        );
 
         // Extract kernel for this period (first nz layers, skip halfspace)
         for (int j = 0; j < nz; ++j) {
-            sen_vs(i, j) = static_cast<real_t>(dcdbr(j));
-            sen_vp(i, j) = static_cast<real_t>(dcdar(j));
-            sen_rho(i, j) = static_cast<real_t>(dcdrr(j));
+            sen_vs(i, j) = static_cast<real_t>(result.dc2db[j]);
+            sen_vp(i, j) = static_cast<real_t>(result.dc2da[j]);
+            sen_rho(i, j) = static_cast<real_t>(result.dc2dr[j]);
         }
     }
     DepthKernel1D kernels;
@@ -213,10 +168,10 @@ DepthKernel1D depthkernel_rayleigh_group(const DispersionRequest& req) {
     Eigen::VectorXd t = req.periods_s.cast<double>();
 
     // Compute phase velocities at base period
-    Eigen::VectorXd cp(kmax);
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, req.iwave, req.mode, 0, kmax,
-                 t.data(), cp.data());
+    std::vector<double> cp = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, req.iwave, req.mode, 0, kmax, t.data()
+    );
 
     Eigen::MatrixX<real_t> sen_vs = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_vp = Eigen::MatrixX<real_t>::Zero(kmax, nz);
@@ -231,56 +186,33 @@ DepthKernel1D depthkernel_rayleigh_group(const DispersionRequest& req) {
     }
 
     // Compute phase velocities at perturbed periods
-    Eigen::VectorXd cp1(kmax), cp2(kmax);
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, req.iwave, req.mode, 0, kmax,
-                 t1.data(), cp1.data());
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, req.iwave, req.mode, 0, kmax,
-                 t2.data(), cp2.data());
-
-    Eigen::VectorXd cg = Eigen::VectorXd::Zero(kmax);
-    Eigen::VectorXd dispu = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dispw = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stressu = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stressw = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdar = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdbr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdhr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdrr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dudar = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dudbr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dudhr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dudrr = Eigen::VectorXd::Zero(mmax);
+    std::vector<double> cp1 = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, req.iwave, req.mode, 0, kmax, t1.data()
+    );
+    std::vector<double> cp2 = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, req.iwave, req.mode, 0, kmax, t2.data()
+    );
 
     for (int i = 0; i < kmax; ++i) {
-        dcdar.setZero();
-        dcdbr.setZero();
-        dcdhr.setZero();
-        dcdrr.setZero();
-        dudar.setZero();
-        dudbr.setZero();
-        dudhr.setZero();
-        dudrr.setZero();
-
         double t_val = t(i);
-        double cp_val = cp(i);
+        double cp_val = cp[i];
         double t1_val = t1(i);
-        double cp1_val = cp1(i);
+        double cp1_val = cp1[i];
         double t2_val = t2(i);
-        double cp2_val = cp2(i);
+        double cp2_val = cp2[i];
 
-        sregnpu_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(), mmax,
-                 &t_val, &cp_val, cg.data() + i, dispu.data(), dispw.data(),
-                 stressu.data(), stressw.data(), &t1_val, &cp1_val, &t2_val, &cp2_val,
-                 dcdar.data(), dcdbr.data(), dcdhr.data(), dcdrr.data(),
-                 dudar.data(), dudbr.data(), dudhr.data(), dudrr.data(), req.iflsph);
+        RayleighGroupKernelResult result = rayleighGroupKernel(
+            mmax, rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+            t_val, cp_val, t1_val, cp1_val, t2_val, cp2_val, req.earthModel
+        );
 
         // Extract group velocity kernels (first nz layers, skip halfspace)
         for (int j = 0; j < nz; ++j) {
-            sen_vs(i, j) = static_cast<real_t>(dudbr(j));
-            sen_vp(i, j) = static_cast<real_t>(dudar(j));
-            sen_rho(i, j) = static_cast<real_t>(dudrr(j));
+            sen_vs(i, j) = static_cast<real_t>(result.du2db[j]);
+            sen_vp(i, j) = static_cast<real_t>(result.du2da[j]);
+            sen_rho(i, j) = static_cast<real_t>(result.du2dr[j]);
         }
     }
 
@@ -305,39 +237,28 @@ DepthKernel1D depthkernel_love_phase(const DispersionRequest& req) {
     Eigen::VectorXd t = req.periods_s.cast<double>();
 
     // First compute Love wave phase velocities for all periods
-    Eigen::VectorXd cp(kmax);
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, 1, req.mode, 0, kmax,  // iwave=1 for Love
-                 t.data(), cp.data());
+    std::vector<double> cp = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, 1, req.mode, 0, kmax, t.data()
+    );
 
     Eigen::MatrixX<real_t> sen_vs = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_rho = Eigen::MatrixX<real_t>::Zero(kmax, nz);
 
     // Compute Love wave depth kernels for each period
-    Eigen::VectorXd cg = Eigen::VectorXd::Zero(kmax);
-    Eigen::VectorXd disp = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stress = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dc2db = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dc2dh = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dc2dr = Eigen::VectorXd::Zero(mmax);
-
     for (int i = 0; i < kmax; ++i) {
-        dc2db.setZero();
-        dc2dh.setZero();
-        dc2dr.setZero();
-
         double t_val = t(i);
-        double cp_val = cp(i);
+        double cp_val = cp[i];
 
-        // Compute Love wave depth kernels using pre-calculated phase velocity
-        slegn96_c(rthk.data(), rvs.data(), rrho.data(), mmax,
-                 &t_val, &cp_val, cg.data() + i, disp.data(), stress.data(),
-                 dc2db.data(), dc2dh.data(), dc2dr.data(), req.iflsph);
+        LoveEigenResult result = lovePhaseKernel(
+            mmax, rthk.data(), rvs.data(), rrho.data(),
+            t_val, cp_val, req.earthModel
+        );
 
         // Extract kernel for this period (first nz layers, skip halfspace)
         for (int j = 0; j < nz; ++j) {
-            sen_vs(i, j) = static_cast<real_t>(dc2db(j));
-            sen_rho(i, j) = static_cast<real_t>(dc2dr(j));
+            sen_vs(i, j) = static_cast<real_t>(result.dc2db[j]);
+            sen_rho(i, j) = static_cast<real_t>(result.dc2dr[j]);
         }
     }
 
@@ -367,54 +288,39 @@ DepthKernel1D depthkernel_love_group(const DispersionRequest& req) {
         t2(i) = t(i) * (1.0 - 0.5 * dt);
     }
 
-    Eigen::VectorXd cp(kmax), cp1(kmax), cp2(kmax);
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, 1, req.mode, 0, kmax,
-                 t.data(), cp.data());
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, 1, req.mode, 0, kmax,
-                 t1.data(), cp1.data());
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, 1, req.mode, 0, kmax,
-                 t2.data(), cp2.data());
+    std::vector<double> cp = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, 1, req.mode, 0, kmax, t.data()
+    );
+    std::vector<double> cp1 = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, 1, req.mode, 0, kmax, t1.data()
+    );
+    std::vector<double> cp2 = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, 1, req.mode, 0, kmax, t2.data()
+    );
 
     Eigen::MatrixX<real_t> sen_vs = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_rho = Eigen::MatrixX<real_t>::Zero(kmax, nz);
 
-    Eigen::VectorXd cg = Eigen::VectorXd::Zero(kmax);
-    Eigen::VectorXd disp = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stress = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dc2db = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dc2dh = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dc2dr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd du2db = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd du2dh = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd du2dr = Eigen::VectorXd::Zero(mmax);
-
     for (int i = 0; i < kmax; ++i) {
-        dc2db.setZero();
-        dc2dh.setZero();
-        dc2dr.setZero();
-        du2db.setZero();
-        du2dh.setZero();
-        du2dr.setZero();
-
         double t_val = t(i);
-        double cp_val = cp(i);
+        double cp_val = cp[i];
         double t1_val = t1(i);
-        double cp1_val = cp1(i);
+        double cp1_val = cp1[i];
         double t2_val = t2(i);
-        double cp2_val = cp2(i);
+        double cp2_val = cp2[i];
 
-        slegnpu_c(rthk.data(), rvs.data(), rrho.data(), mmax,
-                  &t_val, &cp_val, cg.data() + i, disp.data(), stress.data(),
-                  &t1_val, &cp1_val, &t2_val, &cp2_val,
-                  dc2db.data(), dc2dh.data(), dc2dr.data(),
-                  du2db.data(), du2dh.data(), du2dr.data(), req.iflsph);
+        LoveGroupKernelResult result = loveGroupKernel(
+            mmax, rthk.data(), rvs.data(), rrho.data(),
+            t_val, cp_val, t1_val, cp1_val,
+            t2_val, cp2_val, req.earthModel
+        );
 
         for (int j = 0; j < nz; ++j) {
-            sen_vs(i, j) = static_cast<real_t>(du2db(j));
-            sen_rho(i, j) = static_cast<real_t>(du2dr(j));
+            sen_vs(i, j) = static_cast<real_t>(result.du2db[j]);
+            sen_rho(i, j) = static_cast<real_t>(result.du2dr[j]);
         }
     }
 
@@ -444,18 +350,18 @@ Eigen::VectorX<real_t> surfdisp(const DispersionRequest& req) {
     }
 
     Eigen::VectorX<real_t> t(kmax);
-    Eigen::VectorX<real_t> cg = Eigen::VectorX<real_t>::Zero(kmax);
     for (int i = 0; i < kmax; ++i) {
         t(i) = static_cast<real_t>(req.periods_s(i));
     }
 
-    surfdisp96_c(thkm.data(), vpm.data(), vsm.data(), rhom.data(),
-                 nlayer, req.iflsph, req.iwave, req.mode, req.igr, kmax,
-                 t.data(), cg.data());
+    std::vector<double> cg = disper(
+        thkm.data(), vpm.data(), vsm.data(), rhom.data(),
+        nlayer, req.iflsph, req.iwave, req.mode, req.igr, kmax, t.data()
+    );
 
     Eigen::VectorX<real_t> out(kmax);
     for (int i = 0; i < kmax; ++i) {
-        out(i) = static_cast<real_t>(cg(i));
+        out(i) = static_cast<real_t>(cg[i]);
     }
     return out;
 
@@ -496,10 +402,10 @@ DepthKernel1D depthkernelHTI1d(const DispersionRequest& req) {
     Eigen::VectorXf rrho = req.rho_g_cm3.cast<float>();
 
     Eigen::VectorXd t = req.periods_s.cast<double>();
-    Eigen::VectorXd cp = Eigen::VectorXd::Zero(kmax);
-    surfdisp96_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(),
-                 mmax, req.iflsph, req.iwave, req.mode, 0, kmax,
-                 t.data(), cp.data());
+    std::vector<double> cp = disper(
+        rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+        mmax, req.iflsph, req.iwave, req.mode, 0, kmax, t.data()
+    );
 
     Eigen::MatrixX<real_t> sen_vs  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_vp  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
@@ -507,39 +413,20 @@ DepthKernel1D depthkernelHTI1d(const DispersionRequest& req) {
     Eigen::MatrixX<real_t> sen_gc  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
     Eigen::MatrixX<real_t> sen_gs  = Eigen::MatrixX<real_t>::Zero(kmax, nz);
 
-    Eigen::VectorXd cg = Eigen::VectorXd::Zero(kmax);
-    Eigen::VectorXd dispu = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dispw = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stressu = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd stressw = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdar = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdbr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdhr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdrr = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdgc = Eigen::VectorXd::Zero(mmax);
-    Eigen::VectorXd dcdgs = Eigen::VectorXd::Zero(mmax);
-
     for (int i = 0; i < kmax; ++i) {
-        dcdar.setZero();
-        dcdbr.setZero();
-        dcdhr.setZero();
-        dcdrr.setZero();
-        dcdgc.setZero();
-        dcdgs.setZero();
-
         double t_val = t(i);
-        double cp_val = cp(i);
-        sregn96_hti_c(rthk.data(), rvp.data(), rvs.data(), rrho.data(), mmax,
-                      &t_val, &cp_val, cg.data() + i, dispu.data(), dispw.data(),
-                      stressu.data(), stressw.data(), dcdar.data(), dcdbr.data(),
-                      dcdhr.data(), dcdrr.data(), dcdgc.data(), dcdgs.data(), req.iflsph);
+        double cp_val = cp[i];
+        HTIResult result = rayleighPhaseKernel_hti(
+            mmax, rthk.data(), rvp.data(), rvs.data(), rrho.data(),
+            t_val, cp_val, req.earthModel
+        );
 
         for (int j = 0; j < nz; ++j) {
-            sen_vs(i, j) = static_cast<real_t>(dcdbr(j));
-            sen_vp(i, j) = static_cast<real_t>(dcdar(j));
-            sen_rho(i, j) = static_cast<real_t>(dcdrr(j));
-            sen_gc(i, j) = static_cast<real_t>(dcdgc(j));
-            sen_gs(i, j) = static_cast<real_t>(dcdgs(j));
+            sen_vs(i, j) = static_cast<real_t>(result.dc2db[j]);
+            sen_vp(i, j) = static_cast<real_t>(result.dc2da[j]);
+            sen_rho(i, j) = static_cast<real_t>(result.dc2dr[j]);
+            sen_gc(i, j) = static_cast<real_t>(result.dc2dgc[j]);
+            sen_gs(i, j) = static_cast<real_t>(result.dc2dgs[j]);
         }
     }
 

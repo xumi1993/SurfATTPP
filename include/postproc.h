@@ -51,18 +51,19 @@ public:
         std::vector<real_t> fwd2inv(const Tensor3r &buf);
         Tensor3r inv2fwd(const real_t *buf);
         inline int I2V_INV_GRIDS(const int A, const int B, const int C, const int D) {
-            return (A*n_inv_K*n_inv_J*nset + B*n_inv_K*nset + C*nset + D);  // 4D to 1D index
+            // node arrays include 2 halo nodes per axis: (n_inv_*+2) nodes per set
+            return (A*(n_inv_K+2)*(n_inv_J+2)*nset + B*(n_inv_K+2)*nset + C*nset + D);
         }
     };
 
-    Tensor3r smooth(const Tensor3r &buf);
+    Tensor3r smooth(const Tensor3r &buf, bool is_ani = false);
     InvGrid inv_grid;      // isotropic inversion grid
     InvGrid inv_grid_ani;  // anisotropy inversion grid
 
 private:
     PostProc(const PostProc &)            = delete;
     PostProc &operator=(const PostProc &) = delete;
-    Tensor3r pde_smooth(const Tensor3r &buf);
+    Tensor3r pde_smooth(const Tensor3r &buf, bool is_ani);
    
 
 };

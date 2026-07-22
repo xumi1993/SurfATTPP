@@ -80,6 +80,8 @@ else ()
   set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g3 -ffixed-line-length-none")
 endif()
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lstdc++")
+
 # ---------------------------------------------------------------------------
 # Precision option  (-DUSE_SINGLE_PRECISION=ON to use float)
 # ---------------------------------------------------------------------------
@@ -204,6 +206,7 @@ file(GLOB SOURCES "src/*.cpp")
 add_library(objs OBJECT ${SOURCES} ${SURFKER_SOURCES})
 target_include_directories(objs PUBLIC
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
 )
 target_link_libraries(objs PUBLIC
     Eigen3::Eigen

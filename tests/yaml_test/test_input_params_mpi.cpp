@@ -23,12 +23,18 @@ static void verify_all() {
     const auto &dom = InputParams::IP().domain();
     const auto &t   = InputParams::IP().topo();
     const auto &inv = InputParams::IP().inversion();
+    const auto &o   = InputParams::IP().output();
 
     // data
-    assert(d.src_rec_file_ph == "src_rec_file_rotated.csv");
-    assert(d.src_rec_file_gr.empty());
-    assert(d.iwave == 2);
-    assert(d.vel_type[0] == true  && d.vel_type[1] == false);
+    assert(d.src_rec_file_rl_ph == "src_rec_file_rotated.csv");
+    assert(d.src_rec_file_rl_gr.empty());
+    assert(d.src_rec_file_lv_ph.empty());
+    assert(d.src_rec_file_lv_gr.empty());
+    assert(d.wave_type[0] == true  && d.wave_type[1] == false);
+    assert(d.vel_type[0]  == true  && d.vel_type[1]  == false);
+    assert(d.active_data.size() == 1);
+    assert(d.active_data[0].first  == WaveType::RL);
+    assert(d.active_data[0].second == SurfType::PH);
     assert_near(d.weights[0], 0.5);
     assert_near(d.weights[1], 0.5);
 
@@ -49,7 +55,6 @@ static void verify_all() {
     assert_near(t.wavelen_factor, 2.5);
 
     // inversion
-    assert(inv.is_anisotropy      == true);
     assert(inv.use_alpha_beta_rho == true);
     assert(inv.rho_scaling        == true);
     assert(inv.niter        == 40);
