@@ -71,8 +71,7 @@ private:
 
     Tensor3r model_update_;
     FieldVec ker_curr_, ker_prev_;
-    FieldVec gradient_;
-    Tensor3r search_direction_;
+    FieldVec gradient_, gradient_prev_;
 
     std::vector<real_t> misfit_ = std::vector<real_t>(InputParams::IP().inversion().niter, _0_CR);
     real_t misfit_trial_ = _0_CR;

@@ -86,6 +86,17 @@ Inversion::Inversion() {
                     ker_prev_[p].setZero();
                 }
             }
+        } else if (IP.inversion().optim_method == OPTIM_SD) {
+            gradient_prev_.assign(NPARAMS, Tensor3r());
+            for (int p = 0; p < NPARAMS; ++p) {
+                if (is_active_param[p]) {
+                    gradient_prev_[p] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+                    gradient_prev_[p].setZero();
+                }
+            }
+        } else {
+            logger.Error("Unsupported optimization method specified in input parameters.", MODULE_INV);
+            mpi.abort(EXIT_FAILURE);
         }
 
         // Set the initial step length for the optimization. This can be tuned or made adaptive in the future.
@@ -483,16 +494,24 @@ void Inversion::steepest_descent() {
     grad_normalization(gradient_);
 
     logger.Info(fmt::format("Steepest descent optimization with step length {:.6f}", alpha_), MODULE_INV);
-    if (iter_ > 0 && misfit_[iter_] >= misfit_[iter_ - 1]) {
-        // If misfit increased, reduce step size and revert to previous model
-        // (not implemented yet: would need to store previous model and restore it here)
-        logger.Info(
-            fmt::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_-1], misfit_[iter_]),
-            MODULE_INV
-        );
-        alpha_ *= IP.inversion().maxshrink;
-        logger.Info(fmt::format("Reducing step length to {:.6f}", alpha_), MODULE_INV);
+    if (iter_ > 0) {
+        bool shrink_flag = false;
+        real_t decs_angle = optimize::calc_descent_angle(gradient_prev_, gradient_);
+        if (decs_angle > MAX_SD_ANGLE ) {
+            shrink_flag = true;
+            logger.Info(fmt::format("Descent angle {:.4f} exceeds maximum {:.2f}, reducing step length to {:.6f}", decs_angle, MAX_SD_ANGLE, alpha_), MODULE_INV);
+        } else if (misfit_[iter_] > misfit_[iter_ - 1]) {
+            shrink_flag = true;
+            logger.Info(fmt::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_ - 1], misfit_[iter_]), MODULE_INV);
+        }
+        if (shrink_flag) {
+            alpha_ *= IP.inversion().maxshrink;
+            logger.Info(fmt::format("Shrinking step length to {:.6f}", alpha_), MODULE_INV);
+        }
     }
+    // copy the current gradient to the previous gradient for potential future use
+    gradient_prev_ = gradient_;
+
     // Pass gradient directly; model_update applies model -= alpha * gradient (descent).
     model_update(gradient_);
     mg.collect_model_loc();  // gather the updated local model back to the global model
