@@ -146,6 +146,7 @@ struct RotateTopoArgs {
 struct RotateModelArgs {
     std::string fname;
     std::string outfname;
+    std::string key = "vs";  // name of the velocity dataset to read and export
     real_t angle = 0.0;
     std::optional<std::array<real_t, 2>> center;  // absent when not supplied on the command line
 };
@@ -305,15 +306,16 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
     ArgList al(argc, argv);
     if (al.empty() || al.has("-h")) {
         std::cout <<
-            "Usage: surfatt_rotate_model -i model_file -o out_file [-a angle] [-c clat/clon] [-k keyname] [-h]\n\n"
-            "Rotate model by a given angle (anti-clockwise) and convert to csv format.\n"
-            "If angle and centre are omitted the model is converted without rotation.\n\n"
+            "Usage: surfatt_rotate_model -i model_file -o out_file -c clat/clon [-a angle] [-k keyname] [-h]\n\n"
+            "Rotate a model from the local (rotated) frame back to geographic\n"
+            "coordinates and convert to csv format.\n\n"
             "required arguments:\n"
-            "  -i model_file        Path to model file in netcdf format\n"
-            "  -o out_file          Output file name\n\n"
+            "  -i model_file        Path to model file in HDF5 format\n"
+            "  -o out_file          Output csv file name\n"
+            "  -c clat/clon         Centre of rotation (lat/lon)\n\n"
             "optional arguments:\n"
-            "  -a angle             Rotation angle in degrees\n"
-            "  -c clat/clon         Centre of rotation (lat/lon)\n"
+            "  -a angle             Rotation angle in degrees (default: 0)\n"
+            "  -k keyname           Name of the velocity dataset to read and export (default: vs)\n"
             "  -h                   Print help message\n";
         std::exit(0);
     }
@@ -322,6 +324,7 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
     out.outfname = al.require("-o");
     if (auto v = al.get("-a")) out.angle   = std::stod(*v);
     if (auto v = al.get("-c")) out.center  = parse_2double(*v);
+    if (auto v = al.get("-k")) out.key     = *v;
     return out;
 }
 

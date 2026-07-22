@@ -40,8 +40,13 @@ int main(int argc, char* argv[])
     logger.Info(fmt::format("Loaded model grid: {} x {} x {}", ngrid_i, ngrid_j, ngrid_k), MODULE_MAIN);
 
     // read model properties
+    if (!file.exists(args.key)) {
+        logger.Error(fmt::format("Velocity dataset '{}' not found in {}", args.key, args.fname), MODULE_MAIN);
+        mpi.finalize();
+        return EXIT_FAILURE;
+    }
     hsize_t ni = 0, nj = 0, nk = 0;
-    auto vs = file.read_volume<real_t>("vs", ni, nj, nk);
+    auto vs = file.read_volume<real_t>(args.key, ni, nj, nk);
 
     std::vector<real_t> g0;
     std::vector<real_t> theta;
