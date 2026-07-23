@@ -3,7 +3,6 @@
 #include "config.h"
 #include "utils.h"
 #include "h5io.h"
-#include "optimize.h"
 #include "src_rec.h"
 #include "xdmf.h"
 #include <fstream>
@@ -195,6 +194,7 @@ void Inversion::run_inversion() {
             logger.Info("Using L-BFGS optimization with line search.", MODULE_INV);
             while (true) {
                 if ( !line_search() ) break;
+                if (wolfe_res_.status == optimize::WolfeResult::Status::FAIL) break;
                 iter_start_ = iter_;
                 logger.Info(fmt::format(
                     "Restarting count of L-BFGS from {:03d}", iter_start_
@@ -208,11 +208,12 @@ void Inversion::run_inversion() {
         }
 
         // Check for convergence based on misfit reduction
-        if (check_convergence()) break;
+        if (check_convergence() || wolfe_res_.status == optimize::WolfeResult::Status::FAIL) break;
 
         mpi.barrier();
     }
     mg.write(FINAL_MODEL_FNAME);
+    write_src_rec_fwd();
 }
 
 void Inversion::init_iteration() {
@@ -259,7 +260,6 @@ bool Inversion::check_convergence() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
 
-    bool break_flag = false;
     if (mpi.is_main()) {
         if ( iter_ > BREAK_ITER ) {
             real_t sum_misfit_prev = _0_CR;
@@ -274,18 +274,18 @@ bool Inversion::check_convergence() {
             real_t misfit_reduction = 100 * (sum_misfit_prev - sum_misfit_curr) / sum_misfit_prev;
             if (misfit_reduction < 0) {
                 logger.Info(fmt::format("Misfit increased in the last {} iterations.", BREAK_ITER), MODULE_INV);
-                break_flag = true;
+                break_flag_ = true;
             } else if (misfit_reduction < IP.inversion().min_derr) {
                 logger.Info(fmt::format("Convergence achieved with misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
-                break_flag = true;
+                break_flag_ = true;
             } else {
                 logger.Info(fmt::format("Misfit reduction of {:.2f}% in the last {} iterations.", misfit_reduction, BREAK_ITER), MODULE_INV);
-                break_flag = false;
+                break_flag_ = false;
             }
         }
     }
-    mpi.bcast(break_flag);
-    return break_flag;
+    mpi.bcast(break_flag_);
+    return break_flag_;
 }
 
 void Inversion::accumulate_smoothed_gradient(
@@ -559,17 +559,17 @@ bool Inversion::line_search() {
         misfit_trial = run_forward_adjoint(true);
 
         // wolfe_condition checks if the current step length satisfies the strong Wolfe conditions and returns the next step length to try if not.
-        auto wolfe_res = optimize::wolfe_condition(
+        wolfe_res_ = optimize::wolfe_condition(
             ker_prev_, ker_curr_,
             search_dir, alpha_, alpha_L_, alpha_R_,
             misfit_[iter_], misfit_trial, sub_iter
         );
 
-        if (wolfe_res.status == optimize::WolfeResult::Status::ACCEPT) {
+        if (wolfe_res_.status == optimize::WolfeResult::Status::ACCEPT) {
             logger.Info(fmt::format("Line search accepted with alpha = {:.6f}", alpha_), MODULE_INV);
             break_flag = true;
-        } else if (wolfe_res.status == optimize::WolfeResult::Status::TRY) {
-            alpha_ = wolfe_res.next_alpha;
+        } else if (wolfe_res_.status == optimize::WolfeResult::Status::TRY) {
+            alpha_ = wolfe_res_.next_alpha;
             logger.Info(fmt::format("Line search trying next alpha = {:.6f}", alpha_), MODULE_INV);
             break_flag = false;
         } else {
@@ -636,7 +636,8 @@ void Inversion::write_src_rec_fwd(){
         // gather synthetic travel times to the main rank for output and inversion steps
         if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data ||
             (run_mode == INVERSION_MODE && iter_ == IP.inversion().niter - 1) ||
-            (run_mode == INVERSION_MODE && iter_ == 0)) {
+            (run_mode == INVERSION_MODE && iter_ == 0) ||
+            (break_flag_ && wolfe_res_.status == optimize::WolfeResult::Status::FAIL)) {
             logger.Info(fmt::format(
                 "Gathering synthetic {} travel times to the main rank for output...", tag), MODULE_PREPROC
             );
