@@ -86,6 +86,17 @@ Inversion::Inversion() {
                     ker_prev_[p].setZero();
                 }
             }
+        } else if (IP.inversion().optim_method == OPTIM_SD) {
+            gradient_prev_.assign(NPARAMS, Tensor3r());
+            for (int p = 0; p < NPARAMS; ++p) {
+                if (is_active_param[p]) {
+                    gradient_prev_[p] = Tensor3r(dcp.loc_nx(), dcp.loc_ny(), ngrid_k);
+                    gradient_prev_[p].setZero();
+                }
+            }
+        } else {
+            logger.Error("Unsupported optimization method specified in input parameters.", MODULE_INV);
+            mpi.abort(EXIT_FAILURE);
         }
 
         // Set the initial step length for the optimization. This can be tuned or made adaptive in the future.
@@ -207,8 +218,13 @@ void Inversion::run_inversion() {
             mpi.abort(EXIT_FAILURE);
         }
 
+        // Wolfe status is only valid for the L-BFGS path after line_search().
+        const bool line_search_failed =
+            IP.inversion().optim_method == OPTIM_LBFGS &&
+            wolfe_res_.status == optimize::WolfeResult::Status::FAIL;
+
         // Check for convergence based on misfit reduction
-        if (check_convergence() || wolfe_res_.status == optimize::WolfeResult::Status::FAIL) break;
+        if (check_convergence() || line_search_failed) break;
 
         mpi.barrier();
     }
@@ -483,16 +499,24 @@ void Inversion::steepest_descent() {
     grad_normalization(gradient_);
 
     logger.Info(fmt::format("Steepest descent optimization with step length {:.6f}", alpha_), MODULE_INV);
-    if (iter_ > 0 && misfit_[iter_] >= misfit_[iter_ - 1]) {
-        // If misfit increased, reduce step size and revert to previous model
-        // (not implemented yet: would need to store previous model and restore it here)
-        logger.Info(
-            fmt::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_-1], misfit_[iter_]),
-            MODULE_INV
-        );
-        alpha_ *= IP.inversion().maxshrink;
-        logger.Info(fmt::format("Reducing step length to {:.6f}", alpha_), MODULE_INV);
+    if (iter_ > 0) {
+        bool shrink_flag = false;
+        real_t decs_angle = optimize::calc_descent_angle(gradient_prev_, gradient_);
+        if (decs_angle > MAX_SD_ANGLE ) {
+            shrink_flag = true;
+            logger.Info(fmt::format("Descent angle {:.4f} exceeds maximum {:.2f}", decs_angle, MAX_SD_ANGLE), MODULE_INV);
+        } else if (misfit_[iter_] > misfit_[iter_ - 1]) {
+            shrink_flag = true;
+            logger.Info(fmt::format("Misfit increased from {:.4f} to {:.4f}", misfit_[iter_ - 1], misfit_[iter_]), MODULE_INV);
+        }
+        if (shrink_flag) {
+            alpha_ *= IP.inversion().maxshrink;
+            logger.Info(fmt::format("Shrinking step length to {:.6f}", alpha_), MODULE_INV);
+        }
     }
+    // copy the current gradient to the previous gradient for potential future use
+    gradient_prev_ = gradient_;
+
     // Pass gradient directly; model_update applies model -= alpha * gradient (descent).
     model_update(gradient_);
     mg.collect_model_loc();  // gather the updated local model back to the global model
@@ -502,7 +526,7 @@ bool Inversion::line_search() {
     auto &IP = InputParams::IP();
     auto &logger = ATTLogger::logger();
     auto &mpi = Parallel::mpi();
-    bool break_flag = false, restart_flag = false;
+    bool break_sub_iter = false, restart_flag = false;
     real_t misfit_trial = _0_CR;
 
     logger.Info("Optimization with L-BFGS method", MODULE_INV);
@@ -567,18 +591,18 @@ bool Inversion::line_search() {
 
         if (wolfe_res_.status == optimize::WolfeResult::Status::ACCEPT) {
             logger.Info(fmt::format("Line search accepted with alpha = {:.6f}", alpha_), MODULE_INV);
-            break_flag = true;
+            break_sub_iter = true;
         } else if (wolfe_res_.status == optimize::WolfeResult::Status::TRY) {
             alpha_ = wolfe_res_.next_alpha;
             logger.Info(fmt::format("Line search trying next alpha = {:.6f}", alpha_), MODULE_INV);
-            break_flag = false;
+            break_sub_iter = false;
         } else {
             logger.Info("Line search failed to find a suitable step length.", MODULE_INV);
-            break_flag = true;
+            break_sub_iter = true;
             restart_flag = true;
         }
         mpi.barrier();
-        if (break_flag) break;
+        if (break_sub_iter) break;
     }
     if (!restart_flag) misfit_trial_ = misfit_trial;
     return restart_flag;
@@ -637,7 +661,8 @@ void Inversion::write_src_rec_fwd(){
         if (run_mode == FORWARD_ONLY || IP.output().output_in_process_data ||
             (run_mode == INVERSION_MODE && iter_ == IP.inversion().niter - 1) ||
             (run_mode == INVERSION_MODE && iter_ == 0) ||
-            (break_flag_ && wolfe_res_.status == optimize::WolfeResult::Status::FAIL)) {
+            wolfe_res_.status == optimize::WolfeResult::Status::FAIL||
+            break_flag_) {
             logger.Info(fmt::format(
                 "Gathering synthetic {} travel times to the main rank for output...", tag), MODULE_PREPROC
             );
