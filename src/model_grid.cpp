@@ -3,12 +3,10 @@
 #include "logger.h"
 #include "inversion1d.h"
 #include "h5io.h"
-#include "minpack.hpp"
 #include "utils.h"
 #include "decomposer.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <vector>
 
@@ -26,18 +24,18 @@ namespace {
         lat_max = stla_vec.maxCoeff();
     }
 
-    // Fit parameters of depth-dependent phase function:
-    // anomfun(a) = (sqrt(p0^2 + p1*(a-1)) - p0) / p2
-    // so that anomfun(anchor_i) ~= n_pi_i, using minpack::lmdif1.
-    std::array<real_t, 3> dep_anom(
+    // Build depth anomalies as complete, symmetric half-sines. The top
+    // layer has thickness asanom_size; the remaining layer thicknesses
+    // follow an arithmetic progression that spans the full depth range.
+    Eigen::VectorX<real_t> dep_anom(
         const Eigen::VectorX<real_t>& zgrids,
         const int nz,
         const real_t asanom_size
     ) {
         auto &logger = ATTLogger::logger();
         auto &mpi = Parallel::mpi();
-        if (nz <= 1) {
-            logger.Error("dep_anom: nz must be > 1", MODULE_GRID);
+        if (nz <= 0) {
+            logger.Error("dep_anom: nz must be > 0", MODULE_GRID);
             mpi.abort(EXIT_FAILURE);
         }
         if (zgrids.size() < 2) {
@@ -45,74 +43,96 @@ namespace {
             mpi.abort(EXIT_FAILURE);
         }
 
-        const int maxanchor = nz * 2 + 1;
-        const real_t dz = zgrids(1) - zgrids(0);
-        const real_t nanomtop = asanom_size / dz;
-        const real_t anom_size_inc =
-            (static_cast<real_t>(zgrids.size() - 1) - static_cast<real_t>(nz) * nanomtop) /
-            static_cast<real_t>(2 * nz * (nz - 1));
+        for (Eigen::Index k = 1; k < zgrids.size(); ++k) {
+            if (zgrids(k) <= zgrids(k - 1)) {
+                logger.Error(
+                    "dep_anom: zgrids must be strictly increasing",
+                    MODULE_GRID
+                );
+                mpi.abort(EXIT_FAILURE);
+            }
+        }
 
-        Eigen::VectorX<real_t> anch = Eigen::VectorX<real_t>::Zero(maxanchor);
-        Eigen::VectorX<real_t> n_pi = Eigen::VectorX<real_t>::Zero(maxanchor);
+        const real_t z_top = zgrids(0);
+        const real_t z_bottom = zgrids(zgrids.size() - 1);
+        const real_t total_depth = z_bottom - z_top;
 
-        anch(0) = _1_CR;
-        n_pi(0) = _0_CR;
-        logger.Debug(
-            fmt::format(
-                "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
-                (anch(0) - _1_CR) * dz,
-                n_pi(0) * static_cast<real_t>(2)
-            ),
-            MODULE_GRID
-        );
+        Eigen::VectorX<real_t> boundaries(nz + 1);
+        boundaries(0) = z_top;
 
-        for (int i = 1; i < maxanchor; ++i) {
-            anch(i) = anch(i - 1)
-                      + (nanomtop - anom_size_inc) / static_cast<real_t>(2)
-                      + static_cast<real_t>(i - 1) * anom_size_inc;
-            n_pi(i) = n_pi(i - 1) + static_cast<real_t>(0.25);
+        if (nz == 1) {
+            boundaries(1) = z_bottom;
+        } else {
+            const real_t layer_size_inc =
+                static_cast<real_t>(2)
+                * (total_depth - static_cast<real_t>(nz) * asanom_size)
+                / static_cast<real_t>(nz * (nz - 1));
 
+            for (int layer = 0; layer < nz; ++layer) {
+                const real_t layer_size =
+                    asanom_size
+                    + static_cast<real_t>(layer) * layer_size_inc;
+                if (layer_size <= _0_CR) {
+                    logger.Error(
+                        fmt::format(
+                            "dep_anom: invalid thickness {:.3f} km for "
+                            "depth layer {}",
+                            layer_size, layer + 1
+                        ),
+                        MODULE_GRID
+                    );
+                    mpi.abort(EXIT_FAILURE);
+                }
+                boundaries(layer + 1) =
+                    boundaries(layer) + layer_size;
+            }
+        }
+
+        // Remove accumulated round-off at the last layer boundary.
+        boundaries(nz) = z_bottom;
+
+        for (int layer = 0; layer < nz; ++layer) {
             logger.Debug(
                 fmt::format(
-                    "Depth anomaly anchor: {:.2f}km, {:.1f}pi",
-                    (anch(i) - _1_CR) * dz,
-                    n_pi(i) * static_cast<real_t>(2)
+                    "Depth anomaly layer {}: {:.3f}--{:.3f} km "
+                    "(thickness {:.3f} km)",
+                    layer + 1,
+                    boundaries(layer),
+                    boundaries(layer + 1),
+                    boundaries(layer + 1) - boundaries(layer)
                 ),
                 MODULE_GRID
             );
         }
 
-        std::vector<double> para = {1.0, 1.0, 1.0};
-        std::vector<double> fitfun;
-        const double tol = 1.0e-7;
+        Eigen::VectorX<real_t> pattern =
+            Eigen::VectorX<real_t>::Zero(zgrids.size());
+        int layer = 0;
+        for (Eigen::Index k = 0; k < zgrids.size(); ++k) {
+            const real_t depth = zgrids(k);
+            while (
+                layer < nz - 1
+                && depth >= boundaries(layer + 1)
+            ) {
+                ++layer;
+            }
 
-        const auto info = minpack::lmdif1(
-            [&anch, &n_pi](int m, int /*n*/, const double* x, double* fvec, int& iflag) {
-                (void)iflag;
-                for (int i = 0; i < m; ++i) {
-                    const double arg = x[0] * x[0] + x[1] * (static_cast<double>(anch(i)) - 1.0);
-                    const double anomfun = (std::sqrt(arg) - x[0]) / x[2];
-                    fvec[i] = std::abs(anomfun - static_cast<double>(n_pi(i)));
-                }
-            },
-            maxanchor, 3,para, fitfun, tol
-        );
-
-        logger.Debug(fmt::format(
-            "Depth anomaly fit status info={} (1..4 are converged), params: {:.4f} {:.4f} {:.4f}",
-            static_cast<int>(info), para[0], para[1], para[2]
-        ), MODULE_GRID);
-
-        if (static_cast<int>(info) <= 0) {
-            logger.Error("ModelGrid::dep_anom: minpack lmdif1 failed (info <= 0)", MODULE_GRID);
-            mpi.abort(EXIT_FAILURE);
+            const real_t layer_size =
+                boundaries(layer + 1) - boundaries(layer);
+            const real_t local_depth = std::clamp(
+                (depth - boundaries(layer)) / layer_size,
+                _0_CR,
+                _1_CR
+            );
+            const real_t sign =
+                (layer % 2 == 0) ? _1_CR : -_1_CR;
+            pattern(k) = sign * std::sin(PI * local_depth);
         }
 
-        return {
-            static_cast<real_t>(para[0]),
-            static_cast<real_t>(para[1]),
-            static_cast<real_t>(para[2])
-        };
+        // Domain endpoints are layer boundaries and should be exactly zero.
+        pattern(0) = _0_CR;
+        pattern(pattern.size() - 1) = _0_CR;
+        return pattern;
     }
 }
 
@@ -597,32 +617,22 @@ ModelGrid::build_perturbation_pattern(
 
     {
         Eigen::VectorX<real_t> ii = Eigen::VectorX<real_t>::LinSpaced(
-            inner_i, _0_CR, static_cast<real_t>(inner_i - 1));
+            inner_i, _1_CR, static_cast<real_t>(inner_i));
         xp.segment(ntaper_i, inner_i) =
             (static_cast<real_t>(nx_w) * PI * ii.array() / static_cast<real_t>(inner_i)).sin().matrix();
     }
     {
         Eigen::VectorX<real_t> jj = Eigen::VectorX<real_t>::LinSpaced(
-            inner_j, _0_CR, static_cast<real_t>(inner_j - 1));
+            inner_j, _1_CR, static_cast<real_t>(inner_j));
         yp.segment(ntaper_j, inner_j) =
             (static_cast<real_t>(ny_w) * PI * jj.array() / static_cast<real_t>(inner_j)).sin().matrix();
     }
     if (anom_sz <= _0_CR) {
         Eigen::VectorX<real_t> kk = Eigen::VectorX<real_t>::LinSpaced(
-            ngrid_k, _0_CR, static_cast<real_t>(ngrid_k - 1));
+            ngrid_k, _1_CR, static_cast<real_t>(ngrid_k));
         zp = (static_cast<real_t>(nz_w) * PI * kk.array() / static_cast<real_t>(ngrid_k)).sin().matrix();
     } else {
-        const auto para = dep_anom(zgrids, nz_w, anom_sz);
-        logger.Info(fmt::format(
-            "Depth perturbation phase function parameters: p0={:.3f}, p1={:.3f}, p2={:.3f}",
-            para[0], para[1], para[2]
-        ), MODULE_GRID);
-        for (int k = 0; k < ngrid_k - 1; ++k) {
-            const real_t phase = (
-                std::sqrt(para[0] * para[0] + para[1] * static_cast<real_t>(k)) - para[0]
-            ) / para[2];
-            zp(k) = std::sin(static_cast<real_t>(2) * PI * phase);
-        }
+        zp = dep_anom(zgrids, nz_w, anom_sz);
     }
     return {xp, yp, zp};
 }
