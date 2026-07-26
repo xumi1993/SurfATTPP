@@ -91,8 +91,7 @@ static real_t nodal_width_rad(const Eigen::VectorX<real_t> &coords_deg,
 }
 
 static real_t field_dot_global(const FieldVec &kernel,
-                               const FieldVec &direction,
-                               real_t path_alpha) {
+                               const FieldVec &direction) {
     auto &dcp = Decomposer::DCP();
     auto &mg  = ModelGrid::MG();
     auto &mpi = Parallel::mpi();
@@ -117,11 +116,15 @@ static real_t field_dot_global(const FieldVec &kernel,
                 for (int iz = 0; iz < ngrid_k; ++iz) {
                     const int index = I2V(ix_global, iy_global, iz);
                     real_t minus_dm_dalpha;
+                    real_t kernel_val = kernel[p](ix, iy, iz);
 
                     if (p == 0) {
                         // vs(alpha) = vs0 * (1 - alpha*d_vs)
                         minus_dm_dalpha =
                             mg.vs3d[index] * direction[p](ix, iy, iz);
+                        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                            kernel_val = kernel[0](ix, iy, iz) + kernel[5](ix, iy, iz);
+                        }
                     } else if (p == 1) {
                         // vp(alpha) = vp0 * (1 - alpha*d_vp)
                         minus_dm_dalpha =
@@ -132,22 +135,13 @@ static real_t field_dot_global(const FieldVec &kernel,
                             mg.rho3d[index] * direction[p](ix, iy, iz);
                     } else if (p == 5 &&
                                IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
-                        // The Love-wave kernel stored in slot 5 is dJ/dvsh,
-                        // while vsh(alpha) = vs0*(1-alpha*d_vs)
-                        //                    * gamma0*(1-alpha*d_gamma).
-                        // Thus -dvsh/dalpha contains both update paths.
-                        const real_t d_vs = direction[0](ix, iy, iz);
-                        const real_t d_gamma = direction[5](ix, iy, iz);
-                        minus_dm_dalpha = mg.vsh3d[index] * (
-                            d_vs * (_1_CR - path_alpha * d_gamma)
-                            + d_gamma * (_1_CR - path_alpha * d_vs)
-                        );
+                        minus_dm_dalpha = (mg.vsh3d[index] / mg.vs3d[index]) * direction[p](ix, iy, iz);
                     } else {
                         // gc and gs are updated additively.
                         minus_dm_dalpha = direction[p](ix, iy, iz);
                     }
 
-                    local += kernel[p](ix, iy, iz)
+                    local += kernel_val
                              * minus_dm_dalpha * area;
                 }
             }
@@ -180,8 +174,8 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     // q is evaluated at the base model (alpha=0).  q1 is evaluated at the
     // current trial point.  For the linear multiplicative updates their tangent
     // is constant; path_alpha matters only for vsh = vs*gamma.
-    const real_t q  = -field_dot_global(gradient, direction, _0_CR);
-    const real_t q1 = -field_dot_global(ker_next,  direction, alpha);
+    const real_t q  = -field_dot_global(gradient, direction);
+    const real_t q1 = -field_dot_global(ker_next,  direction);
 
     const bool cond_armijo    = f1 <= f0 + alpha * c1 * q;
     const bool cond_curvature = q1 >= c2 * q;
