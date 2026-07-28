@@ -5,8 +5,10 @@
 #include "h5io.h"
 #include "logger.h"
 #include "input_params.h"
+#include "model_grid.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace optimize {
 
@@ -58,11 +60,94 @@ real_t calc_descent_angle(const FieldVec &direction, const FieldVec &gradient) {
 }
 
 // ---------------------------------------------------------------------------
-// field_dot_global  — MPI-reduced inner product (internal)
+// field_dot_global  — MPI-reduced directional derivative magnitude
 // ---------------------------------------------------------------------------
-static real_t field_dot_global(const FieldVec &a, const FieldVec &b) {
+// The adjoint kernels are densities over the horizontal surface, while their
+// depth dimension already consists of discrete layer sensitivities (dc/dm_k).
+// The search direction, however, is applied multiplicatively to vs/vp/rho/gamma
+// and additively to gc/gs.  Therefore this routine includes both the horizontal
+// quadrature weight and the chain rule from alpha to the physical model:
+//
+//   m(alpha) = m0 (1 - alpha*d)  =>  -dm/dalpha = m0*d
+//   m(alpha) = m0 - alpha*d      =>  -dm/dalpha = d .
+//
+// dlon_i and dlat_j are nodal quadrature widths.  End points receive half of
+// the adjacent interval, as in the trapezoidal rule.  No dz factor is added.
+static real_t nodal_width_rad(const Eigen::VectorX<real_t> &coords_deg,
+                              int index) {
+    const int n = static_cast<int>(coords_deg.size());
+    if (n < 2) return _0_CR;
+
+    real_t width_deg;
+    if (index == 0) {
+        width_deg = std::abs(coords_deg(1) - coords_deg(0)) * _0_5_CR;
+    } else if (index == n - 1) {
+        width_deg = std::abs(coords_deg(n - 1) - coords_deg(n - 2)) * _0_5_CR;
+    } else {
+        width_deg = std::abs(coords_deg(index + 1) - coords_deg(index - 1))
+                    * _0_5_CR;
+    }
+    return width_deg * DEG2RAD;
+}
+
+static real_t field_dot_global(const FieldVec &kernel,
+                               const FieldVec &direction) {
+    auto &dcp = Decomposer::DCP();
+    auto &mg  = ModelGrid::MG();
     auto &mpi = Parallel::mpi();
-    real_t local = field_dot(a, b);
+    auto &IP  = InputParams::IP();
+
+    real_t local = _0_CR;
+    for (size_t p = 0; p < kernel.size(); ++p) {
+        if (kernel[p].size() == 0 || direction[p].size() == 0) continue;
+
+        for (int ix = 0; ix < dcp.loc_nx(); ++ix) {
+            const int ix_global = dcp.loc_I_start() + ix;
+            const real_t dlon = nodal_width_rad(mg.xgrids, ix_global);
+
+            for (int iy = 0; iy < dcp.loc_ny(); ++iy) {
+                const int iy_global = dcp.loc_J_start() + iy;
+                const real_t dlat = nodal_width_rad(mg.ygrids, iy_global);
+                const real_t latitude = mg.ygrids(iy_global) * DEG2RAD;
+                const real_t area =
+                    R_EARTH * R_EARTH * std::abs(std::cos(latitude))
+                    * dlon * dlat;
+
+                for (int iz = 0; iz < ngrid_k; ++iz) {
+                    const int index = I2V(ix_global, iy_global, iz);
+                    real_t minus_dm_dalpha;
+                    real_t kernel_val = kernel[p](ix, iy, iz);
+
+                    if (p == 0) {
+                        // vs(alpha) = vs0 * (1 - alpha*d_vs)
+                        minus_dm_dalpha =
+                            mg.vs3d[index] * direction[p](ix, iy, iz);
+                        if (IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                            kernel_val = kernel[0](ix, iy, iz) + kernel[5](ix, iy, iz);
+                        }
+                    } else if (p == 1) {
+                        // vp(alpha) = vp0 * (1 - alpha*d_vp)
+                        minus_dm_dalpha =
+                            mg.vp3d[index] * direction[p](ix, iy, iz);
+                    } else if (p == 2) {
+                        // rho(alpha) = rho0 * (1 - alpha*d_rho)
+                        minus_dm_dalpha =
+                            mg.rho3d[index] * direction[p](ix, iy, iz);
+                    } else if (p == 5 &&
+                               IP.inversion().model_para_type == MODEL_RADIAL_ANI) {
+                        minus_dm_dalpha = (mg.vsh3d[index] / mg.vs3d[index]) * direction[p](ix, iy, iz);
+                    } else {
+                        // gc and gs are updated additively.
+                        minus_dm_dalpha = direction[p](ix, iy, iz);
+                    }
+
+                    local += kernel_val
+                             * minus_dm_dalpha * area;
+                }
+            }
+        }
+    }
+
     real_t global;
     mpi.sum_all_all(local, global);
     return global;
@@ -86,12 +171,17 @@ WolfeResult wolfe_condition(const FieldVec &gradient, const FieldVec &ker_next,
     // direction is the positive gradient (search_dir); model_update subtracts it,
     // so the actual descent step is d = -direction.  Wolfe conditions require
     // q = ∇f · d < 0, hence we negate the dot products here.
+    // q is evaluated at the base model (alpha=0).  q1 is evaluated at the
+    // current trial point.  For the linear multiplicative updates their tangent
+    // is constant; path_alpha matters only for vsh = vs*gamma.
     const real_t q  = -field_dot_global(gradient, direction);
     const real_t q1 = -field_dot_global(ker_next,  direction);
 
     const bool cond_armijo    = f1 <= f0 + alpha * c1 * q;
     const bool cond_curvature = q1 >= c2 * q;
 
+    logger.Debug(fmt::format("q = {:.6e}, q1 = {:.6e}, f0 = {:.6e}, f1 = {:.6e}, alpha = {:.6e}, c1*q = {:.6e}, c2*q = {:.6e}",
+        q, q1, f0, f1, alpha, c1 * q, c2 * q), MODULE_OPTIM);
     logger.Debug(fmt::format("Armijo condition: f0={:.6e}  f1={:.6e}  f0+c1*alpha*q={:.6e}",
         f0, f1, f0 + alpha * c1 * q), MODULE_OPTIM);
     logger.Debug(fmt::format("Curvature condition: q(grad·dir)={:.6e}  q1(grad'·dir)={:.6e}  c2*q={:.6e}",

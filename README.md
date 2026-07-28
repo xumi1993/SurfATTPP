@@ -5,12 +5,13 @@
 [![Build SurfATT](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml/badge.svg)](https://github.com/xumi1993/SurfATTPP/actions/workflows/build.yml)
 [![Integration Tests](https://github.com/xumi1993/SurfATTPP/actions/workflows/test.yml/badge.svg?branch=devel)](https://github.com/xumi1993/SurfATTPP/actions/workflows/test.yml)
 
-This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time **T**omography written in modern C++20 with highlights:
+This is an innovative package for **Surf**ace wave **A**djoint **T**ravel-time **T**omography written in modern C++17 with highlights:
 
+- Azimuthal and radial anisotropic inversion for S-wave velocity using surface wave travel time data ([Hao et al., 2026](https://doi.org/10.1029/2025JB033164))
 - Calculation of surface wave travel time based on **Eikonal equation** with fast sweeping method ([Tong, 2021a](https://doi.org/10.1029/2021JB021818))
 - Computation of sensitivity kernels through **adjoint method** ([Tong, 2021b](https://doi.org/10.1029/2021JB022365))
 - **Multi-grid model parametrization** utilization in optimization ([Tong et al., 2019](https://doi.org/10.1093/gji/ggz151))
-- Consideration of **surface topography** ([Hao et al., 2024a](https://doi.org/10.1029/2023JB027454))
+- Consideration of **surface topography** ([Hao et al., 2024](https://doi.org/10.1029/2023JB027454))
 - **MPI parallelism** with shared-memory windows for large-scale distributed computing
 - **HDF5** model I/O with parallel read/write support
 
@@ -46,7 +47,7 @@ If you use SurfATT in your research, please consider citing following papers:
 
 ## Installation
 
-Please refer to the [installation guide](https://surfatt.xumijian.me/installation/dependence.html) for detailed instructions.
+Please refer to the [installation guide](https://tomoatt.com/surfdocs/installation) for detailed instructions.
 
 ### Build from source
 
@@ -54,8 +55,6 @@ Please refer to the [installation guide](https://surfatt.xumijian.me/installatio
 mkdir build && cd build
 cmake .. && make -j
 ```
-
-Use `-DUSE_SINGLE_PRECISION=ON` to build with single-precision floats (default: double).
 
 ## Executables
 
