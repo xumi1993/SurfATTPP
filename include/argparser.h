@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -146,6 +147,11 @@ struct RotateTopoArgs {
 struct RotateModelArgs {
     std::string fname;
     std::string outfname;
+    // Scalar dataset to read and export, see rotate_model_fields.  Absent when -k
+    // was not supplied: the export then defaults to "vs" and appends whichever
+    // anisotropy fields the file carries.  When supplied, that dataset is the only
+    // model column written.
+    std::optional<std::string> key;
     real_t angle = 0.0;
     std::optional<std::array<real_t, 2>> center;  // absent when not supplied on the command line
 };
@@ -301,19 +307,67 @@ inline RotateTopoArgs argparse_rotate_topo(int argc, char* argv[]) {
     };
 }
 
+// Model fields that surfatt_rotate_model is allowed to export.  Every entry is a
+// scalar field, i.e. invariant under a rotation of the horizontal frame, so only
+// the grid coordinates have to be transformed and the values travel unchanged.
+inline const std::array<const char*, 7> rotate_model_fields = {
+    "vs", "vsv", "vsh", "vp", "rho", "zeta", "gamma"
+};
+
+// Fields that are NOT invariant under a frame rotation and must never be exported
+// as a plain pass-through: gc/gs are the cos(2*theta)/sin(2*theta) components of
+// the azimuthal anisotropy tensor, and theta is the fast-axis azimuth itself (it
+// is rotated, but only on the automatic g0/theta columns).
+inline const std::array<const char*, 3> rotate_model_blocked_fields = {"gc", "gs", "theta"};
+
+// Comma-separated list of rotate_model_fields, for help text and error messages.
+inline std::string rotate_model_fields_str() {
+    std::string s;
+    for (const auto* k : rotate_model_fields) {
+        if (!s.empty()) s += ", ";
+        s += k;
+    }
+    return s;
+}
+
+// Reduce a dataset name to its bare field name by stripping the "model_"/"grad_"
+// prefix and the "_NNN" iteration suffix that model_iter.h5 uses, so that e.g.
+// "model_vs_042" and "grad_gamma_007" validate as "vs" and "gamma".
+inline std::string rotate_model_base_field(std::string key) {
+    for (const std::string prefix : {"model_", "grad_"}) {
+        if (key.rfind(prefix, 0) == 0) { key.erase(0, prefix.size()); break; }
+    }
+    const auto us = key.rfind('_');
+    if (us != std::string::npos && us + 1 < key.size() &&
+        std::all_of(key.begin() + us + 1, key.end(),
+                    [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        key.erase(us);
+    }
+    return key;
+}
+
 inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
     ArgList al(argc, argv);
     if (al.empty() || al.has("-h")) {
         std::cout <<
-            "Usage: surfatt_rotate_model -i model_file -o out_file [-a angle] [-c clat/clon] [-k keyname] [-h]\n\n"
-            "Rotate model by a given angle (anti-clockwise) and convert to csv format.\n"
-            "If angle and centre are omitted the model is converted without rotation.\n\n"
+            "Usage: surfatt_rotate_model -i model_file -o out_file -c clat/clon [-a angle] [-k keyname] [-h]\n\n"
+            "Rotate a model from the local (rotated) frame back to geographic\n"
+            "coordinates and convert to csv format.\n\n"
             "required arguments:\n"
-            "  -i model_file        Path to model file in netcdf format\n"
-            "  -o out_file          Output file name\n\n"
+            "  -i model_file        Path to model file in HDF5 format\n"
+            "  -o out_file          Output csv file name\n"
+            "  -c clat/clon         Centre of rotation (lat/lon)\n\n"
             "optional arguments:\n"
-            "  -a angle             Rotation angle in degrees\n"
-            "  -c clat/clon         Centre of rotation (lat/lon)\n"
+            "  -a angle             Rotation angle in degrees (default: 0)\n"
+            "  -k keyname           Export only this scalar dataset as the model column\n"
+            "                       One of: " << rotate_model_fields_str() << "\n"
+            "                       optionally with a model_/grad_ prefix and an _NNN\n"
+            "                       iteration suffix, e.g. model_vs_042 in model_iter.h5\n"
+            "                       The csv column is named after the bare field, so\n"
+            "                       model_vs_042 is written as a column named vs\n"
+            "                       Without -k, vs is exported together with whichever\n"
+            "                       anisotropy fields the file carries: g0/theta for\n"
+            "                       azimuthal, vsv/zeta for radial\n"
             "  -h                   Print help message\n";
         std::exit(0);
     }
@@ -322,6 +376,34 @@ inline RotateModelArgs argparse_rotate_model(int argc, char* argv[]) {
     out.outfname = al.require("-o");
     if (auto v = al.get("-a")) out.angle   = std::stod(*v);
     if (auto v = al.get("-c")) out.center  = parse_2double(*v);
+    if (auto v = al.get("-k")) {
+        const std::string base = rotate_model_base_field(*v);
+        const auto matches = [&base](const char* k) { return base == k; };
+        // Reported directly instead of thrown: an uncaught exception under mpirun
+        // buries the message in an abort trace, and this is a routine user error.
+        if (std::any_of(rotate_model_blocked_fields.begin(),
+                        rotate_model_blocked_fields.end(), matches)) {
+            std::cerr << "Error: -k " << *v << " is not supported: \"" << base
+                      << "\" is not invariant under a rotation of the frame.\n";
+            if (base == "theta")
+                std::cerr << "theta is the fast-axis azimuth; it is rotated together with the grid "
+                             "and is\nexported next to g0 when -k is omitted and both are in the "
+                             "file.\n";
+            else
+                std::cerr << "gc/gs are the cos(2*theta)/sin(2*theta) components of the azimuthal "
+                             "anisotropy\ntensor; the derived g0/theta pair is exported when -k is "
+                             "omitted.\n";
+            std::exit(1);
+        }
+        if (!std::any_of(rotate_model_fields.begin(), rotate_model_fields.end(), matches)) {
+            std::cerr << "Error: unknown dataset \"" << *v << "\" for -k.\n"
+                      << "Allowed fields: " << rotate_model_fields_str() << "\n"
+                      << "optionally with a model_/grad_ prefix and an _NNN iteration suffix, "
+                         "e.g. model_vs_042\n";
+            std::exit(1);
+        }
+        out.key = *v;
+    }
     return out;
 }
 
