@@ -134,7 +134,7 @@ real_t preproc::forward_for_event(SrcRec& sr, SurfGrid& sg, const bool is_calc_a
                     m11_ij, m22_ij, -m12_ij,
                     tfield, stlo_rec, stla_rec, adjoint_source_kden
                 );
-                eikonal::mask_uniform_grid(mg.xgrids, mg.ygrids, adj_field, evlo, evla);
+                eikonal::mask_uniform_grid(mg.xgrids, mg.ygrids, kden_field, evlo, evla);
                 accumulate_kernels(sg, iper, adj_field, &kden_field, &tfield);
             } else {
                 // Accumulate kernels for this event into the local accumulators in sg.

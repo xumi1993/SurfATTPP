@@ -97,11 +97,18 @@ Eigen::VectorX<real_t> Inversion1D::inv1d(
             auto vp = vs2vp<real_t>(vs1d);
             auto db = dalpha_dbeta<real_t>(vs1d);
             auto dr = drho_dalpha<real_t>(vp);
+            // Love-wave depth kernels carry no vp sensitivity, so sen_vp stays
+            // an empty matrix; guard each chain-rule term by its kernel size.
+            const bool has_vp  = kernels.sen_vp.size()  > 0;
+            const bool has_rho = kernels.sen_rho.size() > 0;
             for (int iper = 0; iper < nperiod; ++iper) {
-                Eigen::VectorX<real_t> sen =
-                      kernels.sen_vs.row(iper).transpose().array()
-                    + kernels.sen_vp.row(iper).transpose().array()  * db.array()
-                    + kernels.sen_rho.row(iper).transpose().array() * dr.array() * db.array();
+                Eigen::VectorX<real_t> sen = kernels.sen_vs.row(iper).transpose();
+                if (has_vp) {
+                    sen.array() += kernels.sen_vp.row(iper).transpose().array() * db.array();
+                }
+                if (has_rho) {
+                    sen.array() += kernels.sen_rho.row(iper).transpose().array() * dr.array() * db.array();
+                }
                 update += sen * (pred_vel(iper) - sr.periods_info.meanvel(iper));
             }
             update /= nperiod;

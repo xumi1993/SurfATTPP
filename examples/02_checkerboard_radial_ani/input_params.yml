@@ -24,7 +24,7 @@ domain:
   depth_min_max: [0, 8] # depth range in km
   grid_method: 0 # 0: grid by interval; 1: grid by min max and number of grid
   grid_method_0:
-    interval: [0.02, 0.02, 0.5] # interval of lon(degree), lat(degree), z(km)
+    interval: [0.02, 0.02, 0.2] # interval of lon(degree), lat(degree), z(km)
     num_grid_margin: 5 # number of grid margin
   grid_method_1:
     lon_min_max: [119.5, 120.5]
@@ -44,15 +44,15 @@ topo:
 
 postproc:
   kdensity_coe: 0  # Kdensity_coe is used to rescale the final kernel:  kernel -> kernel / pow(density of kernel, Kdensity_coe).
-  independent_smooth_ani: False
+  independent_smooth_ani: False # if True, smooth azimuthal anisotropy (Gc/Gs) kernels with sigma_ani / n_inv_grid_ani
   smooth_method: 0
   smooth_method_0:
-    sigma: [0.1, 2]
-    sigma_ani: [0.1, 2]
+    sigma: [0.1, 2] # smoothing lengths [horizontal (degree), vertical (km)]
+    sigma_ani: [0.1, 2] # same units as sigma; azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy (gamma uses sigma)
   smooth_method_1:
     n_inv_components: 5
     n_inv_grid: [8, 9, 8]
-    n_inv_grid_ani: [8, 9, 8]
+    n_inv_grid_ani: [8, 9, 8] # azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy
 
 inversion:
   # ------- Inversion parameters --------

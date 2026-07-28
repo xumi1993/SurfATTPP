@@ -9,6 +9,7 @@
 #include "decomposer.h"
 #include "preproc.h"
 #include "postproc.h"
+#include "optimize.h"
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <unsupported/Eigen/CXX11/Tensor>
@@ -70,8 +71,7 @@ private:
 
     Tensor3r model_update_;
     FieldVec ker_curr_, ker_prev_;
-    FieldVec gradient_;
-    Tensor3r search_direction_;
+    FieldVec gradient_, gradient_prev_;
 
     std::vector<real_t> misfit_ = std::vector<real_t>(InputParams::IP().inversion().niter, _0_CR);
     real_t misfit_trial_ = _0_CR;
@@ -79,6 +79,10 @@ private:
     int    iter_start_ = 0;
     real_t alpha_, alpha_R_, alpha_L_;
     bool   gradient_reuse_ = false;
+    optimize::WolfeResult wolfe_res_ = {
+        _0_CR, optimize::WolfeResult::Status::TRY
+    };
+    bool   break_flag_ = false;
 
     inline void convert_radial_kl() {
         gradient_[0] = gradient_[0] + gradient_[5]; // vs kernel
