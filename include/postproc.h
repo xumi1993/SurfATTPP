@@ -47,7 +47,14 @@ public:
         // Match Fortran construct_inv_grids:
         //   n_inv : {ninvx, ninvy, ninvz}  (0 → use ModelGrid size)
         //   nset_ : number of staggered sets (n_inv_components)
-        void init(const std::vector<int> &n_inv, int nset_);
+        // lon/lat/dep_nodes optionally replace the uniform grid on that axis with
+        // a user-defined irregular one (see PostprocParams). An empty array keeps
+        // the uniform grid built from the matching n_inv entry, so the three axes
+        // can be mixed freely.
+        void init(const std::vector<int> &n_inv, int nset_,
+                  const std::vector<real_t> &lon_nodes = {},
+                  const std::vector<real_t> &lat_nodes = {},
+                  const std::vector<real_t> &dep_nodes = {});
         std::vector<real_t> fwd2inv(const Tensor3r &buf);
         Tensor3r inv2fwd(const real_t *buf);
         inline int I2V_INV_GRIDS(const int A, const int B, const int C, const int D) {

@@ -75,6 +75,23 @@ struct PostprocParams {
     int n_inv_components;
     std::vector<int> n_inv_grid = {0, 0, 0};
     std::vector<int> n_inv_grid_ani = {0, 0, 0};
+
+    // Optional user-defined (irregular) inversion-grid nodes, one array per axis.
+    // Naming follows TomoATT. An empty array means that axis falls back to the
+    // uniform grid built from n_inv_grid, so the three axes are independent —
+    // e.g. giving only dep_inv keeps lon/lat uniform.
+    //
+    // Each array is the FULL node list *including the two outer boundary nodes*
+    // (which stay fixed while the inner nodes are staggered), must be strictly
+    // increasing, and must bracket the model domain. lon_inv/lat_inv are in the
+    // same frame as domain.lon_min_max/lat_min_max (i.e. rotated, if the run is),
+    // dep_inv is depth in km.
+    std::vector<real_t> lon_inv;
+    std::vector<real_t> lat_inv;
+    std::vector<real_t> dep_inv;
+    std::vector<real_t> lon_inv_ani;
+    std::vector<real_t> lat_inv_ani;
+    std::vector<real_t> dep_inv_ani;
 };
 
 struct InversionParams {

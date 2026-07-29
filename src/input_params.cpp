@@ -30,6 +30,24 @@ static T opt(const YAML::Node &n, const std::string &field, T def) {
     return n[field].as<T>();
 }
 
+// Sanity-check a user-defined inversion-grid node list. Runs on rank 0 while the
+// YAML is still being parsed, so a typo is reported as a plain error instead of
+// surfacing much later as an MPI abort out of PostProc. The check that the nodes
+// bracket the model domain lives in PostProc::InvGrid, which is where the domain
+// bounds are first known.
+static void check_inv_nodes(const std::vector<real_t> &nodes, const std::string &field) {
+    if (nodes.empty()) return;   // that axis stays uniform
+    if (nodes.size() < 3)
+        throw std::runtime_error("InputParams: '" + field + "' needs at least 3 nodes "
+            "(2 boundary nodes + at least 1 inner node), got " + std::to_string(nodes.size()));
+    for (size_t j = 1; j < nodes.size(); ++j) {
+        if (nodes[j] <= nodes[j - 1])
+            throw std::runtime_error("InputParams: '" + field + "' must be strictly increasing, "
+                "but node " + std::to_string(j) + " (" + std::to_string(nodes[j]) + ") <= node " +
+                std::to_string(j - 1) + " (" + std::to_string(nodes[j - 1]) + ")");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Section loaders
 // ---------------------------------------------------------------------------
@@ -137,11 +155,36 @@ void InputParams::load_postproc(const YAML::Node &n) {
         const YAML::Node sm = n["smooth_method_1"];
         postproc_.n_inv_components = req<int>(sm, "n_inv_components");
         postproc_.n_inv_grid = req<std::vector<int>>(sm, "n_inv_grid");
+        // Optional irregular inversion grids (TomoATT naming). Any axis left out
+        // keeps the uniform grid derived from n_inv_grid.
+        const std::vector<real_t> no_nodes;
+        postproc_.lon_inv = opt<std::vector<real_t>>(sm, "lon_inv", no_nodes);
+        postproc_.lat_inv = opt<std::vector<real_t>>(sm, "lat_inv", no_nodes);
+        postproc_.dep_inv = opt<std::vector<real_t>>(sm, "dep_inv", no_nodes);
         if (postproc_.independent_smooth_ani) {
             postproc_.n_inv_grid_ani = req<std::vector<int>>(sm, "n_inv_grid_ani");
+            postproc_.lon_inv_ani = opt<std::vector<real_t>>(sm, "lon_inv_ani", no_nodes);
+            postproc_.lat_inv_ani = opt<std::vector<real_t>>(sm, "lat_inv_ani", no_nodes);
+            postproc_.dep_inv_ani = opt<std::vector<real_t>>(sm, "dep_inv_ani", no_nodes);
         } else {
+            // The anisotropy grid mirrors the isotropic one. Silently dropping an
+            // *_ani array here would be a trap, so refuse instead.
+            for (const char *f : {"lon_inv_ani", "lat_inv_ani", "dep_inv_ani"}) {
+                if (sm[f] && !sm[f].IsNull())
+                    throw std::runtime_error(std::string("InputParams: '") + f +
+                        "' requires independent_smooth_ani: true");
+            }
             postproc_.n_inv_grid_ani = postproc_.n_inv_grid;
+            postproc_.lon_inv_ani    = postproc_.lon_inv;
+            postproc_.lat_inv_ani    = postproc_.lat_inv;
+            postproc_.dep_inv_ani    = postproc_.dep_inv;
         }
+        check_inv_nodes(postproc_.lon_inv,     "lon_inv");
+        check_inv_nodes(postproc_.lat_inv,     "lat_inv");
+        check_inv_nodes(postproc_.dep_inv,     "dep_inv");
+        check_inv_nodes(postproc_.lon_inv_ani, "lon_inv_ani");
+        check_inv_nodes(postproc_.lat_inv_ani, "lat_inv_ani");
+        check_inv_nodes(postproc_.dep_inv_ani, "dep_inv_ani");
     } else {
          throw std::runtime_error("InputParams: unsupported smooth_method " + std::to_string(postproc_.smooth_method));
     }
@@ -338,6 +381,12 @@ void InputParams::bcast_postproc() {
     mpi.bcast(postproc_.n_inv_components);
     mpi.bcast_vec(postproc_.n_inv_grid);
     mpi.bcast_vec(postproc_.n_inv_grid_ani);
+    mpi.bcast_vec(postproc_.lon_inv);
+    mpi.bcast_vec(postproc_.lat_inv);
+    mpi.bcast_vec(postproc_.dep_inv);
+    mpi.bcast_vec(postproc_.lon_inv_ani);
+    mpi.bcast_vec(postproc_.lat_inv_ani);
+    mpi.bcast_vec(postproc_.dep_inv_ani);
     mpi.bcast(postproc_.independent_smooth_ani);
 }
 

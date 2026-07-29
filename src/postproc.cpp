@@ -157,62 +157,90 @@ namespace{
     }
 }
 
-void PostProc::InvGrid::init(const std::vector<int> &n_inv, int nset_) {
+// Build the (n_node, nset) staggered node table for one inversion-grid axis.
+//
+// nodes empty — uniform grid: n_inv inner nodes at g0 + i*d with d = (g1-g0)/n_inv,
+//   plus two fixed halo nodes at g0 - d/nset and g1 + d/nset. Set `is` shifts every
+//   inner node by is*d/nset. This is the original construction, kept bit-for-bit so
+//   that runs without a custom grid are unchanged.
+//
+// nodes given — the array *is* the full node list; its first and last entries are the
+//   fixed halos and the n_node-2 entries between them are staggered. Inner node j is
+//   shifted by is*(node[j+1]-node[j])/nset, i.e. each node walks the same fraction of
+//   *its own* interval towards the next one. A single global shift would be wrong here:
+//   it would be a large fraction of a thin layer and a tiny fraction of a thick one.
+//   The shift is strictly smaller than the interval, so every set stays monotone and
+//   the inner nodes never reach the pinned halos.
+static Eigen::MatrixX<real_t> build_inv_axis(const std::vector<real_t> &nodes,
+                                             int n_inv, int nset,
+                                             real_t g0, real_t g1,
+                                             const std::string &name) {
+    auto &logger = ATTLogger::logger();
+    auto &mpi = Parallel::mpi();
+
+    if (nodes.empty()) {
+        const real_t d   = (g1 - g0) / n_inv;
+        const real_t add = d / nset;
+        Eigen::MatrixX<real_t> m(n_inv + 2, nset);
+        for (int is = 0; is < nset; ++is) {
+            m(0, is)         = g0 - add;
+            m(n_inv + 1, is) = g1 + add;
+            for (int j = 1; j <= n_inv; ++j) m(j, is) = g0 + (j - 1) * d + is * add;
+        }
+        return m;
+    }
+
+    // Size and monotonicity were already checked when the YAML was parsed; the
+    // domain bounds are only known here.
+    const int n_node = static_cast<int>(nodes.size());
+    if (nodes.front() > g0 || nodes.back() < g1) {
+        logger.Error(fmt::format("{} = [{}, ..., {}] must bracket the model domain [{}, {}]",
+                                 name, nodes.front(), nodes.back(), g0, g1), MODULE_POSTPROC);
+        mpi.barrier();   // let rank 0 emit the message before any rank aborts
+        mpi.abort(EXIT_FAILURE);
+    }
+
+    Eigen::MatrixX<real_t> m(n_node, nset);
+    for (int is = 0; is < nset; ++is) {
+        m(0, is)          = nodes.front();   // pinned lower boundary node
+        m(n_node - 1, is) = nodes.back();    // pinned upper boundary node
+        for (int j = 1; j < n_node - 1; ++j)
+            m(j, is) = nodes[j] + is * (nodes[j + 1] - nodes[j]) / nset;
+    }
+    return m;
+}
+
+void PostProc::InvGrid::init(const std::vector<int> &n_inv, int nset_,
+                             const std::vector<real_t> &lon_nodes,
+                             const std::vector<real_t> &lat_nodes,
+                             const std::vector<real_t> &dep_nodes) {
     const auto &mg = ModelGrid::MG();
 
-    nset  = nset_;
-    n_inv_I = n_inv[0];
-    n_inv_J = n_inv[1];
-    n_inv_K = n_inv[2];
-
-    const int ninvx = n_inv_I + 2;
-    const int ninvy = n_inv_J + 2;
-    const int ninvz = n_inv_K + 2;
+    nset = nset_;
 
     const real_t x0 = mg.xgrids(0), x1 = mg.xgrids(mg.xgrids.size() - 1);
     const real_t y0 = mg.ygrids(0), y1 = mg.ygrids(mg.ygrids.size() - 1);
     const real_t z0 = mg.zgrids(0), z1 = mg.zgrids(mg.zgrids.size() - 1);
 
-    const real_t dinvx = (x1 - x0) / n_inv_I;
-    const real_t xadd  = dinvx / nset;
-    const real_t x_beg = x0 - xadd, x_end = x1 + xadd;
+    xinv = build_inv_axis(lon_nodes, n_inv[0], nset, x0, x1, "lon_inv");
+    yinv = build_inv_axis(lat_nodes, n_inv[1], nset, y0, y1, "lat_inv");
+    zinv = build_inv_axis(dep_nodes, n_inv[2], nset, z0, z1, "dep_inv");
 
-    const real_t dinvy = (y1 - y0) / n_inv_J;
-    const real_t yadd  = dinvy / nset;
-    const real_t y_beg = y0 - yadd, y_end = y1 + yadd;
-
-    const real_t dinvz = (z1 - z0) / n_inv_K;
-    const real_t zadd  = dinvz / nset;
-    const real_t z_beg = z0 - zadd, z_end = z1 + zadd;
-
-    // inner 1-D reference nodes (without halos)
-    Eigen::VectorX<real_t> x_inv_1d(n_inv_I), y_inv_1d(n_inv_J), z_inv_1d(n_inv_K);
-    for (int i = 0; i < n_inv_I; ++i) x_inv_1d(i) = x0 + i * dinvx;
-    for (int i = 0; i < n_inv_J; ++i) y_inv_1d(i) = y0 + i * dinvy;
-    for (int i = 0; i < n_inv_K; ++i) z_inv_1d(i) = z0 + i * dinvz;
-
-    xinv.resize(ninvx, nset);
-    yinv.resize(ninvy, nset);
-    zinv.resize(ninvz, nset);
-
-    for (int is = 0; is < nset; ++is) {
-        // fixed halo nodes
-        xinv(0, is)        = x_beg;  xinv(ninvx - 1, is) = x_end;
-        yinv(0, is)        = y_beg;  yinv(ninvy - 1, is) = y_end;
-        zinv(0, is)        = z_beg;  zinv(ninvz - 1, is) = z_end;
-        // inner nodes staggered by is * {x,y,z}add
-        for (int j = 1; j < ninvx - 1; ++j) xinv(j, is) = x_inv_1d(j - 1) + is * xadd;
-        for (int j = 1; j < ninvy - 1; ++j) yinv(j, is) = y_inv_1d(j - 1) + is * yadd;
-        for (int j = 1; j < ninvz - 1; ++j) zinv(j, is) = z_inv_1d(j - 1) + is * zadd;
-    }
+    // A custom node list carries its own count; the two boundary nodes are excluded
+    // so that I2V_INV_GRIDS keeps indexing (n_inv_* + 2) nodes per set either way.
+    n_inv_I = static_cast<int>(xinv.rows()) - 2;
+    n_inv_J = static_cast<int>(yinv.rows()) - 2;
+    n_inv_K = static_cast<int>(zinv.rows()) - 2;
 }
 
 PostProc::PostProc() {
     const auto &post = InputParams::IP().postproc();
 
     if ( post.smooth_method == 1) {
-        inv_grid.init(post.n_inv_grid, post.n_inv_components);
-        inv_grid_ani.init(post.n_inv_grid_ani, post.n_inv_components);
+        inv_grid.init(post.n_inv_grid, post.n_inv_components,
+                      post.lon_inv, post.lat_inv, post.dep_inv);
+        inv_grid_ani.init(post.n_inv_grid_ani, post.n_inv_components,
+                          post.lon_inv_ani, post.lat_inv_ani, post.dep_inv_ani);
     }
 }
 
