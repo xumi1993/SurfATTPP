@@ -45,6 +45,17 @@ postproc:
     n_inv_components: 5
     n_inv_grid: [8, 9, 10]
     n_inv_grid_ani: [8, 9, 10] # azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy
+    # Optional irregular inversion grids, one per axis (naming follows TomoATT).
+    # Each is the full node list for that axis: the first and last entries are the
+    # boundary nodes (held fixed) and the ones between them are staggered across the
+    # n_inv_components sets. The list must be strictly increasing and must bracket
+    # the model domain. Units: degrees for lon/lat (in the rotated frame if the run
+    # is rotated), km depth for dep.
+    # Any axis left out keeps the uniform grid built from n_inv_grid, so giving only
+    # dep_inv refines depth while lon/lat stay uniform. The *_ani versions need
+    # independent_smooth_ani: true.
+    # dep_inv:     [-0.5, 1.0, 3.0, 6.0, 12.0, 25.5]
+    # dep_inv_ani: [-0.5, 1.0, 3.0, 6.0, 12.0, 25.5]
 
 inversion:
   # ------- Inversion parameters --------
