@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.18)
 
 project( SurfATT VERSION 2.1.0 LANGUAGES CXX Fortran)
 
+include(GNUInstallDirs)
+
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
@@ -33,27 +35,33 @@ if (SURFATT_DEFAULT_RELEASE AND NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUIL
 endif()
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
 
+option(SURFATT_NATIVE_ARCH "Optimize for the build machine's CPU architecture." OFF)
+set(SURFATT_NATIVE_ARCH_FLAG "")
+if(SURFATT_NATIVE_ARCH)
+  set(SURFATT_NATIVE_ARCH_FLAG "-march=native")
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
 
 message(STATUS "Detecting CXX Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -Wno-type-limits")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -Wno-type-limits")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
 
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
   # New Intel DPC++/C++ Compiler (icpx) based on LLVM; supports Clang-style warnings.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -Wno-tautological-constant-compare -DEIGEN_STRONG_INLINE=inline")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -Wno-tautological-constant-compare -DEIGEN_STRONG_INLINE=inline")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
 
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
   # Classic Intel C++ Compiler (icpc); does NOT support -Wtautological-constant-compare.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -diag-disable=10441,11016 -DEIGEN_STRONG_INLINE=inline")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -diag-disable=10441,11016 -DEIGEN_STRONG_INLINE=inline")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
 
 else ()
   # Fallback defaults for other compilers (e.g., MSVC, native Clang, etc.).
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG}")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
 endif()
 
@@ -61,26 +69,24 @@ endif()
 message(STATUS "Detecting Fortran Compiler: ${CMAKE_Fortran_COMPILER_ID}")
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -ffixed-line-length-none")
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -ffixed-line-length-none")
   set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g3 -ffixed-line-length-none")
 
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
   # New Intel Fortran Compiler (ifx)
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -extend-source")
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -extend-source")
   set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -extend-source")
 
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
   # Classic Intel Fortran Compiler (ifort)
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -diag-disable=10441 -extend-source")
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -diag-disable=10441 -extend-source")
   set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g -diag-disable=10441 -extend-source")
 
 else ()
   # Fallback defaults for other Fortran compilers, defaulting to GNU-style formatting.
-  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG -march=native -ffixed-line-length-none")
+  set(CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} -O3 -DNDEBUG ${SURFATT_NATIVE_ARCH_FLAG} -ffixed-line-length-none")
   set(CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -O0 -g3 -ffixed-line-length-none")
 endif()
-
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lstdc++")
 
 # ---------------------------------------------------------------------------
 # Precision option  (-DUSE_SINGLE_PRECISION=ON to use float)
@@ -96,7 +102,10 @@ endif()
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
-option(USE_EXTERNAL_LIBS OFF "Use system-installed libraries instead of bundled submodules")
+option(USE_EXTERNAL_LIBS
+    "Use bundled yaml-cpp and spdlog from external_libs submodules."
+    OFF
+)
 
 # MPI (required)
 find_package(MPI REQUIRED)
@@ -152,13 +161,6 @@ if (yaml-cpp_FOUND AND NOT ${USE_EXTERNAL_LIBS})
                     INTERFACE_LINK_LIBRARIES "${YAML_CPP_LIBRARIES}")
             endif()
         endif()
-    endif()
-else()
-    message(STATUS "yaml-cpp not found via find_package, using submodule")
-    set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-    add_subdirectory(external_libs/yaml-cpp)
-    if (TARGET yaml-cpp AND NOT TARGET yaml-cpp::yaml-cpp)
-        add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
     endif()
 endif()
 
@@ -243,6 +245,10 @@ foreach( execsourcefile ${APP_SOURCES} )
 
     # HDF5
     target_link_libraries(${execname} PRIVATE ${MY_HDF5_LIBS})
+
+    install(TARGETS ${execname}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 endforeach()
 
 # ---------------------------------------------------------------------------
