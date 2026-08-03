@@ -211,9 +211,13 @@ void InputParams::validate() {
         mpi.abort(EXIT_FAILURE);
     }
 
-    if (use_gr && mpt != MODEL_ISO) {
-        std::cout << "InputParams: group velocity data is not compatible with anisotropic inversion "
-                  << "(set model_para_type to 0 for isotropic)" << std::endl;
+    // Azimuthal anisotropy relies on the HTI depth kernels, which are only
+    // derived for Rayleigh phase velocity (see surfker::depthkernelHTI1d).
+    // Radial anisotropy uses the standard kernels, which cover Rayleigh/Love
+    // phase and group velocity alike, so group data is allowed there.
+    if (use_gr && mpt == MODEL_AZI_ANI) {
+        std::cout << "InputParams: group velocity data is not compatible with azimuthal anisotropy "
+                  << "(set model_para_type to 0 for isotropic or 2 for radial anisotropy)" << std::endl;
         mpi.abort(EXIT_FAILURE);
     }
 
