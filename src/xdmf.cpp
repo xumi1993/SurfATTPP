@@ -3,7 +3,7 @@
 #include "input_params.h"
 #include "parallel.h"
 
-#include <fmt/format.h>
+#include <spdlog/fmt/fmt.h>
 #include <fstream>
 
 namespace xdmf {
