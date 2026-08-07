@@ -22,6 +22,10 @@ domain:
   grid_method_0:
     interval: [0.01, 0.01, 0.5] # interval of lon(degree), lat(degree), z(km)
     num_grid_margin: 5 # number of grid margin
+  grid_method_1: # only read when grid_method: 1; values below describe the same domain as grid_method_0
+    lon_min_max: [-0.52, 0.66] # longitude range in degree (rotated frame, see rotatation.ipynb)
+    lat_min_max: [-0.47, 0.48] # latitude range in degree (rotated frame)
+    n_grid: [120, 100, 31] # number of grid in lon, lat, z
 
 model:
   # ------- Initial model --------
@@ -31,16 +35,16 @@ model:
 
 topo:
   is_consider_topo: True # whether consider topography
-  topo_file: hawaii_rotated.nc # Path to local elevation file. Only valid in topo_type: 1 and 2
+  topo_file: hawaii_rotated.nc # Path to local elevation file. Only valid when is_consider_topo: True
   wavelen_factor: 2.5
 
 postproc:
-  kdensity_coe: 1  # Kdensity_coe is used to rescale the final kernel:  kernel -> kernel / pow(density of kernel, Kdensity_coe).
+  kdensity_coe: 0.0  # Kdensity_coe is used to rescale the final kernel:  kernel -> kernel / pow(density of kernel, Kdensity_coe).
   independent_smooth_ani: False # if True, smooth azimuthal anisotropy (Gc/Gs) kernels with sigma_ani / n_inv_grid_ani
   smooth_method: 1 # 0: PDE (Gaussian) smoothing; 1: multigrid smoothing
   smooth_method_0:
-    sigma: [0.1, 2] # smoothing lengths [horizontal (degree), vertical (km)]
-    sigma_ani: [0.1, 2] # same units as sigma; azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy (gamma uses sigma)
+    sigma: [0.12, 1.5] # smoothing lengths [horizontal (degree), vertical (km)]
+    sigma_ani: [0.12, 1.5] # same units as sigma; azimuthal anisotropy (Gc/Gs) kernels only, ignored for radial anisotropy (gamma uses sigma)
   smooth_method_1:
     n_inv_components: 5
     n_inv_grid: [8, 9, 10]
@@ -49,13 +53,14 @@ postproc:
 inversion:
   # ------- Inversion parameters --------
   model_para_type: 0 # 0 Isotropic, 1 Azimuthal anisotropy, 2 Radial anisotropy
-  use_alpha_beta_rho: true
-  rho_scaling: true
-  # ------- Inversion parameters --------
+  use_alpha_beta_rho: false
+  rho_scaling: false
+  vpvs_ratio_range: [1.4, 2.5] # clamp range of vp/vs. Only used when use_alpha_beta_rho: True
+  # ------- Iteration control -------
   niter: 40 # max iterations
   min_derr: 0.0001 # minimum error change
   # ------- optimization parameters -------
-  optim_method: 1 # 0: SD (adeptive step length); 1: LBFGS (line search)
+  optim_method: 0 # 0: SD (adaptive step length); 1: LBFGS (line search)
   step_length: 0.02 # starting step length
   maxshrink: 0.6 # max step length descent
   # ------- Line search for LBFGS -------
