@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project( SurfATT VERSION 2.1.0 LANGUAGES CXX Fortran)
+project( SurfATT VERSION 2.1.1 LANGUAGES CXX Fortran)
 
 include(GNUInstallDirs)
 
@@ -143,9 +143,12 @@ endif()
 add_subdirectory(external_libs)
 
 # yaml-cpp: prefer a system installation, fall back to the bundled submodule.
-find_package(yaml-cpp QUIET)
-if (yaml-cpp_FOUND AND NOT ${USE_EXTERNAL_LIBS})
-    message(STATUS "Found yaml-cpp: ${YAML_CPP_INCLUDE_DIR}")
+if (NOT USE_EXTERNAL_LIBS)
+    find_package(yaml-cpp QUIET)
+endif()
+
+if (yaml-cpp_FOUND AND NOT USE_EXTERNAL_LIBS)
+    message(STATUS "Found system yaml-cpp: ${yaml-cpp_DIR}")
     # Normalize to yaml-cpp::yaml-cpp to avoid deprecated target warnings.
     if (NOT TARGET yaml-cpp::yaml-cpp)
         if (TARGET yaml-cpp)
@@ -162,17 +165,28 @@ if (yaml-cpp_FOUND AND NOT ${USE_EXTERNAL_LIBS})
             endif()
         endif()
     endif()
+else()
+    message(STATUS "System yaml-cpp not found (or bundled libraries requested); using external_libs/yaml-cpp")
+    initialize_submodule(external_libs/yaml-cpp)
+    add_subdirectory(external_libs/yaml-cpp EXCLUDE_FROM_ALL)
+endif()
+
+if (NOT TARGET yaml-cpp::yaml-cpp)
+    message(FATAL_ERROR "yaml-cpp was found, but no usable CMake target was provided")
 endif()
 
 # ------------------------------------------------------
 # find spdlog
-find_package(spdlog QUIET)
-if (spdlog_FOUND AND NOT ${USE_EXTERNAL_LIBS})
-    message(STATUS "spdlog found")
+if (NOT USE_EXTERNAL_LIBS)
+    find_package(spdlog QUIET)
+endif()
+
+if (spdlog_FOUND AND NOT USE_EXTERNAL_LIBS)
+    message(STATUS "Found system spdlog: ${spdlog_DIR}")
 else()
-  message(STATUS "spdlog not found. use source code external_libs/spdlog...")
-  initialize_submodule(external_libs/spdlog)
-  add_subdirectory(external_libs/spdlog EXCLUDE_FROM_ALL)
+    message(STATUS "System spdlog not found (or bundled libraries requested); using external_libs/spdlog")
+    initialize_submodule(external_libs/spdlog)
+    add_subdirectory(external_libs/spdlog EXCLUDE_FROM_ALL)
 endif()
 
 if (TARGET spdlog::spdlog_header_only)

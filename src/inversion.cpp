@@ -5,6 +5,7 @@
 #include "h5io.h"
 #include "src_rec.h"
 #include "xdmf.h"
+#include <cmath>
 #include <fstream>
 
 static void distribute_model_para(){
@@ -45,11 +46,15 @@ Inversion::Inversion() {
                 f.write_vector("y", mg.ygrids);
                 f.write_vector("z", mg.zgrids);
 
-                // Uniform-scale coordinates: convert lon/lat (degrees) to km so
-                // all three axes share the same unit for undistorted visualization.
-                const Eigen::VectorX<real_t> cos_lat  = (mg.ygrids.array() * DEG2RAD).cos();
+                // Uniform-scale coordinates: use an equirectangular projection
+                // about the grid's central latitude.  A 3DRectMesh requires each
+                // coordinate axis to be a separate 1-D vector, so the longitude
+                // scale factor must be a scalar rather than one value per latitude.
+                const real_t ref_lat = _0_5_CR *
+                    (mg.ygrids(0) + mg.ygrids(mg.ygrids.size() - 1));
+                const real_t cos_ref_lat = std::cos(ref_lat * DEG2RAD);
                 Eigen::VectorX<real_t> x_km =
-                    (mg.xgrids.array() - mg.xgrids(0)) * DEG2RAD * R_EARTH * cos_lat.array();
+                    (mg.xgrids.array() - mg.xgrids(0)) * DEG2RAD * R_EARTH * cos_ref_lat;
                 Eigen::VectorX<real_t> y_km =
                     (mg.ygrids.array() - mg.ygrids(0)) * DEG2RAD * R_EARTH;
                 f.write_vector("x_km", x_km);
